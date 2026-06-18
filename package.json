@@ -2,6 +2,7 @@
   "name": "bunnycam",
   "version": "1.0.0",
   "description": "Local petcam for your bunny rabbits 🐇",
+  "license": "MIT",
   "private": true,
   "scripts": {
     "dev": "concurrently \"npm run server\" \"npm run client\"",
