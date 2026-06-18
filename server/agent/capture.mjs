@@ -31,6 +31,12 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const SERVER         = process.env.AGENT_SERVER_URL  ?? 'http://localhost:3001'
 const CAMERA_FORMAT  = process.env.CAMERA_FORMAT     ?? 'dshow'
 const CAMERA_INPUT   = process.env.CAMERA_INPUT      ?? 'video=onn 4K Webcam'
+// Capture resolution + fps. Critical: without these, dshow grabs the camera's
+// max (4K raw yuyv422 ≈ 12MB/frame), which saturates the input buffer and
+// freezes the inference feed. Requesting hardware MJPEG at 720p keeps the
+// buffer drained so motion detection actually sees frame-to-frame change.
+const CAMERA_SIZE    = process.env.CAMERA_SIZE       ?? '1280x720'
+const CAMERA_FPS     = process.env.CAMERA_FPS        ?? '30'
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD
 const FRAME_INTERVAL = Number(process.env.AGENT_FRAME_SECONDS ?? 3)
 const SEGMENT_SECS   = Number(process.env.AGENT_SEGMENT_SECONDS ?? 12)
@@ -42,6 +48,13 @@ const MOTION_FLOOR   = Number(process.env.AGENT_MOTION_FLOOR ?? 4)
 // Require the same alert label across this many consecutive frames before
 // emailing — rejects single-frame flicker false positives.
 const ALERT_STREAK   = Number(process.env.AGENT_ALERT_STREAK ?? 3)
+// Motion-triggered capture: the classifier is unreliable (often says "normal"
+// even during obvious activity), so high motion ALWAYS saves a clip regardless
+// of the predicted label. These land unlabeled for review in Label Studio.
+const MOTION_CAPTURE = Number(process.env.AGENT_MOTION_CAPTURE ?? 25)
+// Minimum gap between any two saved clips, so a burst of motion doesn't flood
+// the recordings folder with near-identical clips.
+const CAPTURE_COOLDOWN_MS = Number(process.env.AGENT_CAPTURE_COOLDOWN_SEC ?? 30) * 1000
 
 const SEG_DIR    = path.join(__dirname, 'segments')
 const FRAME_SIZE = 224 * 224 * 3
@@ -140,21 +153,29 @@ async function latestFinishedSegment() {
   return files.length >= 2 ? files[files.length - 2] : null
 }
 
-async function uploadAndAlert(pred) {
+// Upload the latest finished segment as a recording. Returns the saved
+// filename, or null if there was nothing to upload.
+async function uploadSegment() {
   const seg = await latestFinishedSegment()
-  if (!seg) { log('  (no finished segment yet — skipping upload)'); return }
+  if (!seg) { log('  (no finished segment yet — skipping upload)'); return null }
 
   const buf  = await fs.readFile(path.join(SEG_DIR, seg))
   const form = new FormData()
   form.append('video', new Blob([buf], { type: 'video/webm' }), 'clip.webm')
 
   const up = await api('/api/recordings', { method: 'POST', body: form })
-  if (!up.ok) { log('  upload failed:', up.status); return }
+  if (!up.ok) { log('  upload failed:', up.status); return null }
   const { filename } = await up.json()
+  return filename
+}
+
+// Confident non-normal behavior: save the clip, auto-label it with the
+// predicted behavior, and send an email alert.
+async function uploadAndAlert(pred) {
+  const filename = await uploadSegment()
+  if (!filename) return
   log(`  ↑ Uploaded clip ${filename} → labeled ${pred.label}`)
 
-  // Auto-label the clip with the model's predicted behavior, using the standard
-  // label (no ml_ prefix) so it's indistinguishable from a hand label.
   await api(`/api/labels/${filename}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -170,6 +191,15 @@ async function uploadAndAlert(pred) {
   log(`  ✉ Email: ${result.sent ? 'sent' : result.reason ?? result.error}`)
 }
 
+// Motion-triggered capture: something clearly happened but the classifier isn't
+// confident about what. Save the clip UNLABELED (no email) so it shows up in
+// Label Studio for review — which also becomes training data to fix the model.
+async function uploadMotionClip(motion) {
+  const filename = await uploadSegment()
+  if (!filename) return
+  log(`  ↑ Motion clip ${filename} saved unlabeled (motion=${motion.toFixed(1)}) — review in Label Studio`)
+}
+
 // ── Cleanup old segments (keep last ~10 minutes) ───────────────────────────
 async function pruneSegments() {
   const keep = Math.ceil(600 / SEGMENT_SECS)
@@ -180,16 +210,16 @@ async function pruneSegments() {
 }
 
 // ── Main capture loop ───────────────────────────────────────────────────────
-let lastLabel   = null
-let streakLabel = null
-let streakCount = 0
+let lastLabel    = null
+let streakLabel  = null
+let streakCount  = 0
+let lastCaptureAt = 0
 
 async function handleFrame(frameBuf) {
   const motion = motionLevel(frameBuf)
   const pred   = classify(frameBuf)
 
-  // A candidate alert must be a non-normal behavior, confident enough, AND
-  // accompanied by real motion (kills blank/static-room false positives).
+  // A confident-behavior alert: non-normal, confident enough, AND real motion.
   const candidate = pred.label !== 'normal' &&
                     pred.confidence >= CONF_THRESH &&
                     motion >= MOTION_FLOOR
@@ -205,11 +235,17 @@ async function handleFrame(frameBuf) {
     streakCount = 0
   }
 
-  const isAlert = candidate && streakCount >= ALERT_STREAK
+  const behaviorAlert = candidate && streakCount >= ALERT_STREAK
+  // Safety net: lots of motion clearly means activity even if the classifier
+  // calls it "normal". Capture it regardless so nothing is missed.
+  const motionEvent   = motion >= MOTION_CAPTURE
+
+  const now          = Date.now()
+  const captureReady = now - lastCaptureAt >= CAPTURE_COOLDOWN_MS
 
   log(`frame  motion=${motion.toFixed(1)}  →  ${pred.label} ${pred.confidence}%` +
       `${candidate ? `  (streak ${streakCount}/${ALERT_STREAK})` : ''}` +
-      `${isAlert ? '  ⚠ ALERT' : ''}`)
+      `${behaviorAlert ? '  ⚠ ALERT' : motionEvent ? '  ● MOTION' : ''}`)
 
   // Publish every label *change* to the public demo feed
   if (pred.label !== lastLabel) {
@@ -221,9 +257,16 @@ async function handleFrame(frameBuf) {
     }).catch(() => {})
   }
 
-  if (isAlert) {
-    streakCount = 0 // reset so we don't re-fire every frame; server cooldown also guards
-    await uploadAndAlert(pred).catch(err => log('  alert error:', err.message))
+  if ((behaviorAlert || motionEvent) && captureReady) {
+    lastCaptureAt = now
+    streakCount   = 0 // reset so we don't re-fire every frame
+    // Prefer a confident behavior (labels + emails); otherwise save the
+    // motion clip unlabeled for review.
+    if (behaviorAlert) {
+      await uploadAndAlert(pred).catch(err => log('  alert error:', err.message))
+    } else {
+      await uploadMotionClip(motion).catch(err => log('  capture error:', err.message))
+    }
   }
 }
 
@@ -234,7 +277,12 @@ function startCapture() {
   const args = [
     '-hide_banner', '-loglevel', 'error',
     '-f', CAMERA_FORMAT,
-    ...(CAMERA_FORMAT === 'dshow' ? ['-rtbufsize', '100M', '-framerate', '15'] : []),
+    // Force compressed MJPEG capture at a sane resolution so the dshow input
+    // buffer doesn't back up (see CAMERA_SIZE note above).
+    ...(CAMERA_FORMAT === 'dshow'
+      ? ['-rtbufsize', '100M', '-vcodec', 'mjpeg',
+         '-video_size', CAMERA_SIZE, '-framerate', CAMERA_FPS]
+      : []),
     '-i', CAMERA_INPUT,
     // Output 1: raw frames for inference
     '-vf', `fps=1/${FRAME_INTERVAL},scale=224:224`,
