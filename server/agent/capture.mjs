@@ -287,9 +287,12 @@ function startCapture() {
     // Output 1: raw frames for inference
     '-vf', `fps=1/${FRAME_INTERVAL},scale=224:224`,
     '-f', 'rawvideo', '-pix_fmt', 'rgb24', 'pipe:1',
-    // Output 2: rolling recorded segments
+    // Output 2: rolling recorded segments. The fps filter is critical: it
+    // resamples to a constant 15 fps against the real input timestamps, so each
+    // 12s segment spans 12s of WALL-CLOCK time. Without it, dropped frames under
+    // encoder load make clips play back sped-up (timelapse effect).
     '-c:v', 'libvpx', '-deadline', 'realtime', '-cpu-used', '8',
-    '-b:v', '1M', '-vf', 'scale=640:360', '-an',
+    '-b:v', '1M', '-vf', 'fps=15,scale=640:360', '-r', '15', '-an',
     '-f', 'segment', '-segment_time', String(SEGMENT_SECS), '-reset_timestamps', '1',
     path.join(SEG_DIR, 'seg-%05d.webm'),
     // Output 3: MJPEG live-view frames for the dashboard (smooth ~12 fps)

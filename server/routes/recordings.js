@@ -41,7 +41,6 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage,
-  limits: { fileSize: 100 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     if (file.mimetype.startsWith('video/')) cb(null, true)
     else cb(new Error('Only video files are allowed'))
@@ -71,27 +70,10 @@ router.get('/', async (_req, res) => {
   }
 })
 
-const MAX_RECORDINGS = 300
-
-async function pruneRecordings() {
-  const files = (await fs.readdir(RECORDINGS_DIR))
-    .filter(f => f.endsWith('.webm'))
-  if (files.length <= MAX_RECORDINGS) return
-  // Sort oldest-first by mtime and delete the excess
-  const stats = await Promise.all(
-    files.map(async f => ({ f, mtime: (await fs.stat(path.join(RECORDINGS_DIR, f))).mtimeMs }))
-  )
-  stats.sort((a, b) => a.mtime - b.mtime)
-  const toDelete = stats.slice(0, stats.length - MAX_RECORDINGS)
-  await Promise.all(toDelete.map(({ f }) => fs.unlink(path.join(RECORDINGS_DIR, f)).catch(() => {})))
-  if (toDelete.length) console.log(`[recordings] pruned ${toDelete.length} old clip(s)`)
-}
-
 router.post('/', upload.single('video'), async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'No video uploaded' })
   }
-  pruneRecordings().catch(() => {})
   res.json({
     filename: req.file.filename,
     createdAt: new Date().toISOString(),
