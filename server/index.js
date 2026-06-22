@@ -15,6 +15,7 @@ import authRoutes, { adminGuard, isAuthed } from './routes/auth.js'
 import predictionRoutes from './routes/predictions.js'
 import streamRoutes from './routes/stream.js'
 import monitorRoutes from './routes/monitor.js'
+import highlightRoutes from './routes/highlights.js'
 import { startLabelBackups } from './lib/backupLabels.js'
 import { readLabels } from './lib/labelStore.js'
 
@@ -92,7 +93,8 @@ app.use('/api/auth', authRoutes)
 // Admin guard: GET requests stay public (demo mode reads clips, labels,
 // predictions); anything mutating requires login
 app.use(['/api/recordings', '/api/labels', '/api/logs', '/api/import', '/api/model',
-         '/api/sms', '/api/predictions', '/api/stream', '/api/monitor'], adminGuard)
+         '/api/sms', '/api/predictions', '/api/stream', '/api/monitor',
+         '/api/highlights'], adminGuard)
 
 // API routes
 app.use('/api/recordings', recordingRoutes)
@@ -104,6 +106,7 @@ app.use('/api/sms', smsRoutes)
 app.use('/api/predictions', predictionRoutes)
 app.use('/api/stream', streamRoutes)
 app.use('/api/monitor', monitorRoutes)
+app.use('/api/highlights', highlightRoutes)
 
 // Serve trained model weights
 app.use('/model', express.static(path.join(__dirname, 'model')))

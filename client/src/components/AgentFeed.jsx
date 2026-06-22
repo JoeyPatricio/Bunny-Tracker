@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 
 const BASE_COLOR = {
   grooming: '#dc82ff', normal: '#88aaff', standing: '#ff9f3c',
@@ -21,6 +21,40 @@ export default function AgentFeed() {
   const [latest, setLatest]     = useState(null) // { label, confidence, time }
   const [recording, setRecording] = useState(false)
   const [flash, setFlash]       = useState('')
+  // Two fullscreen modes: native (desktop, Android) and a CSS overlay fallback
+  // for iOS Safari, which only allows native fullscreen on <video> elements —
+  // our MJPEG feed is an <img>, so el.requestFullscreen is unavailable there.
+  const [nativeFull, setNativeFull] = useState(false)
+  const [cssFull, setCssFull]       = useState(false)
+  const isFull = nativeFull || cssFull
+  const containerRef = useRef(null)
+
+  const toggleFullscreen = () => {
+    const el = containerRef.current
+    if (!el) return
+    if (nativeFull) { document.exitFullscreen?.(); return }
+    if (cssFull)    { setCssFull(false); return }
+    if (el.requestFullscreen && document.fullscreenEnabled) {
+      el.requestFullscreen().catch(() => setCssFull(true)) // fall back if it rejects
+    } else {
+      setCssFull(true) // iOS / unsupported — use the CSS overlay
+    }
+  }
+
+  // Keep native state in sync (e.g. exiting via Esc or the system gesture)
+  useEffect(() => {
+    const onChange = () => setNativeFull(document.fullscreenElement === containerRef.current)
+    document.addEventListener('fullscreenchange', onChange)
+    return () => document.removeEventListener('fullscreenchange', onChange)
+  }, [])
+
+  // Esc exits the CSS-overlay mode (native fullscreen handles its own Esc)
+  useEffect(() => {
+    if (!cssFull) return
+    const onKey = (e) => { if (e.key === 'Escape') setCssFull(false) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [cssFull])
 
   const recordNow = async () => {
     setRecording(true)
@@ -54,7 +88,7 @@ export default function AgentFeed() {
   const base = latest ? latest.label.replace('ml_', '') : null
 
   return (
-    <div className="agent-feed">
+    <div className={`agent-feed${cssFull ? ' css-full' : ''}`} ref={containerRef}>
       <img className="agent-stream" src="/api/stream/live" alt="Live bunny cam (agent)" />
 
       <div className="agent-badge">
@@ -77,6 +111,20 @@ export default function AgentFeed() {
           <span className="agent-pred-conf">{latest.confidence}%</span>
         </div>
       )}
+
+      <button
+        className="agent-fs-btn"
+        onClick={toggleFullscreen}
+        title={isFull ? 'Exit fullscreen' : 'View fullscreen'}
+        aria-label={isFull ? 'Exit fullscreen' : 'View fullscreen'}
+      >
+        {isFull ? (
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 3v6H3M21 9h-6V3M15 21v-6h6M3 15h6v6"/></svg>
+        ) : (
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9V3h6M21 9V3h-6M3 15v6h6M21 15v6h-6"/></svg>
+        )}
+        <span className="agent-fs-text">{isFull ? 'Exit' : 'Fullscreen'}</span>
+      </button>
 
       <style>{`
         .agent-feed {
@@ -179,6 +227,62 @@ export default function AgentFeed() {
           font-size: 11px;
           color: var(--text-muted);
           font-family: var(--font-mono);
+        }
+
+        .agent-fs-btn {
+          position: absolute;
+          bottom: 12px;
+          right: 12px;
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          background: rgba(15, 13, 10, 0.78);
+          backdrop-filter: blur(6px);
+          border: 1px solid var(--border);
+          border-radius: 6px;
+          padding: 5px 12px;
+          font-size: 11px;
+          color: var(--text-secondary);
+          cursor: pointer;
+          font-family: var(--font-display);
+          letter-spacing: 0.04em;
+          transition: all 0.15s;
+        }
+        .agent-fs-btn:hover { border-color: var(--accent); color: #fff; }
+        .agent-fs-btn svg { display: block; }
+
+        /* Fullscreen: fill the screen and show the whole frame (no crop) */
+        .agent-feed:fullscreen {
+          width: 100vw;
+          height: 100vh;
+          aspect-ratio: auto;
+          border-radius: 0;
+          border: none;
+          background: #000;
+        }
+        .agent-feed:fullscreen .agent-stream { object-fit: contain; }
+
+        /* CSS-overlay fullscreen fallback (iOS Safari). Uses dvh so it accounts
+           for the mobile browser's dynamic toolbar. */
+        .agent-feed.css-full {
+          position: fixed;
+          inset: 0;
+          width: 100vw;
+          height: 100vh;
+          height: 100dvh;
+          aspect-ratio: auto;
+          z-index: 9999;
+          border-radius: 0;
+          border: none;
+          background: #000;
+        }
+        .agent-feed.css-full .agent-stream { object-fit: contain; }
+
+        /* On phones the labels would crowd the frame — show icons only */
+        @media (max-width: 540px) {
+          .agent-fs-text { display: none; }
+          .agent-fs-btn,
+          .agent-record-btn { padding: 7px 10px; }
         }
       `}</style>
     </div>

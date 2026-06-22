@@ -6,6 +6,7 @@ import RecordingGallery from './components/RecordingGallery.jsx'
 import LabelingStudio from './components/LabelingStudio.jsx'
 import DemoView from './components/DemoView.jsx'
 import AgentFeed from './components/AgentFeed.jsx'
+import HighlightsManager from './components/HighlightsManager.jsx'
 import { lazy, Suspense } from 'react'
 const TrainingStudio = lazy(() => import('./components/TrainingStudio.jsx'))
 import { useWebcam } from './hooks/useWebcam.js'
@@ -361,6 +362,12 @@ export default function App() {
             Label Studio
           </button>
           <button
+            className={`header-tab ${tab === 'highlights' ? 'tab-active' : ''}`}
+            onClick={() => setTab('highlights')}
+          >
+            Highlights
+          </button>
+          <button
             className={`header-tab ${tab === 'train' ? 'tab-active' : ''}`}
             onClick={() => setTab('train')}
           >
@@ -401,6 +408,7 @@ export default function App() {
       </header>
 
       {tab === 'label' && <LabelingStudio />}
+      {tab === 'highlights' && <HighlightsManager />}
       {tab === 'train' && (
         <Suspense fallback={<div style={{ padding: 32, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>Loading TensorFlow.js…</div>}>
           <TrainingStudio />
@@ -603,20 +611,63 @@ export default function App() {
           top: 20px;
         }
 
-        /* Responsive */
-        @media (max-width: 768px) {
+        /* Responsive — tablet and below: single column */
+        @media (max-width: 900px) {
           .app-main {
             grid-template-columns: 1fr;
             padding: 16px 16px 0;
           }
-
           .col-side {
             position: static;
           }
+        }
 
+        /* Mobile — stack the header into rows so nothing overflows */
+        @media (max-width: 640px) {
           .app-header {
-            padding: 0 16px;
+            height: auto;
+            flex-direction: column;
+            align-items: stretch;
+            gap: 10px;
+            padding: 12px 14px;
           }
+
+          .header-logo { justify-content: center; }
+          .logo-emoji  { font-size: 20px; }
+          .logo-text   { font-size: 20px; }
+
+          .header-tabs {
+            margin-left: 0;
+            width: 100%;
+            height: 42px;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+          }
+          .header-tab {
+            flex: 1 0 auto;
+            text-align: center;
+            padding: 0 14px;
+            font-size: 11px;
+            white-space: nowrap;
+            border-bottom: none;
+            border-right: 1px solid var(--border);
+          }
+          .header-tab:last-child { border-right: none; }
+          .tab-active {
+            background: var(--bg-card);
+            border-bottom-color: transparent !important;
+          }
+
+          .header-status {
+            margin-left: 0;
+            flex-wrap: wrap;
+            justify-content: center;
+            row-gap: 8px;
+          }
+
+          .app-main { padding: 14px 12px 0; gap: 14px; }
         }
       `}</style>
     </div>

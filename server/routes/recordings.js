@@ -5,6 +5,7 @@ import fs from 'fs/promises'
 import { fileURLToPath } from 'url'
 import { isAuthed } from './auth.js'
 import { readLabels } from '../lib/labelStore.js'
+import { readHidden } from '../lib/hiddenStore.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -54,10 +55,11 @@ const upload = multer({
 router.get('/highlights', async (_req, res) => {
   try {
     const labels = await readLabels().catch(() => ({}))
+    const hidden = await readHidden().catch(() => new Set())
     const files  = (await fs.readdir(RECORDINGS_DIR)).filter(f => f.endsWith('.webm'))
     const highlights = await Promise.all(
       files
-        .filter(f => labels[f] && labels[f] !== 'normal')
+        .filter(f => labels[f] && labels[f] !== 'normal' && !hidden.has(f))
         .map(async (filename) => {
           const stat = await fs.stat(path.join(RECORDINGS_DIR, filename))
           return { filename, label: labels[filename], createdAt: stat.mtime.toISOString(), size: stat.size }
