@@ -3,6 +3,8 @@ import multer from 'multer'
 import path from 'path'
 import fs from 'fs/promises'
 import { fileURLToPath } from 'url'
+import { isAuthed } from './auth.js'
+import { readLabels } from '../lib/labelStore.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -47,7 +49,30 @@ const upload = multer({
   }
 })
 
-router.get('/', async (_req, res) => {
+// GET /api/recordings/highlights — PUBLIC: only non-normal labeled clips, for
+// the demo page. Never exposes the full archive or unlabeled/resting footage.
+router.get('/highlights', async (_req, res) => {
+  try {
+    const labels = await readLabels().catch(() => ({}))
+    const files  = (await fs.readdir(RECORDINGS_DIR)).filter(f => f.endsWith('.webm'))
+    const highlights = await Promise.all(
+      files
+        .filter(f => labels[f] && labels[f] !== 'normal')
+        .map(async (filename) => {
+          const stat = await fs.stat(path.join(RECORDINGS_DIR, filename))
+          return { filename, label: labels[filename], createdAt: stat.mtime.toISOString(), size: stat.size }
+        })
+    )
+    highlights.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+    res.json({ recordings: highlights })
+  } catch {
+    res.status(500).json({ error: 'Failed to list highlights' })
+  }
+})
+
+// GET /api/recordings — PRIVATE: full archive listing requires login.
+router.get('/', async (req, res) => {
+  if (!isAuthed(req)) return res.status(401).json({ error: 'Login required' })
   try {
     const files = await fs.readdir(RECORDINGS_DIR)
     const recordingFiles = files.filter(f => f.endsWith('.webm'))
@@ -66,7 +91,8 @@ router.get('/', async (_req, res) => {
     recordings.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
     res.json({ recordings })
   } catch (err) {
-    res.status(500).json({ error: 'Failed to list recordings', detail: err.message })
+    console.error('List recordings failed:', err.message)
+    res.status(500).json({ error: 'Failed to list recordings' })
   }
 })
 
@@ -93,7 +119,7 @@ router.delete('/:filename', async (req, res) => {
     res.json({ deleted: filename })
   } catch (err) {
     if (err.code === 'ENOENT') res.status(404).json({ error: 'File not found' })
-    else res.status(500).json({ error: 'Failed to delete', detail: err.message })
+    else { console.error('Delete recording failed:', err.message); res.status(500).json({ error: 'Failed to delete' }) }
   }
 })
 

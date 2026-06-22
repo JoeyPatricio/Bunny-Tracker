@@ -22,19 +22,13 @@ export default function DemoView({ onLogin }) {
   const [password, setPassword]     = useState('')
   const [loginError, setLoginError] = useState('')
 
-  // Load labeled highlight clips (non-normal behaviors first)
+  // Load curated highlight clips from the public endpoint. The server returns
+  // only non-normal labeled clips, so the full archive is never exposed here.
   useEffect(() => {
-    Promise.all([
-      fetch('/api/recordings').then(r => r.json()),
-      fetch('/api/labels').then(r => r.json()),
-    ]).then(([{ recordings }, { labels }]) => {
-      const labeled = (recordings || [])
-        .map(r => ({ ...r, label: labels[r.filename] ?? null }))
-        .filter(r => r.label && baseOf(r.label) !== 'normal')
-        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-        .slice(0, 12)
-      setClips(labeled)
-    }).catch(() => {})
+    fetch('/api/recordings/highlights')
+      .then(r => r.json())
+      .then(({ recordings }) => setClips((recordings || []).slice(0, 12)))
+      .catch(() => {})
   }, [])
 
   // Poll whether the agent is actively streaming frames

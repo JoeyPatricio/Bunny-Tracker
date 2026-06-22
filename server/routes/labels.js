@@ -1,6 +1,7 @@
 import express from 'express'
 import { readLabels, updateLabels } from '../lib/labelStore.js'
 import { VALID_LABELS } from '../lib/validLabels.js'
+import { isAuthed } from './auth.js'
 
 const router = express.Router()
 
@@ -9,8 +10,9 @@ const VALID = VALID_LABELS
 // GET /api/labels/valid — return the canonical label list
 router.get('/valid', (_req, res) => res.json({ labels: VALID_LABELS }))
 
-// GET /api/labels — return all labels
-router.get('/', async (_req, res) => {
+// GET /api/labels — return all labels (PRIVATE: full map requires login)
+router.get('/', async (req, res) => {
+  if (!isAuthed(req)) return res.status(401).json({ error: 'Login required' })
   try {
     const labels = await readLabels()
     res.json({ labels })

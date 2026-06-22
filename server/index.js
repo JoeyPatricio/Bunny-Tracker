@@ -1,6 +1,7 @@
 import 'dotenv/config'
 import express from 'express'
 import cors from 'cors'
+import helmet from 'helmet'
 import rateLimit from 'express-rate-limit'
 import path from 'path'
 import { fileURLToPath } from 'url'
@@ -10,11 +11,12 @@ import labelRoutes from './routes/labels.js'
 import importRoutes from './routes/import.js'
 import modelRoutes from './routes/model.js'
 import smsRoutes from './routes/sms.js'
-import authRoutes, { adminGuard } from './routes/auth.js'
+import authRoutes, { adminGuard, isAuthed } from './routes/auth.js'
 import predictionRoutes from './routes/predictions.js'
 import streamRoutes from './routes/stream.js'
 import monitorRoutes from './routes/monitor.js'
 import { startLabelBackups } from './lib/backupLabels.js'
+import { readLabels } from './lib/labelStore.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const PORT = process.env.PORT || 3001
@@ -22,6 +24,24 @@ const PORT = process.env.PORT || 3001
 const app = express()
 
 app.set('trust proxy', 1) // behind Cloudflare Tunnel — needed for correct client IPs (rate limiting)
+
+// Security headers. CSP is relaxed for the SPA (inline styles, blob media for
+// video, same-origin connect) but blocks framing and cross-origin script.
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc:  ["'self'"],
+      styleSrc:   ["'self'", "'unsafe-inline'"],
+      imgSrc:     ["'self'", 'data:', 'blob:'],
+      mediaSrc:   ["'self'", 'blob:'],
+      connectSrc: ["'self'"],
+      frameAncestors: ["'none'"],
+      objectSrc:  ["'none'"],
+    },
+  },
+  crossOriginEmbedderPolicy: false, // MJPEG/video streaming compatibility
+}))
 
 // Same-origin in production (app is served by this server). Allow configured
 // origins for local dev only.
@@ -36,7 +56,24 @@ app.use(cors({
 }))
 app.use(express.json({ limit: '50mb' }))
 
-app.use('/recordings', express.static(path.join(__dirname, 'recordings')))
+// Guarded recording file access. Logged-in admin gets the full archive;
+// logged-out demo visitors may only fetch curated non-normal highlight clips.
+// The strict filename regex (no slashes) also blocks path traversal.
+const RECORDINGS_DIR = path.join(__dirname, 'recordings')
+app.get('/recordings/:filename', async (req, res) => {
+  const { filename } = req.params
+  if (!/^recording-[A-Za-z0-9._-]+\.webm$/.test(filename)) {
+    return res.status(400).json({ error: 'Invalid filename' })
+  }
+  if (!isAuthed(req)) {
+    const labels = await readLabels().catch(() => ({}))
+    const label  = labels[filename]
+    if (!label || label === 'normal') {
+      return res.status(403).json({ error: 'Private — log in to view this clip' })
+    }
+  }
+  res.sendFile(path.join(RECORDINGS_DIR, filename))
+})
 
 // Rate limit public read-only endpoints so bots can't DoS the server
 const publicLimiter = rateLimit({
@@ -54,7 +91,7 @@ app.use('/api/auth', authRoutes)
 
 // Admin guard: GET requests stay public (demo mode reads clips, labels,
 // predictions); anything mutating requires login
-app.use(['/api/recordings', '/api/labels', '/api/import', '/api/model',
+app.use(['/api/recordings', '/api/labels', '/api/logs', '/api/import', '/api/model',
          '/api/sms', '/api/predictions', '/api/stream', '/api/monitor'], adminGuard)
 
 // API routes
