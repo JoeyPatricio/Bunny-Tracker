@@ -52,6 +52,11 @@ const ALERT_STREAK   = Number(process.env.AGENT_ALERT_STREAK ?? 3)
 // even during obvious activity), so high motion ALWAYS saves a clip regardless
 // of the predicted label. These land unlabeled for review in Label Studio.
 const MOTION_CAPTURE = Number(process.env.AGENT_MOTION_CAPTURE ?? 25)
+// Optional n8n notification webhook. When set, confident alerts POST here so
+// n8n can fan out (email, Discord, logging, etc.). Inert until ALERT_WEBHOOK_URL
+// is defined, so it doesn't affect the existing email path until enabled.
+const ALERT_WEBHOOK_URL    = process.env.ALERT_WEBHOOK_URL
+const ALERT_WEBHOOK_SECRET = process.env.ALERT_WEBHOOK_SECRET ?? ''
 // Minimum gap between any two saved clips, so a burst of motion doesn't flood
 // the recordings folder with near-identical clips.
 const CAPTURE_COOLDOWN_MS = Number(process.env.AGENT_CAPTURE_COOLDOWN_SEC ?? 30) * 1000
@@ -169,8 +174,33 @@ async function uploadSegment() {
   return filename
 }
 
+// Fire-and-forget POST to the n8n webhook. Fan-out (email, Discord, logging)
+// happens inside n8n; this just hands off the already-vetted alert event.
+async function notifyWebhook(pred, filename) {
+  if (!ALERT_WEBHOOK_URL) return // feature flag: no URL = skip, keep email path
+  try {
+    await fetch(ALERT_WEBHOOK_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-BunnyCam-Secret': ALERT_WEBHOOK_SECRET,
+      },
+      body: JSON.stringify({
+        label:      pred.label,
+        confidence: pred.confidence,
+        filename,
+        clipUrl:    `${SERVER}/recordings/${filename}`,
+        at:         new Date().toISOString(),
+      }),
+    })
+    log(`  → n8n webhook notified (${pred.label})`)
+  } catch (err) {
+    log('  webhook failed:', err.message) // degrade, don't throw
+  }
+}
+
 // Confident non-normal behavior: save the clip, auto-label it with the
-// predicted behavior, and send an email alert.
+// predicted behavior, and route the alert out for notification.
 async function uploadAndAlert(pred) {
   const filename = await uploadSegment()
   if (!filename) return
@@ -182,13 +212,22 @@ async function uploadAndAlert(pred) {
     body: JSON.stringify({ label: pred.label }),
   }).catch(() => {})
 
-  const sms = await api('/api/sms/notify', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ label: pred.label, confidence: pred.confidence, filename }),
-  })
-  const result = await sms.json()
-  log(`  ✉ Email: ${result.sent ? 'sent' : result.reason ?? result.error}`)
+  // ── Notification routing ──
+  // When ALERT_WEBHOOK_URL is set, route through n8n (email, Discord, logging
+  // fan out there). Until then, fall back to the server's direct email path so
+  // alerts never go silent. To force the email baseline even with n8n running,
+  // just unset ALERT_WEBHOOK_URL.
+  if (ALERT_WEBHOOK_URL) {
+    await notifyWebhook(pred, filename)
+  } else {
+    const sms = await api('/api/sms/notify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ label: pred.label, confidence: pred.confidence, filename }),
+    })
+    const result = await sms.json()
+    log(`  ✉ Email: ${result.sent ? 'sent' : result.reason ?? result.error}`)
+  }
 }
 
 // Motion-triggered capture: something clearly happened but the classifier isn't
