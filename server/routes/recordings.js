@@ -20,10 +20,20 @@ await fs.mkdir(RECORDINGS_DIR, { recursive: true })
 // as a plain (unlabeled) recording. Used by the live-feed Record button.
 router.post('/grab', async (_req, res) => {
   try {
-    const files = (await fs.readdir(SEG_DIR).catch(() => []))
-      .filter(f => f.endsWith('.webm')).sort()
-    const seg = files.length >= 2 ? files[files.length - 2] : files[0]
-    if (!seg) return res.status(409).json({ error: 'No segment available — is the agent running?' })
+    // Order by mtime, not filename — ffmpeg restarts segment numbering at 0,
+    // so filename order can put a stale old segment "last" forever.
+    const names = (await fs.readdir(SEG_DIR).catch(() => []))
+      .filter(f => f.endsWith('.webm'))
+    const stats = await Promise.all(names.map(async f => ({
+      f, mtimeMs: (await fs.stat(path.join(SEG_DIR, f))).mtimeMs,
+    })))
+    stats.sort((a, b) => a.mtimeMs - b.mtimeMs)
+    const pick = stats.length >= 2 ? stats[stats.length - 2] : stats[0]
+    if (!pick) return res.status(409).json({ error: 'No segment available — is the agent running?' })
+    if (Date.now() - pick.mtimeMs > 60_000) {
+      return res.status(409).json({ error: 'Newest segment is stale — is the camera capturing?' })
+    }
+    const seg = pick.f
 
     const stamp    = new Date().toISOString().replace(/[:.]/g, '-')
     const filename = `recording-manual-${stamp}.webm`

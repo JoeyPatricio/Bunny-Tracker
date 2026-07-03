@@ -12,5 +12,9 @@ server/agent/segments/
 server/backups/
 server/labels.json.tmp
 server/labels.json.bak
+server/autolabels.json
+server/autolabels.json.tmp
+server/autolabels.json.bak
+server/model/mobilenet/
 server/monitor.json
 server/hidden.json

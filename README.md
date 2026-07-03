@@ -23,8 +23,10 @@ private to the owner).
   for inference, recording rolling clips, and pushing a live MJPEG stream. Runs
   the same on a PC (`dshow`) or a Raspberry Pi (`v4l2`) — only two `.env` lines change.
 - **Classifier** — MobileNetV2 transfer learning in TensorFlow.js. A dense head
-  trained on 150+ hand-labeled clips maps 1280-dim embeddings to five behaviors
-  (~81% validation accuracy). Train it from the browser in the Training tab.
+  trained on 150+ hand-labeled clips maps the mean ‖ std of 8 frame embeddings
+  (2×1280 dims — the std across frames is the motion signal) to five behaviors.
+  Train it from the browser in the Training tab; validation is split by source
+  video so the accuracy number reflects real generalization.
 - **Alerts** — a non-normal behavior emails you the clip (Nodemailer + Gmail),
   with motion gating, a multi-frame debounce, and a global cooldown to suppress
   false positives.
@@ -116,8 +118,10 @@ the camera, labeling, and training tabs. Without login you see the public demo.
 3. **Monitor** — the agent loads the saved model and runs live. Toggle
    **Monitoring** and **Email** from the dashboard header.
 
-Clips the agent records during an alert are auto-labeled with the predicted
-behavior (standard labels, same as a hand label) so they feed the next retrain.
+Clips the agent records during an alert carry the predicted behavior as a
+**suggestion** shown in Label Studio — confirm or correct it with a normal
+hand label. Only human-confirmed labels are ever used for training, so the
+model's own predictions can't feed back into its training data.
 
 ---
 

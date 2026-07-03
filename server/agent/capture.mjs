@@ -8,9 +8,9 @@
  *   Raspberry Pi: CAMERA_FORMAT=v4l2  CAMERA_INPUT=/dev/video0
  *
  * Pipeline:
- *   ffmpeg (one process) ──► raw 224×224 frames every 3s ──► motion check
+ *   ffmpeg (one process) ──► raw 224×224 frames every 1.5s ──► motion check
  *                       └──► rolling 12s webm segments in tmp/segments/
- *   frame ──► MobileNetV2 ──► classifier ──► prediction
+ *   frame ──► MobileNetV2 ──► rolling mean of last 8 embeddings ──► classifier
  *   non-normal prediction ──► upload latest segment ──► label + email
  *
  * All API calls go through the same server endpoints the web app uses.
@@ -38,7 +38,14 @@ const CAMERA_INPUT   = process.env.CAMERA_INPUT      ?? 'video=onn 4K Webcam'
 const CAMERA_SIZE    = process.env.CAMERA_SIZE       ?? '1280x720'
 const CAMERA_FPS     = process.env.CAMERA_FPS        ?? '30'
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD
-const FRAME_INTERVAL = Number(process.env.AGENT_FRAME_SECONDS ?? 3)
+// Seconds between inference frames. 1.5s matches the frame spacing the
+// classifier was trained on (TrainingStudio samples 8 frames evenly across a
+// ~12s clip), so a full EMBED_WINDOW below spans the same ~12s as one clip.
+const FRAME_INTERVAL = Number(process.env.AGENT_FRAME_SECONDS ?? 1.5)
+// Rolling window size for embedding averaging — must match FRAMES_PER_CLIP
+// used during training (the classifier expects the MEAN of this many frame
+// embeddings, not a single-frame embedding).
+const EMBED_WINDOW   = Number(process.env.AGENT_EMBED_WINDOW ?? 8)
 const SEGMENT_SECS   = Number(process.env.AGENT_SEGMENT_SECONDS ?? 12)
 const MOTION_THRESH  = Number(process.env.AGENT_MOTION_THRESHOLD ?? 9)
 const CONF_THRESH    = Number(process.env.AGENT_CONFIDENCE_THRESHOLD ?? 70)
@@ -119,21 +126,80 @@ let mobilenet, classifier, labels
 
 async function loadModels() {
   log('Loading MobileNetV2…')
-  mobilenet = await mobilenetModule.load({ version: 2, alpha: 1.0 })
+  // Self-hosted copy first (fast, offline-capable; created by
+  // scripts/download-mobilenet.mjs), CDN as fallback. inputRange [0,1] is
+  // required with modelUrl — it's what this TFHub model expects, and the
+  // package only applies it automatically for its built-in CDN URLs.
+  try {
+    mobilenet = await mobilenetModule.load({
+      version: 2, alpha: 1.0,
+      modelUrl: `${SERVER}/model/mobilenet/model.json`,
+      inputRange: [0, 1],
+    })
+    log('  (loaded self-hosted MobileNet)')
+  } catch (err) {
+    log(`  self-hosted MobileNet unavailable (${err.message}) — falling back to CDN`)
+    mobilenet = await mobilenetModule.load({ version: 2, alpha: 1.0 })
+  }
   log('Loading classifier from server…')
   classifier = await tf.loadLayersModel(`${SERVER}/model/model.json`)
   labels = await (await fetch(`${SERVER}/model/labels.json`)).json()
-  log(`✓ Models ready (classes: ${labels.join(', ')})`)
+  const inputDim = classifier.inputs[0].shape[1]
+  log(`✓ Models ready (classes: ${labels.join(', ')}; features: ` +
+      `${inputDim === 1280 ? 'mean only — retrain to enable motion features' : 'mean‖std'})`)
+}
+
+// The classifier head was trained on the MEAN of 8 frame embeddings sampled
+// evenly across each ~12s clip (see TrainingStudio.jsx), so live inference
+// must aggregate the same way: keep a rolling window of single-frame
+// embeddings and classify their mean. Classifying one raw frame embedding —
+// which the model never saw in training — is what made live predictions
+// unreliable.
+let embedWindow = []
+
+function embedFrame(frameBuf) {
+  return tf.tidy(() => {
+    const img = tf.tensor3d(frameBuf, [224, 224, 3], 'int32')
+    return mobilenet.infer(img, true).dataSync() // Float32Array [1280]
+  })
+}
+
+// Build the classifier input from the window. A retrained model takes
+// mean ‖ std (2×1280): the std across frames is the motion signal that
+// separates zoomies from resting. An older model takes the mean only —
+// `withStd` matches whatever model is loaded (population std, like tf.moments
+// used in training).
+function windowFeatures(window, withStd) {
+  const dim  = window[0].length
+  const feat = new Float32Array(withStd ? dim * 2 : dim)
+  for (const emb of window) {
+    for (let i = 0; i < dim; i++) feat[i] += emb[i]
+  }
+  for (let i = 0; i < dim; i++) feat[i] /= window.length
+  if (withStd) {
+    for (const emb of window) {
+      for (let i = 0; i < dim; i++) {
+        const d = emb[i] - feat[i]
+        feat[dim + i] += d * d
+      }
+    }
+    for (let i = 0; i < dim; i++) feat[dim + i] = Math.sqrt(feat[dim + i] / window.length)
+  }
+  return feat
 }
 
 function classify(frameBuf) {
+  embedWindow.push(embedFrame(frameBuf))
+  if (embedWindow.length > EMBED_WINDOW) embedWindow.shift()
+
+  const inputDim = classifier.inputs[0].shape[1]
+  const feat = windowFeatures(embedWindow, inputDim === embedWindow[0].length * 2)
+
   return tf.tidy(() => {
-    const img    = tf.tensor3d(frameBuf, [224, 224, 3], 'int32')
-    const embed  = mobilenet.infer(img, true)
-    const probs  = classifier.predict(embed).squeeze()
-    const idx    = probs.argMax().dataSync()[0]
-    const conf   = Math.round(probs.dataSync()[idx] * 100)
-    return { label: labels[idx], confidence: conf }
+    const probs = classifier.predict(tf.tensor2d(feat, [1, feat.length])).squeeze()
+    const idx   = probs.argMax().dataSync()[0]
+    const conf  = Math.round(probs.dataSync()[idx] * 100)
+    return { label: labels[idx], confidence: conf, windowFill: embedWindow.length }
   })
 }
 
@@ -152,10 +218,32 @@ function motionLevel(frameBuf) {
 }
 
 // ── Segment upload ──────────────────────────────────────────────────────────
+// A finished segment is only worth uploading if it was written moments ago.
+// 2.5× the segment length allows one full segment of slack plus margin.
+const SEGMENT_MAX_AGE_MS = SEGMENT_SECS * 2.5 * 1000
+
+async function segmentsByMtime() {
+  const names = (await fs.readdir(SEG_DIR)).filter(f => f.endsWith('.webm'))
+  const segs = await Promise.all(names.map(async name => ({
+    name,
+    mtimeMs: (await fs.stat(path.join(SEG_DIR, name))).mtimeMs,
+  })))
+  return segs.sort((a, b) => a.mtimeMs - b.mtimeMs)
+}
+
 async function latestFinishedSegment() {
-  const files = (await fs.readdir(SEG_DIR)).filter(f => f.endsWith('.webm')).sort()
-  // The newest file is still being written — take the one before it
-  return files.length >= 2 ? files[files.length - 2] : null
+  // Order by mtime, NOT filename: ffmpeg restarts segment numbering at 0, so
+  // after a restart a fresh seg-00001 sorts before a stale seg-30591 and the
+  // stale file would be picked forever. That's how byte-identical clips ended
+  // up uploaded (and auto-labeled) for days.
+  const segs = await segmentsByMtime()
+  if (segs.length < 2) return null
+  const seg = segs[segs.length - 2] // the newest file is still being written
+  if (Date.now() - seg.mtimeMs > SEGMENT_MAX_AGE_MS) {
+    log(`  (latest finished segment ${seg.name} is stale — skipping upload)`)
+    return null
+  }
+  return seg.name
 }
 
 // Upload the latest finished segment as a recording. Returns the saved
@@ -199,14 +287,15 @@ async function notifyWebhook(pred, filename) {
   }
 }
 
-// Confident non-normal behavior: save the clip, auto-label it with the
-// predicted behavior, and route the alert out for notification.
+// Confident non-normal behavior: save the clip, record the predicted behavior
+// as a SUGGESTION (not a real label — the model's own predictions must never
+// feed back into training unreviewed), and route the alert out.
 async function uploadAndAlert(pred) {
   const filename = await uploadSegment()
   if (!filename) return
-  log(`  ↑ Uploaded clip ${filename} → labeled ${pred.label}`)
+  log(`  ↑ Uploaded clip ${filename} → suggested ${pred.label} (review in Label Studio)`)
 
-  await api(`/api/labels/${filename}`, {
+  await api(`/api/labels/${filename}/suggest`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ label: pred.label }),
@@ -240,11 +329,14 @@ async function uploadMotionClip(motion) {
 }
 
 // ── Cleanup old segments (keep last ~10 minutes) ───────────────────────────
+// Prune by age, not by count: counting newest-by-filename kept stale
+// high-numbered segments alive (and deleted fresh ones) after ffmpeg restarts.
 async function pruneSegments() {
-  const keep = Math.ceil(600 / SEGMENT_SECS)
-  const files = (await fs.readdir(SEG_DIR)).filter(f => f.endsWith('.webm')).sort()
-  for (const f of files.slice(0, Math.max(0, files.length - keep))) {
-    await fs.unlink(path.join(SEG_DIR, f)).catch(() => {})
+  const cutoff = Date.now() - 600_000
+  for (const seg of await segmentsByMtime()) {
+    if (seg.mtimeMs < cutoff) {
+      await fs.unlink(path.join(SEG_DIR, seg.name)).catch(() => {})
+    }
   }
 }
 
@@ -283,6 +375,7 @@ async function handleFrame(frameBuf) {
   const captureReady = now - lastCaptureAt >= CAPTURE_COOLDOWN_MS
 
   log(`frame  motion=${motion.toFixed(1)}  →  ${pred.label} ${pred.confidence}%` +
+      `${pred.windowFill < EMBED_WINDOW ? `  (warmup ${pred.windowFill}/${EMBED_WINDOW})` : ''}` +
       `${candidate ? `  (streak ${streakCount}/${ALERT_STREAK})` : ''}` +
       `${behaviorAlert ? '  ⚠ ALERT' : motionEvent ? '  ● MOTION' : ''}`)
 
@@ -323,8 +416,9 @@ function startCapture() {
          '-video_size', CAMERA_SIZE, '-framerate', CAMERA_FPS]
       : []),
     '-i', CAMERA_INPUT,
-    // Output 1: raw frames for inference
-    '-vf', `fps=1/${FRAME_INTERVAL},scale=224:224`,
+    // Output 1: raw frames for inference. Emit fps as a decimal — ffmpeg's
+    // rational parser doesn't accept a fractional denominator like 1/1.5.
+    '-vf', `fps=${(1 / FRAME_INTERVAL).toFixed(4)},scale=224:224`,
     '-f', 'rawvideo', '-pix_fmt', 'rgb24', 'pipe:1',
     // Output 2: rolling recorded segments. The fps filter is critical: it
     // resamples to a constant 15 fps against the real input timestamps, so each
@@ -406,6 +500,7 @@ async function pollMonitor() {
       if (ffProc) ffProc.kill('SIGTERM')
       prevFrame = null
       lastLabel = null
+      embedWindow = [] // don't blend pre-pause frames into post-resume predictions
     } else if (enabled && paused) {
       paused = false
       log('▶ Monitoring turned ON from dashboard — starting capture')

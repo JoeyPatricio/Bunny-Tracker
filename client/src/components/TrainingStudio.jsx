@@ -12,8 +12,21 @@ const LABEL_COLOR = {
   zoomies:  '#7dff7d',
 }
 const FRAMES_PER_CLIP = 8   // frames sampled per clip
+// Augmented variants per TRAINING clip, on top of the original: a mirrored
+// copy plus a brightness/contrast-jittered copy. Multiplies effective training
+// data and lighting robustness at zero labeling cost. Validation clips are
+// never augmented — the metric stays grounded in real footage.
+const AUG_COPIES      = 2
 const EMBEDDING_DIM   = 1280 // MobileNet v2 alpha=1.0 embedding size
-const EPOCHS          = 40
+// Classifier input = mean ‖ std of the frame embeddings. The mean captures
+// pose/appearance; the std across frames captures how much the scene CHANGES
+// over the clip — the motion signal that separates zoomies from resting,
+// which a mean alone (let alone a single frame) throws away.
+const FEATURE_DIM     = EMBEDDING_DIM * 2
+// Upper bound only — training stops early (and keeps the best epoch's
+// weights) once val_loss hasn't improved for PATIENCE epochs.
+const EPOCHS          = 100
+const PATIENCE        = 10
 const BATCH_SIZE      = 16
 const LEARNING_RATE   = 0.001
 
@@ -59,12 +72,166 @@ function loadVideo(src) {
   })
 }
 
+/**
+ * Load MobileNet from our own server — the dashboard's CSP (connect-src
+ * 'self') blocks tfhub.dev, and a local copy also works offline. Falls back
+ * to the CDN if the local copy is missing (run
+ * server/scripts/download-mobilenet.mjs to create it).
+ * inputRange [0,1] is REQUIRED with modelUrl: it's what this TFHub model
+ * expects, and the package only applies it automatically for CDN loads.
+ */
+async function loadMobilenet() {
+  try {
+    return await mobilenetModule.load({
+      version: 2, alpha: 1.0,
+      modelUrl: '/model/mobilenet/model.json',
+      inputRange: [0, 1],
+    })
+  } catch {
+    return mobilenetModule.load({ version: 2, alpha: 1.0 })
+  }
+}
+
 /** Run mobilenet.infer on an ImageData, return 1-D tensor (1280 for MobileNet v2 alpha=1.0) */
 function embedFrame(mobilenet, imageData) {
   return tf.tidy(() => {
     const img = tf.browser.fromPixels(imageData)
     return mobilenet.infer(img, true).squeeze() // [1280]
   })
+}
+
+/**
+ * Source-group key for a clip. Clips cut from the same source video (or the
+ * same recording session) share scene, lighting, and rabbit — if they straddle
+ * the train/val split, validation accuracy measures "have I seen this video
+ * before" instead of generalization.
+ */
+function groupKey(filename) {
+  // Timestamped agent/manual clips: one group per calendar hour ≈ one session
+  let m = filename.match(/(\d{4}-\d{2}-\d{2}T\d{2})/)
+  if (m) return m[1]
+  // Curated imports: recording-<tag>-srcNN-MM.webm → source video NN
+  m = filename.match(/^recording-([a-z]+)-src(\d+)/i)
+  if (m) return `${m[1]}-src${m[2]}`
+  // Compilations / named sources: recording-<tag>-<name>-NN.webm
+  m = filename.match(/^recording-([a-z]+)-([a-z]+)/i)
+  if (m) return `${m[1]}-${m[2]}`
+  return filename
+}
+
+/**
+ * Group-aware stratified split at the CLIP level, done before feature
+ * extraction. All clips from one source video / session stay on the same
+ * side (no leakage), each class aims for ~valFraction of its clips in
+ * validation, and augmentation can then be applied to training clips only.
+ */
+function splitByGroup(clips, valFraction = 0.2) {
+  const targets = clips.map(([, label]) => LABELS.indexOf(label))
+  const classTotal = Array(LABELS.length).fill(0)
+  targets.forEach(t => { classTotal[t]++ })
+  const quota = classTotal.map(c => Math.max(1, Math.round(c * valFraction)))
+
+  const groupMap = new Map() // group key → clip indices
+  clips.forEach(([filename], i) => {
+    const g = groupKey(filename)
+    if (!groupMap.has(g)) groupMap.set(g, [])
+    groupMap.get(g).push(i)
+  })
+  const groupList = Array.from(groupMap.keys())
+  tf.util.shuffle(groupList)
+
+  const valClass = Array(LABELS.length).fill(0)
+  let train = []
+  let val   = []
+  for (const g of groupList) {
+    const idxs = groupMap.get(g)
+    const counts = Array(LABELS.length).fill(0)
+    idxs.forEach(i => { counts[targets[i]]++ })
+    // Send the group to validation if some class there still needs val
+    // samples and no class would overshoot its quota by more than 1.
+    const needed = counts.some((c, k) => c > 0 && valClass[k] < quota[k])
+    const fits   = counts.every((c, k) => c === 0 || valClass[k] + c <= quota[k] + 1)
+    if (needed && fits) {
+      val = val.concat(idxs)
+      counts.forEach((c, k) => { valClass[k] += c })
+    } else {
+      train = train.concat(idxs)
+    }
+  }
+
+  // Degenerate fallback (too few groups to stratify): plain random 80/20
+  let fallback = false
+  if (val.length === 0 || train.length === 0) {
+    fallback = true
+    const idx = Array.from(tf.util.createShuffledIndices(clips.length))
+    const at = Math.floor(clips.length * (1 - valFraction))
+    train = idx.slice(0, at)
+    val   = idx.slice(at)
+    valClass.fill(0)
+    val.forEach(i => { valClass[targets[i]]++ })
+  }
+
+  return {
+    train: train.map(i => clips[i]),
+    val:   val.map(i => clips[i]),
+    groups: groupMap.size,
+    valPerClass: valClass,
+    totalPerClass: classTotal,
+    fallback,
+  }
+}
+
+// ── Frame augmentation (training clips only) ─────────────────────────────────
+const clamp8 = v => (v < 0 ? 0 : v > 255 ? 255 : v)
+
+function flipImageData(img) {
+  const { width: w, height: h, data } = img
+  const out = new ImageData(w, h)
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const src = (y * w + x) * 4
+      const dst = (y * w + (w - 1 - x)) * 4
+      out.data[dst]     = data[src]
+      out.data[dst + 1] = data[src + 1]
+      out.data[dst + 2] = data[src + 2]
+      out.data[dst + 3] = data[src + 3]
+    }
+  }
+  return out
+}
+
+function jitterImageData(img, brightness, contrast) {
+  const out = new ImageData(img.width, img.height)
+  const d = img.data
+  const o = out.data
+  for (let i = 0; i < d.length; i += 4) {
+    o[i]     = clamp8((d[i]     - 128) * contrast + 128 + brightness)
+    o[i + 1] = clamp8((d[i + 1] - 128) * contrast + 128 + brightness)
+    o[i + 2] = clamp8((d[i + 2] - 128) * contrast + 128 + brightness)
+    o[i + 3] = 255
+  }
+  return out
+}
+
+/**
+ * Original + AUG_COPIES augmented variants of a clip's frames. Each variant
+ * applies ONE transform consistently across all frames (whole-clip mirror,
+ * whole-clip lighting shift) — like a different camera placement or time of
+ * day, without disturbing the frame-to-frame motion signal the std features
+ * depend on.
+ */
+function makeVariants(frames) {
+  const variants = [frames, frames.map(flipImageData)]
+  while (variants.length < AUG_COPIES + 1) {
+    const brightness = Math.random() * 50 - 25   // ±25 levels
+    const contrast   = 0.85 + Math.random() * 0.35 // 0.85–1.2×
+    const alsoFlip   = Math.random() < 0.5
+    variants.push(frames.map(f => {
+      const j = jitterImageData(f, brightness, contrast)
+      return alsoFlip ? flipImageData(j) : j
+    }))
+  }
+  return variants
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -104,70 +271,89 @@ export default function TrainingStudio() {
 
       if (valid.length < 10) throw new Error('Not enough labeled clips to train (need ≥ 10)')
 
-      // 2 ── Load MobileNet
+      // 2 ── Split clips into train/val BEFORE extraction, so augmented
+      // copies are only ever created for training clips.
+      const split = splitByGroup(valid)
+      if (split.fallback) {
+        addLog('⚠ Too few source groups for a grouped split — falling back to random 80/20', 'warn')
+      } else {
+        addLog(`Group-aware split: ${split.groups} source groups → ${split.train.length} train clips / ${split.val.length} val clips`)
+        addLog(`  val per class: ${LABELS.map((l, k) => `${l} ${split.valPerClass[k]}/${split.totalPerClass[k]}`).join(' · ')}`)
+      }
+
+      // 3 ── Load MobileNet
       addLog('Loading MobileNet v2…')
       await tf.ready()
-      const mobilenet = await mobilenetModule.load({ version: 2, alpha: 1.0 })
+      const mobilenet = await loadMobilenet()
       addLog('MobileNet loaded ✓')
 
-      // 3 ── Extract features
+      // 4 ── Extract features. Training clips also yield AUG_COPIES augmented
+      // variants; validation clips only their original.
       setPhase('extracting')
-      addLog(`Extracting features from ${valid.length} clips (${FRAMES_PER_CLIP} frames each)…`)
+      const allClips = [
+        ...split.train.map(([fn, label]) => [fn, label, 'train']),
+        ...split.val.map(([fn, label]) => [fn, label, 'val']),
+      ]
+      addLog(`Extracting features from ${allClips.length} clips (${FRAMES_PER_CLIP} frames each, ${AUG_COPIES}× augmentation on train)…`)
 
-      const features = []
-      const targets  = []
-      setProgress({ current: 0, total: valid.length, label: '' })
+      const trainFeatures = []
+      const trainTargets  = []
+      const valFeatures   = []
+      const valTargets    = []
+      setProgress({ current: 0, total: allClips.length, label: '' })
 
-      for (let i = 0; i < valid.length; i++) {
+      for (let i = 0; i < allClips.length; i++) {
         if (stopRef.current) { addLog('Stopped by user.', 'warn'); setPhase('idle'); return }
 
-        const [filename, label] = valid[i]
-        setProgress({ current: i + 1, total: valid.length, label: filename })
+        const [filename, label, side] = allClips[i]
+        setProgress({ current: i + 1, total: allClips.length, label: filename })
 
         try {
           const video  = await loadVideo(`/recordings/${filename}`)
           const frames = await extractFrames(video, FRAMES_PER_CLIP)
+          const variants = side === 'train' ? makeVariants(frames) : [frames]
 
-          // Average embeddings across frames
-          const embeddings = frames.map(f => embedFrame(mobilenet, f))
-          const stacked    = tf.stack(embeddings)     // [N, 1024]
-          const mean       = stacked.mean(0)          // [1024]
-          const arr        = await mean.data()
+          for (const variant of variants) {
+            // Mean ‖ std of embeddings across frames (see FEATURE_DIM note)
+            const embeddings = variant.map(f => embedFrame(mobilenet, f))
+            const feat = tf.tidy(() => {
+              const stacked = tf.stack(embeddings)              // [N, 1280]
+              const { mean, variance } = tf.moments(stacked, 0) // [1280] each
+              return tf.concat([mean, variance.sqrt()])         // [2560]
+            })
+            const arr = await feat.data()
 
-          features.push(Array.from(arr))
-          targets.push(LABELS.indexOf(label))
-
-          tf.dispose([...embeddings, stacked, mean])
+            if (side === 'train') {
+              trainFeatures.push(Array.from(arr))
+              trainTargets.push(LABELS.indexOf(label))
+            } else {
+              valFeatures.push(Array.from(arr))
+              valTargets.push(LABELS.indexOf(label))
+            }
+            tf.dispose([...embeddings, feat])
+          }
         } catch (err) {
           addLog(`  ⚠ Skipping ${filename}: ${err.message}`, 'warn')
         }
       }
 
-      addLog(`Feature extraction complete: ${features.length} samples`)
+      addLog(`Feature extraction complete: ${trainFeatures.length} train samples (incl. augmented) + ${valFeatures.length} val samples`)
+      if (trainFeatures.length === 0 || valFeatures.length === 0) {
+        throw new Error('Not enough usable clips after extraction')
+      }
 
       // 4 ── Build + train classifier
       setPhase('training')
       addLog('Building classifier…')
 
-      const xs = tf.tensor2d(features)                              // [N, 1024]
-      const ys = tf.oneHot(tf.tensor1d(targets, 'int32'), LABELS.length) // [N, 5]
-
-      // Shuffle indices
-      const n = features.length
-      const idx = tf.util.createShuffledIndices(n)
-      const splitAt = Math.floor(n * 0.8)
-      const trainIdx = Array.from(idx).slice(0, splitAt)
-      const valIdx   = Array.from(idx).slice(splitAt)
-
-      const gather = (t, indices) => tf.gather(t, tf.tensor1d(indices, 'int32'))
-      const xTrain = gather(xs, trainIdx)
-      const yTrain = gather(ys, trainIdx)
-      const xVal   = gather(xs, valIdx)
-      const yVal   = gather(ys, valIdx)
+      const xTrain = tf.tensor2d(trainFeatures)                                  // [N, 2560]
+      const yTrain = tf.oneHot(tf.tensor1d(trainTargets, 'int32'), LABELS.length) // [N, 5]
+      const xVal   = tf.tensor2d(valFeatures)
+      const yVal   = tf.oneHot(tf.tensor1d(valTargets, 'int32'), LABELS.length)
 
       const model = tf.sequential({
         layers: [
-          tf.layers.dense({ inputShape: [EMBEDDING_DIM], units: 256, activation: 'relu',
+          tf.layers.dense({ inputShape: [FEATURE_DIM], units: 256, activation: 'relu',
             kernelRegularizer: tf.regularizers.l2({ l2: 1e-4 }) }),
           tf.layers.dropout({ rate: 0.4 }),
           tf.layers.dense({ units: 128, activation: 'relu',
@@ -183,20 +369,47 @@ export default function TrainingStudio() {
         metrics: ['accuracy'],
       })
 
-      addLog(`Training ${splitAt} samples, validating ${valIdx.length}…`)
-      addLog(`Architecture: 1024 → 256 → 128 → ${LABELS.length}`)
+      // Inverse-frequency class weights over the TRAINING subset, so
+      // under-represented behaviors (standing has ~3× fewer clips than
+      // normal) pull their weight in the loss instead of being drowned out.
+      const trainClassCount = Array(LABELS.length).fill(0)
+      trainTargets.forEach(t => { trainClassCount[t]++ })
+      const classWeight = {}
+      trainClassCount.forEach((c, k) => {
+        classWeight[k] = trainTargets.length / (LABELS.length * Math.max(1, c))
+      })
+      addLog(`Class weights: ${LABELS.map((l, k) => `${l} ${classWeight[k].toFixed(2)}`).join(' · ')}`)
+
+      addLog(`Training ${trainTargets.length} samples, validating ${valTargets.length}…`)
+      addLog(`Architecture: ${FEATURE_DIM} (mean‖std) → 256 → 128 → ${LABELS.length}`)
 
       const historyLog = []
+      // Early stopping with best-weights restore: the last epoch of a long
+      // run is usually past the overfitting knee, so keep the weights from
+      // the epoch with the lowest validation loss instead.
+      let bestValLoss = Infinity
+      let bestEpoch   = -1
+      let bestWeights = null
 
       await model.fit(xTrain, yTrain, {
         epochs:          EPOCHS,
         batchSize:       BATCH_SIZE,
         validationData:  [xVal, yVal],
+        classWeight,
         callbacks: {
           onEpochEnd: (epoch, logs) => {
             const acc    = (logs.acc    ?? logs.accuracy   ?? 0)
             const valAcc = (logs.val_acc ?? logs.val_accuracy ?? 0)
             historyLog.push({ epoch, acc, valAcc })
+            if (logs.val_loss < bestValLoss) {
+              bestValLoss = logs.val_loss
+              bestEpoch   = epoch
+              if (bestWeights) bestWeights.forEach(w => w.dispose())
+              bestWeights = model.getWeights().map(w => w.clone())
+            } else if (epoch - bestEpoch >= PATIENCE) {
+              model.stopTraining = true
+              addLog(`  Early stop at epoch ${epoch + 1} — val_loss stuck for ${PATIENCE} epochs`)
+            }
             if ((epoch + 1) % 5 === 0) {
               addLog(`  Epoch ${epoch + 1}/${EPOCHS}  acc=${(acc * 100).toFixed(1)}%  val_acc=${(valAcc * 100).toFixed(1)}%`)
             }
@@ -204,19 +417,25 @@ export default function TrainingStudio() {
         },
       })
 
-      const lastEpoch  = historyLog[historyLog.length - 1]
-      const finalAcc   = lastEpoch.acc
-      const finalValAcc = lastEpoch.valAcc
+      if (bestWeights) {
+        model.setWeights(bestWeights)
+        bestWeights.forEach(w => w.dispose())
+        addLog(`Restored best epoch ${bestEpoch + 1}/${historyLog.length} (val_loss ${bestValLoss.toFixed(3)})`)
+      }
 
-      // 5 ── Confusion matrix on validation set
+      const best = historyLog[bestEpoch] ?? historyLog[historyLog.length - 1]
+      const finalAcc    = best.acc
+      const finalValAcc = best.valAcc
+
+      // 5 ── Confusion matrix on validation set (real clips only, no augmentation)
       const preds  = model.predict(xVal)
       const predIds = Array.from(await preds.argMax(1).data())
-      const trueIds = valIdx.map(i => targets[i])
+      const trueIds = valTargets
 
       const confMatrix = LABELS.map(() => Array(LABELS.length).fill(0))
       trueIds.forEach((t, i) => { confMatrix[t][predIds[i]]++ })
 
-      tf.dispose([xs, ys, xTrain, yTrain, xVal, yVal, preds])
+      tf.dispose([xTrain, yTrain, xVal, yVal, preds])
 
       setMetrics({ finalAcc, finalValAcc, confMatrix, history: historyLog })
       addLog(`✅ Training complete — train acc ${(finalAcc * 100).toFixed(1)}%  val acc ${(finalValAcc * 100).toFixed(1)}%`, 'success')

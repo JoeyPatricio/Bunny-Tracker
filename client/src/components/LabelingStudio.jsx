@@ -168,6 +168,7 @@ function formatSize(bytes) {
 export default function LabelingStudio() {
   const [recordings, setRecordings] = useState([])  // [{ filename, createdAt, size }]
   const [labels, setLabels]         = useState({})   // { filename: 'zoomies'|'yawn'|'normal'|'grooming'|'standing' }
+  const [suggestions, setSuggestions] = useState({}) // agent-predicted labels awaiting review (not training data)
   const [index, setIndex]           = useState(0)
   const [filter, setFilter]         = useState('all') // 'all' | 'unlabeled' | 'zoomies' | 'yawn' | 'normal' | 'grooming' | 'standing'
   const [saving, setSaving]         = useState(false)
@@ -186,6 +187,7 @@ export default function LabelingStudio() {
       const labData = await labRes.json()
       setRecordings(recData.recordings || [])
       setLabels(labData.labels || {})
+      setSuggestions(labData.suggestions || {})
     } catch (err) {
       console.error('Failed to load labeling data:', err)
     }
@@ -203,6 +205,7 @@ export default function LabelingStudio() {
         const labData = await labRes.json()
         setRecordings(recData.recordings || [])
         setLabels(labData.labels || {})
+        setSuggestions(labData.suggestions || {})
       } catch (err) {
         console.error('Failed to load labeling data:', err)
       } finally {
@@ -254,6 +257,12 @@ export default function LabelingStudio() {
         return // do NOT optimistically update — the label did not save
       }
       setLabels(prev => ({ ...prev, [current.filename]: label }))
+      // Labeling resolves the agent's suggestion (server clears it too)
+      setSuggestions(prev => {
+        const next = { ...prev }
+        delete next[current.filename]
+        return next
+      })
       // Advance to next clip automatically
       setIndex(prev => Math.min(prev + 1, filtered.length - 1))
     } catch (err) {
@@ -383,7 +392,8 @@ export default function LabelingStudio() {
     )
   }
 
-  const currentLabel = current ? labels[current.filename] : null
+  const currentLabel      = current ? labels[current.filename] : null
+  const currentSuggestion = current && !currentLabel ? suggestions[current.filename] : null
 
   return (
     <div className="studio">
@@ -482,6 +492,13 @@ export default function LabelingStudio() {
               <div className="clip-meta">
                 <span className="clip-name">{current.filename}</span>
                 <span className="clip-detail">{formatDate(current.createdAt)} · {formatSize(current.size)}</span>
+              </div>
+            )}
+
+            {/* Agent suggestion — a prediction awaiting review, not a saved label */}
+            {currentSuggestion && (
+              <div className="suggestion-hint">
+                🤖 Agent suggests <strong>{currentSuggestion}</strong> — label to confirm or correct
               </div>
             )}
 
@@ -1009,6 +1026,17 @@ export default function LabelingStudio() {
           letter-spacing: 0.05em;
           opacity: 0.6;
         }
+
+        .suggestion-hint {
+          text-align: center;
+          font-size: 12px;
+          color: var(--text-secondary);
+          background: var(--bg-card);
+          border: 1px dashed var(--border);
+          border-radius: var(--radius);
+          padding: 6px 10px;
+        }
+        .suggestion-hint strong { text-transform: uppercase; }
 
         /* Filmstrip */
         .filmstrip {
