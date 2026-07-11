@@ -51,14 +51,20 @@ const MOTION_THRESH  = Number(process.env.AGENT_MOTION_THRESHOLD ?? 9)
 const CONF_THRESH    = Number(process.env.AGENT_CONFIDENCE_THRESHOLD ?? 70)
 // Below this motion level, treat the frame as "nothing happening" (blank/static
 // room) and never alert — the classifier still picks a class but we ignore it.
-const MOTION_FLOOR   = Number(process.env.AGENT_MOTION_FLOOR ?? 4)
+// Motion units are % of pixels changed between frames (0–100).
+const MOTION_FLOOR   = Number(process.env.AGENT_MOTION_FLOOR ?? 1)
 // Require the same alert label across this many consecutive frames before
 // emailing — rejects single-frame flicker false positives.
 const ALERT_STREAK   = Number(process.env.AGENT_ALERT_STREAK ?? 3)
 // Motion-triggered capture: the classifier is unreliable (often says "normal"
 // even during obvious activity), so high motion ALWAYS saves a clip regardless
 // of the predicted label. These land unlabeled for review in Label Studio.
-const MOTION_CAPTURE = Number(process.env.AGENT_MOTION_CAPTURE ?? 25)
+const MOTION_CAPTURE = Number(process.env.AGENT_MOTION_CAPTURE ?? 2.5)
+// A single high-motion frame is usually a lighting step (sun/clouds or the
+// camera's auto-exposure re-adjusting shifts the whole scene for a frame or
+// two, then settles). Require this many consecutive frames at or above
+// MOTION_CAPTURE before saving — real animal activity spans several seconds.
+const MOTION_STREAK  = Number(process.env.AGENT_MOTION_STREAK ?? 3)
 // Optional n8n notification webhook. When set, confident alerts POST here so
 // n8n can fan out (email, Discord, logging, etc.). Inert until ALERT_WEBHOOK_URL
 // is defined, so it doesn't affect the existing email path until enabled.
@@ -203,18 +209,25 @@ function classify(frameBuf) {
   })
 }
 
-// ── Motion detection (mean absolute pixel difference) ──────────────────────
+// ── Motion detection (% of pixels changed) ─────────────────────────────────
+// Percentage of sampled bytes whose frame-to-frame difference exceeds
+// PIXEL_DIFF. A whole-frame MEAN diff dilutes a small animal into the noise
+// floor (a bunny covering 4% of the frame barely moves the average), while a
+// changed-pixel count keeps localized motion visible and ignores sensor noise
+// and gradual lighting drift, which stay under the per-pixel threshold.
+const PIXEL_DIFF = 25
 let prevFrame = null
 
 function motionLevel(frameBuf) {
   if (!prevFrame) { prevFrame = Buffer.from(frameBuf); return 0 }
-  let sum = 0
+  let changed = 0
+  const samples = Math.ceil(frameBuf.length / 16)
   // Sample every 16th byte for speed
   for (let i = 0; i < frameBuf.length; i += 16) {
-    sum += Math.abs(frameBuf[i] - prevFrame[i])
+    if (Math.abs(frameBuf[i] - prevFrame[i]) > PIXEL_DIFF) changed++
   }
   prevFrame = Buffer.from(frameBuf)
-  return sum / (frameBuf.length / 16)
+  return (changed / samples) * 100
 }
 
 // ── Segment upload ──────────────────────────────────────────────────────────
@@ -344,6 +357,7 @@ async function pruneSegments() {
 let lastLabel    = null
 let streakLabel  = null
 let streakCount  = 0
+let motionStreak = 0
 let lastCaptureAt = 0
 
 async function handleFrame(frameBuf) {
@@ -367,9 +381,10 @@ async function handleFrame(frameBuf) {
   }
 
   const behaviorAlert = candidate && streakCount >= ALERT_STREAK
-  // Safety net: lots of motion clearly means activity even if the classifier
+  // Safety net: sustained motion clearly means activity even if the classifier
   // calls it "normal". Capture it regardless so nothing is missed.
-  const motionEvent   = motion >= MOTION_CAPTURE
+  motionStreak = motion >= MOTION_CAPTURE ? motionStreak + 1 : 0
+  const motionEvent   = motionStreak >= MOTION_STREAK
 
   const now          = Date.now()
   const captureReady = now - lastCaptureAt >= CAPTURE_COOLDOWN_MS
@@ -377,6 +392,7 @@ async function handleFrame(frameBuf) {
   log(`frame  motion=${motion.toFixed(1)}  →  ${pred.label} ${pred.confidence}%` +
       `${pred.windowFill < EMBED_WINDOW ? `  (warmup ${pred.windowFill}/${EMBED_WINDOW})` : ''}` +
       `${candidate ? `  (streak ${streakCount}/${ALERT_STREAK})` : ''}` +
+      `${motionStreak > 0 && !motionEvent ? `  (motion streak ${motionStreak}/${MOTION_STREAK})` : ''}` +
       `${behaviorAlert ? '  ⚠ ALERT' : motionEvent ? '  ● MOTION' : ''}`)
 
   // Publish every label *change* to the public demo feed
@@ -392,6 +408,7 @@ async function handleFrame(frameBuf) {
   if ((behaviorAlert || motionEvent) && captureReady) {
     lastCaptureAt = now
     streakCount   = 0 // reset so we don't re-fire every frame
+    motionStreak  = 0
     // Prefer a confident behavior (labels + emails); otherwise save the
     // motion clip unlabeled for review.
     if (behaviorAlert) {
@@ -500,6 +517,7 @@ async function pollMonitor() {
       if (ffProc) ffProc.kill('SIGTERM')
       prevFrame = null
       lastLabel = null
+      motionStreak = 0
       embedWindow = [] // don't blend pre-pause frames into post-resume predictions
     } else if (enabled && paused) {
       paused = false

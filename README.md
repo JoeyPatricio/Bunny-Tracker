@@ -171,6 +171,24 @@ The capture agent is platform-agnostic. To move from a PC to a Pi: clone, run
 
 ---
 
+## Roadmap
+
+Planned stretch goals (see [docs/stretch-goals.md](docs/stretch-goals.md) for
+the full plan):
+
+- **Permanent hardware** — move the whole stack (server, agent, tunnel, n8n)
+  to a Raspberry Pi 5 so it runs 24/7 without the PC.
+- **Water intake tracking** — a load cell under the water bowl measures
+  drinking in ml, with low-level and low-intake alerts.
+- **Room environment** — a BME280 on the same Pi tracks temperature and
+  humidity, with heat-stress alerts (rabbits overheat above ~28C).
+
+Model improvements from the research paper's future-work agenda remain open:
+temporal modeling, an "other/absent" class, larger and more varied training
+data, and confidence calibration.
+
+---
+
 ## Notes
 
 - Recordings (`server/recordings/`), labels (`server/labels.json`), the model,

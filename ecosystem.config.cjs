@@ -2,6 +2,14 @@
  * PM2 process definitions for BunnyCam.
  * Start everything with:  pm2 start ecosystem.config.cjs
  * This declarative list is the source of truth — more reliable than pm2 save.
+ *
+ * autorestart is ON everywhere so a genuine crash self-heals. The catch:
+ * with autorestart on, pm2 treats a manual `pm2 stop`/kill the same as a
+ * crash and immediately relaunches it — `pm2 stop` alone won't actually
+ * stop the app. The real kill switch is `pm2 kill` (tears down the whole
+ * pm2 daemon, so there's nothing left to relaunch); the console window
+ * opened by `C:\Users\joepa\.pm2\start-bunnycam.bat` at login offers this
+ * via a "press K" prompt instead of closing.
  */
 const path = require('path')
 const SERVER = path.join(__dirname, 'server')
