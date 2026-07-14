@@ -1,9 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
-
-const BASE_COLOR = {
-  grooming: '#dc82ff', normal: '#88aaff', standing: '#ff9f3c',
-  yawn: '#ffd264', zoomies: '#7dff7d',
-}
+import { LABEL_COLOR as BASE_COLOR } from '../labels.js'
 
 const labelColor = (lbl) => {
   if (!lbl) return 'var(--text-muted)'

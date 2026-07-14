@@ -3,11 +3,15 @@ import nodemailer from 'nodemailer'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import { readMonitorState } from './monitor.js'
+import { isRecordingFilename } from '../lib/recordingName.js'
+import { VALID_LABELS } from '../lib/validLabels.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const router    = express.Router()
 
-const ALERT_LABELS = new Set(['zoomies','yawn','grooming','standing'])
+// Every behavior except the resting baseline is worth an alert. Derived from the
+// canonical list so a new behavior can't be silently un-alertable.
+const ALERT_LABELS = new Set(VALID_LABELS.filter(l => l !== 'normal'))
 
 const LABEL_PHRASE = {
   zoomies:  'doing zoomies 🐇💨',
@@ -36,7 +40,7 @@ function createTransport() {
   })
 }
 
-// GET /api/sms/status
+// GET /api/notify/status
 router.get('/status', (_req, res) => {
   res.json({
     configured:      isConfigured(),
@@ -44,38 +48,62 @@ router.get('/status', (_req, res) => {
   })
 })
 
-// POST /api/sms/notify
-// Body: { label: string, confidence?: number, filename?: string }
-router.post('/notify', async (req, res) => {
-  const { label, confidence, filename } = req.body
+// Shared alert policy: the dashboard alerts toggle, a per-label cooldown, and a
+// global floor between any two alerts. Both the email path and the agent's n8n
+// webhook path go through this, so turning alerts off or being inside a cooldown
+// suppresses BOTH. Reserves the cooldown when it allows, so only call it when you
+// actually intend to send.
+async function alertGate(label) {
+  if (!ALERT_LABELS.has(label)) return { allow: false, reason: 'label not an alert trigger' }
 
-  if (!ALERT_LABELS.has(label)) {
-    return res.json({ sent: false, reason: 'label not an alert trigger' })
-  }
-  if (!isConfigured()) {
-    return res.json({ sent: false, reason: 'email not configured — add .env' })
-  }
-
-  // Respect the dashboard's email-alerts toggle
   const { emailAlerts } = await readMonitorState()
-  if (!emailAlerts) {
-    return res.json({ sent: false, reason: 'email alerts disabled from dashboard' })
-  }
+  if (!emailAlerts) return { allow: false, reason: 'alerts disabled from dashboard' }
 
-  const cooldownMs = Number(process.env.NOTIFY_COOLDOWN_MINUTES ?? 10) * 60 * 1000
-  const globalFloor = cooldownMs / 2   // minimum gap between ANY two alerts
+  const cooldownMs  = Number(process.env.NOTIFY_COOLDOWN_MINUTES ?? 10) * 60 * 1000
+  const globalFloor = cooldownMs / 2 // minimum gap between ANY two alerts
   const now = Date.now()
 
-  // Global floor — prevents cross-label bursts (e.g. standing→zoomies→grooming)
   if (lastSentAny && now - lastSentAny < globalFloor) {
     const waitSec = Math.ceil((globalFloor - (now - lastSentAny)) / 1000)
-    return res.json({ sent: false, reason: `global floor — ${waitSec}s remaining` })
+    return { allow: false, reason: `global floor, ${waitSec}s remaining` }
   }
-  // Per-label cooldown — same behavior can't repeat within the full cooldown window
   if (lastSentAt[label] && now - lastSentAt[label] < cooldownMs) {
     const waitMin = Math.ceil((cooldownMs - (now - lastSentAt[label])) / 60000)
-    return res.json({ sent: false, reason: `cooldown (${label}) — ${waitMin}m remaining` })
+    return { allow: false, reason: `cooldown (${label}), ${waitMin}m remaining` }
   }
+
+  lastSentAny = now
+  lastSentAt[label] = now
+  return { allow: true }
+}
+
+// POST /api/notify/gate — apply the alert policy (toggle + cooldown) and reserve
+// it. The agent calls this before firing the n8n webhook so the webhook obeys
+// the same policy as email. Returns { allow, reason }.
+router.post('/gate', async (req, res) => {
+  res.json(await alertGate(req.body?.label))
+})
+
+// POST /api/notify
+// Body: { label: string, confidence?: number, filename?: string }
+router.post('/', async (req, res) => {
+  const { label, confidence, filename } = req.body
+
+  if (!isConfigured()) {
+    return res.json({ sent: false, reason: 'email not configured, add .env' })
+  }
+
+  // Validate the attachment name before reserving the cooldown.
+  let clipPath = null
+  if (filename) {
+    if (!isRecordingFilename(filename)) {
+      return res.status(400).json({ sent: false, error: 'Invalid filename' })
+    }
+    clipPath = path.join(__dirname, '..', 'recordings', filename)
+  }
+
+  const gate = await alertGate(label)
+  if (!gate.allow) return res.json({ sent: false, reason: gate.reason })
 
   try {
     const phrase    = LABEL_PHRASE[label] ?? label
@@ -88,22 +116,12 @@ router.post('/notify', async (req, res) => {
       to:      process.env.NOTIFY_TO,
       subject,
       text,
-    }
-
-    // Attach the clip if a filename was provided (validate before building path)
-    if (filename) {
-      if (!filename.startsWith('recording-') || !filename.endsWith('.webm')) {
-        return res.status(400).json({ sent: false, error: 'Invalid filename' })
-      }
-      const clipPath = path.join(__dirname, '..', 'recordings', filename)
-      mailOptions.attachments = [{ filename, path: clipPath }]
+      ...(clipPath ? { attachments: [{ filename, path: clipPath }] } : {}),
     }
 
     const transporter = createTransport()
     await transporter.sendMail(mailOptions)
 
-    lastSentAny = now
-    lastSentAt[label] = now
     res.json({ sent: true, label, hasAttachment: !!filename })
   } catch (err) {
     console.error('Email send failed:', err.message)

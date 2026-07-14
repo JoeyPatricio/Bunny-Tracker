@@ -1,16 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-
-const BASE_COLOR = {
-  grooming: '#dc82ff', normal: '#88aaff', standing: '#ff9f3c',
-  yawn: '#ffd264', zoomies: '#7dff7d',
-}
-const PHRASE = {
-  grooming: 'Bunny is grooming',
-  normal:   'Bunny is resting',
-  standing: 'Bunny is standing up',
-  yawn:     'Bunny is yawning',
-  zoomies:  'Bunny has the zoomies',
-}
+import { LABEL_COLOR as BASE_COLOR, LABEL_PHRASE as PHRASE } from '../labels.js'
 
 /**
  * AgentFeed

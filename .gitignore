@@ -1,20 +1,30 @@
+# Dependencies
 node_modules/
 client/node_modules/
 server/node_modules/
+
+# Build output
 client/dist/
-server/activity-log.json
-server/labels.json
+
+# Secrets
+.env
+
+# Local working notes
+notes/
+
+# Media: recorded clips and rolling capture segments
 server/recordings/
 server/tmp/
-.env
 segments/
 server/agent/segments/
+
+# Data stores, plus their temp and backup copies
+server/labels.json*
+server/autolabels.json*
 server/backups/
-server/labels.json.tmp
-server/labels.json.bak
-server/autolabels.json
-server/autolabels.json.tmp
-server/autolabels.json.bak
+server/activity-log.json*
+server/monitor.json*
+server/hidden.json*
+
+# MobileNet backbone (fetch with scripts/download-mobilenet.mjs)
 server/model/mobilenet/
-server/monitor.json
-server/hidden.json

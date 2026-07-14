@@ -38,33 +38,43 @@ function ImportPanel({ onImportDone }) {
     setFiles(prev => prev.filter(e => e.file.name !== name))
 
   const upload = async () => {
-    if (uploading || files.length === 0) return
+    if (uploading) return
+    // Take the pending entries from the CURRENT state, not from what setFiles is
+    // about to produce: the state update below has not committed yet, so reading
+    // `files` back for status 'converting' would match nothing and upload nothing.
+    const pending = files.filter(e => e.status === 'pending')
+    if (pending.length === 0) return
     setUploading(true)
 
-    // Mark all pending as uploading
     setFiles(prev => prev.map(e =>
       e.status === 'pending' ? { ...e, status: 'converting' } : e
     ))
 
     const formData = new FormData()
-    files.filter(e => e.status === 'converting').forEach(e =>
-      formData.append('videos', e.file)
-    )
+    pending.forEach(e => formData.append('videos', e.file))
+    const sent = new Set(pending.map(e => e.file.name))
 
     try {
       const res  = await fetch('/api/import', { method: 'POST', body: formData })
-      const data = await res.json()
+      const data = await res.json().catch(() => ({}))
+
+      if (!res.ok && !data.results) {
+        throw new Error(data.error || `Import failed (HTTP ${res.status})`)
+      }
 
       setFiles(prev => prev.map(e => {
+        if (!sent.has(e.file.name)) return e
         const result = data.results?.find(r => r.original === e.file.name)
-        if (!result) return e
+        if (!result) return { ...e, status: 'error', detail: 'No result returned' }
         return { ...e, status: result.status, detail: result.detail || '' }
       }))
 
       onImportDone()
     } catch (err) {
       setFiles(prev => prev.map(e =>
-        e.status === 'converting' ? { ...e, status: 'error', detail: err.message } : e
+        sent.has(e.file.name) && e.status === 'converting'
+          ? { ...e, status: 'error', detail: err.message }
+          : e
       ))
     } finally {
       setUploading(false)
@@ -251,7 +261,7 @@ export default function LabelingStudio() {
       })
       if (!res.ok) {
         const detail = res.status === 401
-          ? 'Not logged in — your session expired. Reload and log in again.'
+          ? 'Not logged in. Your session expired. Reload and log in again.'
           : `Save failed (HTTP ${res.status})`
         alert(detail)
         return // do NOT optimistically update — the label did not save
@@ -267,7 +277,7 @@ export default function LabelingStudio() {
       setIndex(prev => Math.min(prev + 1, filtered.length - 1))
     } catch (err) {
       console.error('Label save failed:', err)
-      alert('Label save failed — check your connection.')
+      alert('Label save failed. Check your connection.')
     } finally {
       setSaving(false)
     }
@@ -439,7 +449,7 @@ export default function LabelingStudio() {
           style={{ width: `${totalCount > 0 ? (standingCount / totalCount) * 100 : 0}%` }}
         />
       </div>
-      <div className="progress-label">{pctDone}% labeled — {labeledCount} / {totalCount} clips</div>
+      <div className="progress-label">{pctDone}% labeled, {labeledCount} / {totalCount} clips</div>
 
       {/* ── Filter tabs ─────────────────────────────────────────────────── */}
       <div className="filter-tabs">
@@ -498,7 +508,7 @@ export default function LabelingStudio() {
             {/* Agent suggestion — a prediction awaiting review, not a saved label */}
             {currentSuggestion && (
               <div className="suggestion-hint">
-                🤖 Agent suggests <strong>{currentSuggestion}</strong> — label to confirm or correct
+                🤖 Agent suggests <strong>{currentSuggestion}</strong>. Label to confirm or correct.
               </div>
             )}
 

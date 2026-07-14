@@ -1,12 +1,5 @@
 import React from 'react'
-
-const LABEL_PHRASE = {
-  grooming: 'Bunny is grooming',
-  normal:   'Bunny is resting',
-  standing: 'Bunny is standing up',
-  yawn:     'Bunny is yawning',
-  zoomies:  'Bunny has the zoomies',
-}
+import { LABEL_PHRASE } from '../labels.js'
 
 /**
  * VideoFeed

@@ -4,14 +4,12 @@ const router = express.Router()
 
 // In-memory ring buffer of recent predictions for the public demo feed
 const MAX_EVENTS = 50
-const SERVER_START = new Date().toISOString()
 let events = []
 
-// GET /api/predictions — public: text-only live feed (no video involved)
-// Events older than this server's start time are filtered so stale predictions
-// from a previous run don't persist across restarts.
+// GET /api/predictions — public: text-only live feed (no video involved).
+// The buffer is in-memory and empty on boot, so nothing here outlives a restart.
 router.get('/', (_req, res) => {
-  res.json({ events: events.filter(e => e.time >= SERVER_START) })
+  res.json({ events })
 })
 
 // POST /api/predictions — admin client reports a prediction change

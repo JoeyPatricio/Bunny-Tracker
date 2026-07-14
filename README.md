@@ -1,8 +1,8 @@
 # 🐇 PetCam (Bunny Tracker)
 
 A self-hosted machine-learning pet monitor. A camera watches your rabbits, a
-classifier recognizes what they're doing — zoomies, yawning, grooming, standing,
-or resting — and you get an email with a clip when something noteworthy happens.
+classifier recognizes what they're doing, zoomies, yawning, grooming, standing,
+or resting, and you get an email with a clip when something noteworthy happens.
 
 Live demo: **https://bunny-tracker.app** (public demo view; the live stream is
 private to the owner).
@@ -18,19 +18,19 @@ private to the owner).
                   └──► MJPEG live stream ──► dashboard                     └──► public text feed
 ```
 
-- **Capture agent** (`server/agent/capture.mjs`) — a headless Node service that
+- **Capture agent** (`server/agent/capture.mjs`): a headless Node service that
   reads the camera with one `ffmpeg` process, sampling a frame every few seconds
   for inference, recording rolling clips, and pushing a live MJPEG stream. Runs
-  the same on a PC (`dshow`) or a Raspberry Pi (`v4l2`) — only two `.env` lines change.
-- **Classifier** — MobileNetV2 transfer learning in TensorFlow.js. A dense head
+  the same on a PC (`dshow`) or a Raspberry Pi (`v4l2`), only two `.env` lines change.
+- **Classifier**: MobileNetV2 transfer learning in TensorFlow.js. A dense head
   trained on 150+ hand-labeled clips maps the mean ‖ std of 8 frame embeddings
-  (2×1280 dims — the std across frames is the motion signal) to five behaviors.
+  (2×1280 dims, the std across frames is the motion signal) to five behaviors.
   Train it from the browser in the Training tab; validation is split by source
   video so the accuracy number reflects real generalization.
-- **Alerts** — a non-normal behavior emails you the clip (Nodemailer + Gmail),
+- **Alerts**: a non-normal behavior emails you the clip (Nodemailer + Gmail),
   with motion gating, a multi-frame debounce, and a global cooldown to suppress
   false positives.
-- **Web app** — Camera (live feed + predictions), Label Studio (label clips),
+- **Web app**: Camera (live feed + predictions), Label Studio (label clips),
   and Training (extract features + train the model). A separate public demo page
   shows highlights and a live behavior feed without exposing the camera.
 
@@ -62,7 +62,7 @@ Installs packages for the root, client, and server.
 Create `server/.env`:
 
 ```ini
-# Email alerts (Gmail App Password — not your normal password)
+# Email alerts (Gmail App Password, not your normal password)
 EMAIL_USER=you@gmail.com
 EMAIL_PASS=xxxx xxxx xxxx xxxx
 NOTIFY_TO=you@example.com
@@ -71,7 +71,7 @@ NOTIFY_COOLDOWN_MINUTES=10
 # Dashboard login (wrap in quotes if it contains a # )
 ADMIN_PASSWORD="your-password"
 
-# Camera agent — PC defaults shown; for a Raspberry Pi use v4l2 / /dev/video0
+# Camera agent, PC defaults shown; for a Raspberry Pi use v4l2 / /dev/video0
 CAMERA_FORMAT=dshow
 CAMERA_INPUT=video=Your Webcam Name
 AGENT_CONFIDENCE_THRESHOLD=70
@@ -111,15 +111,15 @@ the camera, labeling, and training tabs. Without login you see the public demo.
 
 ## Using it
 
-1. **Label** — record or import clips, then tag them in **Label Studio**
+1. **Label**: record or import clips, then tag them in **Label Studio**
    (`Z` zoomies, `Y` yawn, `N` normal, `G` grooming, `S` standing).
-2. **Train** — open **Training** and hit Start. It extracts MobileNet features,
+2. **Train**: open **Training** and hit Start. It extracts MobileNet features,
    trains the classifier, shows a confusion matrix, and saves the model.
-3. **Monitor** — the agent loads the saved model and runs live. Toggle
+3. **Monitor**: the agent loads the saved model and runs live. Toggle
    **Monitoring** and **Email** from the dashboard header.
 
 Clips the agent records during an alert carry the predicted behavior as a
-**suggestion** shown in Label Studio — confirm or correct it with a normal
+**suggestion** shown in Label Studio, confirm or correct it with a normal
 hand label. Only human-confirmed labels are ever used for training, so the
 model's own predictions can't feed back into its training data.
 
@@ -176,11 +176,11 @@ The capture agent is platform-agnostic. To move from a PC to a Pi: clone, run
 Planned stretch goals (see [docs/stretch-goals.md](docs/stretch-goals.md) for
 the full plan):
 
-- **Permanent hardware** — move the whole stack (server, agent, tunnel, n8n)
+- **Permanent hardware**: move the whole stack (server, agent, tunnel, n8n)
   to a Raspberry Pi 5 so it runs 24/7 without the PC.
-- **Water intake tracking** — a load cell under the water bowl measures
+- **Water intake tracking**: a load cell under the water bowl measures
   drinking in ml, with low-level and low-intake alerts.
-- **Room environment** — a BME280 on the same Pi tracks temperature and
+- **Room environment**: a BME280 on the same Pi tracks temperature and
   humidity, with heat-stress alerts (rabbits overheat above ~28C).
 
 Model improvements from the research paper's future-work agenda remain open:
@@ -195,5 +195,5 @@ data, and confidence calibration.
   backups, and `.env` are all git-ignored.
 - Labels are written atomically and serialized, with `.bak` plus daily backups,
   so concurrent edits can't corrupt or wipe them.
-- No third-party ML service — inference runs locally in TensorFlow.js.
+- No third-party ML service, inference runs locally in TensorFlow.js.
 ```

@@ -25,6 +25,18 @@ import ffmpegInstaller from '@ffmpeg-installer/ffmpeg'
 import * as tf from '@tensorflow/tfjs'
 import * as mobilenetModule from '@tensorflow-models/mobilenet'
 
+// Native TF C++ bindings: registers the higher-priority 'tensorflow' backend
+// on the shared tfjs core (~23x faster MobileNet pass, see
+// scripts/bench-inference.mjs). Keep its version in lockstep with
+// @tensorflow/tfjs or two tf cores end up loaded. Optional by design: if the
+// native binding is missing or broken (ARM builds are fussy), fall back to
+// pure-JS inference instead of crash-looping under pm2.
+try {
+  await import('@tensorflow/tfjs-node')
+} catch (err) {
+  console.log('⚠ tfjs-node native backend unavailable, using pure-JS inference:', err.message)
+}
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 // ── Config ──────────────────────────────────────────────────────────────────
@@ -47,7 +59,6 @@ const FRAME_INTERVAL = Number(process.env.AGENT_FRAME_SECONDS ?? 1.5)
 // embeddings, not a single-frame embedding).
 const EMBED_WINDOW   = Number(process.env.AGENT_EMBED_WINDOW ?? 8)
 const SEGMENT_SECS   = Number(process.env.AGENT_SEGMENT_SECONDS ?? 12)
-const MOTION_THRESH  = Number(process.env.AGENT_MOTION_THRESHOLD ?? 9)
 const CONF_THRESH    = Number(process.env.AGENT_CONFIDENCE_THRESHOLD ?? 70)
 // Below this motion level, treat the frame as "nothing happening" (blank/static
 // room) and never alert — the classifier still picks a class but we ignore it.
@@ -151,7 +162,7 @@ async function loadModels() {
   classifier = await tf.loadLayersModel(`${SERVER}/model/model.json`)
   labels = await (await fetch(`${SERVER}/model/labels.json`)).json()
   const inputDim = classifier.inputs[0].shape[1]
-  log(`✓ Models ready (classes: ${labels.join(', ')}; features: ` +
+  log(`✓ Models ready (backend: ${tf.getBackend()}; classes: ${labels.join(', ')}; features: ` +
       `${inputDim === 1280 ? 'mean only — retrain to enable motion features' : 'mean‖std'})`)
 }
 
@@ -194,40 +205,115 @@ function windowFeatures(window, withStd) {
   return feat
 }
 
+// Cosine distance between consecutive frame embeddings: a semantic change
+// signal that is nearly invariant to global lighting but sensitive to the
+// bunny actually doing something. LOG-ONLY for now: it gates nothing. Watch
+// it next to `motion=` for a few days; if it separates real events from
+// lighting steps cleanly, it becomes a cheap AND-gate for alerts.
+function cosineDistance(a, b) {
+  let dot = 0, na = 0, nb = 0
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i]
+    na  += a[i] * a[i]
+    nb  += b[i] * b[i]
+  }
+  return 1 - dot / (Math.sqrt(na * nb) || 1)
+}
+
 function classify(frameBuf) {
   embedWindow.push(embedFrame(frameBuf))
   if (embedWindow.length > EMBED_WINDOW) embedWindow.shift()
+
+  const embDelta = embedWindow.length >= 2
+    ? cosineDistance(embedWindow[embedWindow.length - 1], embedWindow[embedWindow.length - 2])
+    : 0
 
   const inputDim = classifier.inputs[0].shape[1]
   const feat = windowFeatures(embedWindow, inputDim === embedWindow[0].length * 2)
 
   return tf.tidy(() => {
     const probs = classifier.predict(tf.tensor2d(feat, [1, feat.length])).squeeze()
-    const idx   = probs.argMax().dataSync()[0]
-    const conf  = Math.round(probs.dataSync()[idx] * 100)
-    return { label: labels[idx], confidence: conf, windowFill: embedWindow.length }
+    // One device-to-host copy per frame, then argmax in JS over the 5 classes,
+    // instead of two separate dataSync() pipeline stalls on the hot path.
+    const arr = probs.dataSync()
+    let idx = 0
+    for (let i = 1; i < arr.length; i++) if (arr[i] > arr[idx]) idx = i
+    return { label: labels[idx], confidence: Math.round(arr[idx] * 100), windowFill: embedWindow.length, embDelta }
   })
 }
 
 // ── Motion detection (% of pixels changed) ─────────────────────────────────
-// Percentage of sampled bytes whose frame-to-frame difference exceeds
-// PIXEL_DIFF. A whole-frame MEAN diff dilutes a small animal into the noise
-// floor (a bunny covering 4% of the frame barely moves the average), while a
-// changed-pixel count keeps localized motion visible and ignores sensor noise
-// and gradual lighting drift, which stay under the per-pixel threshold.
-const PIXEL_DIFF = 25
-let prevFrame = null
+// Percentage of pooled pixels whose frame-to-frame difference exceeds
+// PIXEL_DIFF, after subtracting the frame's median shift. A whole-frame MEAN
+// diff dilutes a small animal into the noise floor (a bunny covering 4% of
+// the frame barely moves the average), while a changed-pixel count keeps
+// localized motion visible.
+//
+// Three stages, each earning its keep:
+//  1. Pool 4x4 RGB blocks to a 56x56 luma grid. Averaging 16 pixels washes
+//     out sensor noise and MJPEG compression flicker, which is what let
+//     PIXEL_DIFF drop from 25 (raw bytes) to 15 without raising the floor.
+//  2. Subtract the median diff before thresholding. Auto-exposure steps and
+//     sun/cloud shift every pixel by roughly the same offset; motion sits on
+//     top of that offset. This removes the false-positive source that
+//     MOTION_STREAK only delayed.
+//  3. Score an 8x8 grid of cells. An animal is a few contiguous hot cells,
+//     noise is none, and a scene-wide change the median could not remove
+//     (non-uniform lighting, camera bump) is nearly all of them, which gets
+//     reported as `lighting` and scored 0 instead of counting as motion.
+const PIXEL_DIFF = 15               // on pooled luma (was 25 on raw bytes)
+const POOL       = 4                // 4x4 pixel blocks -> 56x56 luma grid
+const POOLED_W   = 224 / POOL       // 56
+const GRID       = 8                // 8x8 cells over the pooled grid
+const CELL_W     = POOLED_W / GRID  // 7 pooled px per cell side
+const CELL_HOT   = 0.25             // fraction of a cell changed to call it hot
+const LIGHTING_CELLS = Math.floor(GRID * GRID * 0.7) // hot cells => scene-wide change
+let prevPooled = null
+
+function poolLuma(frameBuf) {
+  const out = new Float32Array(POOLED_W * POOLED_W)
+  for (let y = 0; y < 224; y++) {
+    const row = ((y / POOL) | 0) * POOLED_W
+    for (let x = 0; x < 224; x++) {
+      const i = (y * 224 + x) * 3
+      // rough luma (r + 2g + b) / 4; exact weights don't matter for differencing
+      out[row + ((x / POOL) | 0)] += (frameBuf[i] + 2 * frameBuf[i + 1] + frameBuf[i + 2]) / 4
+    }
+  }
+  for (let i = 0; i < out.length; i++) out[i] /= POOL * POOL
+  return out
+}
 
 function motionLevel(frameBuf) {
-  if (!prevFrame) { prevFrame = Buffer.from(frameBuf); return 0 }
+  const pooled = poolLuma(frameBuf)
+  if (!prevPooled) { prevPooled = pooled; return { level: 0, hotCells: 0, lighting: false } }
+
+  const n = pooled.length
+  const diffs = new Float32Array(n)
+  for (let i = 0; i < n; i++) diffs[i] = pooled[i] - prevPooled[i]
+  prevPooled = pooled
+
+  // Illumination compensation: the median diff is the global brightness shift
+  const median = Float32Array.from(diffs).sort()[n >> 1]
+
   let changed = 0
-  const samples = Math.ceil(frameBuf.length / 16)
-  // Sample every 16th byte for speed
-  for (let i = 0; i < frameBuf.length; i += 16) {
-    if (Math.abs(frameBuf[i] - prevFrame[i]) > PIXEL_DIFF) changed++
+  const cellChanged = new Uint16Array(GRID * GRID)
+  for (let i = 0; i < n; i++) {
+    if (Math.abs(diffs[i] - median) > PIXEL_DIFF) {
+      changed++
+      const cy = (((i / POOLED_W) | 0) / CELL_W) | 0
+      const cx = ((i % POOLED_W) / CELL_W) | 0
+      cellChanged[cy * GRID + cx]++
+    }
   }
-  prevFrame = Buffer.from(frameBuf)
-  return (changed / samples) * 100
+
+  let hotCells = 0
+  for (let c = 0; c < cellChanged.length; c++) {
+    if (cellChanged[c] >= CELL_W * CELL_W * CELL_HOT) hotCells++
+  }
+
+  const lighting = hotCells >= LIGHTING_CELLS
+  return { level: lighting ? 0 : (changed / n) * 100, hotCells, lighting }
 }
 
 // ── Segment upload ──────────────────────────────────────────────────────────
@@ -320,14 +406,27 @@ async function uploadAndAlert(pred) {
   // alerts never go silent. To force the email baseline even with n8n running,
   // just unset ALERT_WEBHOOK_URL.
   if (ALERT_WEBHOOK_URL) {
-    await notifyWebhook(pred, filename)
+    // Run the webhook through the same server-side policy as email (dashboard
+    // toggle + cooldown), so n8n can't fan out alerts the owner disabled or
+    // spam during a cooldown.
+    const gateRes = await api('/api/notify/gate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ label: pred.label }),
+    })
+    const gate = await gateRes.json().catch(() => ({ allow: false, reason: 'gate unreachable' }))
+    if (gate.allow) {
+      await notifyWebhook(pred, filename)
+    } else {
+      log(`  → webhook skipped (${gate.reason})`)
+    }
   } else {
-    const sms = await api('/api/sms/notify', {
+    const notify = await api('/api/notify', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ label: pred.label, confidence: pred.confidence, filename }),
     })
-    const result = await sms.json()
+    const result = await notify.json()
     log(`  ✉ Email: ${result.sent ? 'sent' : result.reason ?? result.error}`)
   }
 }
@@ -361,11 +460,19 @@ let motionStreak = 0
 let lastCaptureAt = 0
 
 async function handleFrame(frameBuf) {
-  const motion = motionLevel(frameBuf)
-  const pred   = classify(frameBuf)
+  const { level: motion, hotCells, lighting } = motionLevel(frameBuf)
+  const pred = classify(frameBuf)
 
-  // A confident-behavior alert: non-normal, confident enough, AND real motion.
-  const candidate = pred.label !== 'normal' &&
+  // The classifier head was trained on the mean/std of a full EMBED_WINDOW of
+  // frames. Until the rolling window is full, the std features are off
+  // distribution (near zero for the first frame), so its label is unreliable —
+  // don't let it alert or reach the public feed. Resets on every start/resume
+  // because pollMonitor clears embedWindow.
+  const warm = pred.windowFill >= EMBED_WINDOW
+
+  // A confident-behavior alert: warm, non-normal, confident enough, AND real motion.
+  const candidate = warm &&
+                    pred.label !== 'normal' &&
                     pred.confidence >= CONF_THRESH &&
                     motion >= MOTION_FLOOR
 
@@ -389,14 +496,17 @@ async function handleFrame(frameBuf) {
   const now          = Date.now()
   const captureReady = now - lastCaptureAt >= CAPTURE_COOLDOWN_MS
 
-  log(`frame  motion=${motion.toFixed(1)}  →  ${pred.label} ${pred.confidence}%` +
+  log(`frame  motion=${motion.toFixed(1)}  cells=${hotCells}  emb=${pred.embDelta.toFixed(3)}` +
+      `${lighting ? '  (scene-wide change, scored 0)' : ''}` +
+      `  →  ${pred.label} ${pred.confidence}%` +
       `${pred.windowFill < EMBED_WINDOW ? `  (warmup ${pred.windowFill}/${EMBED_WINDOW})` : ''}` +
       `${candidate ? `  (streak ${streakCount}/${ALERT_STREAK})` : ''}` +
       `${motionStreak > 0 && !motionEvent ? `  (motion streak ${motionStreak}/${MOTION_STREAK})` : ''}` +
       `${behaviorAlert ? '  ⚠ ALERT' : motionEvent ? '  ● MOTION' : ''}`)
 
-  // Publish every label *change* to the public demo feed
-  if (pred.label !== lastLabel) {
+  // Publish every label *change* to the public demo feed, but not warmup labels
+  // (leaving lastLabel null through warmup, so the first warm label still posts).
+  if (warm && pred.label !== lastLabel) {
     lastLabel = pred.label
     api('/api/predictions', {
       method: 'POST',
@@ -515,7 +625,7 @@ async function pollMonitor() {
       paused = true
       log('⏸ Monitoring turned OFF from dashboard — releasing camera')
       if (ffProc) ffProc.kill('SIGTERM')
-      prevFrame = null
+      prevPooled = null
       lastLabel = null
       motionStreak = 0
       embedWindow = [] // don't blend pre-pause frames into post-resume predictions

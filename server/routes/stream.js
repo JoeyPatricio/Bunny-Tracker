@@ -22,7 +22,7 @@ router.get('/status', (_req, res) => {
 // GET /api/stream/live — MJPEG stream. PRIVATE: requires admin login.
 router.get('/live', (req, res) => {
   if (!isAuthed(req)) {
-    return res.status(401).json({ error: 'Login required — live stream is private' })
+    return res.status(401).json({ error: 'Login required. The live stream is private.' })
   }
 
   res.writeHead(200, {

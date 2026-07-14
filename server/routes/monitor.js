@@ -1,10 +1,7 @@
 import express from 'express'
-import path from 'path'
-import fs from 'fs/promises'
-import { fileURLToPath } from 'url'
+import { createStore } from '../lib/jsonStore.js'
 
-const __dirname  = path.dirname(fileURLToPath(import.meta.url))
-const STATE_FILE = path.join(__dirname, '..', 'monitor.json')
+const store = createStore('monitor.json', { defaultValue: {} })
 
 const router = express.Router()
 
@@ -12,7 +9,7 @@ const DEFAULTS = { enabled: true, emailAlerts: true }
 
 export async function readMonitorState() {
   try {
-    return { ...DEFAULTS, ...JSON.parse(await fs.readFile(STATE_FILE, 'utf-8')) }
+    return { ...DEFAULTS, ...(await store.read()) }
   } catch {
     return { ...DEFAULTS }
   }
@@ -25,12 +22,18 @@ router.get('/', async (_req, res) => {
 
 // POST /api/monitor { enabled?, emailAlerts? } — admin only (guarded in index.js)
 router.post('/', async (req, res) => {
-  const current = await readMonitorState()
-  const next = { ...current }
-  if ('enabled' in req.body)     next.enabled     = !!req.body.enabled
-  if ('emailAlerts' in req.body) next.emailAlerts = !!req.body.emailAlerts
-  await fs.writeFile(STATE_FILE, JSON.stringify(next))
-  res.json(next)
+  try {
+    const next = await store.update(current => {
+      const merged = { ...DEFAULTS, ...current }
+      if ('enabled' in req.body)     merged.enabled     = !!req.body.enabled
+      if ('emailAlerts' in req.body) merged.emailAlerts = !!req.body.emailAlerts
+      return merged
+    })
+    res.json({ ...DEFAULTS, ...next })
+  } catch (err) {
+    console.error('Save monitor state failed:', err.message)
+    res.status(500).json({ error: 'Failed to save monitor state' })
+  }
 })
 
 export default router

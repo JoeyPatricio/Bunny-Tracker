@@ -1,8 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react'
+import { LABEL_COLOR as BASE_COLOR } from '../labels.js'
 
-const BASE_COLOR = {
-  grooming: '#dc82ff', standing: '#ff9f3c', yawn: '#ffd264', zoomies: '#7dff7d',
-}
 const labelDisplay = (l) => (l ? l.charAt(0).toUpperCase() + l.slice(1) : '')
 const fmtDate = (iso) =>
   new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })

@@ -13,6 +13,12 @@ export default defineConfig({
       '/recordings': {
         target: 'http://localhost:3001',
         changeOrigin: true,
+      },
+      // The client fetches the trained classifier and the self-hosted MobileNet
+      // backbone from /model; without this, inference 404s under `npm run dev`.
+      '/model': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
       }
     }
   }

@@ -4,8 +4,8 @@ import path from 'path'
 import fs from 'fs/promises'
 import { fileURLToPath } from 'url'
 import { isAuthed } from './auth.js'
-import { readLabels } from '../lib/labelStore.js'
-import { readHidden } from '../lib/hiddenStore.js'
+import { listHighlights } from '../lib/listHighlights.js'
+import { isRecordingFilename } from '../lib/recordingName.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -28,10 +28,15 @@ router.post('/grab', async (_req, res) => {
       f, mtimeMs: (await fs.stat(path.join(SEG_DIR, f))).mtimeMs,
     })))
     stats.sort((a, b) => a.mtimeMs - b.mtimeMs)
-    const pick = stats.length >= 2 ? stats[stats.length - 2] : stats[0]
-    if (!pick) return res.status(409).json({ error: 'No segment available — is the agent running?' })
+    // The newest file is still being written by ffmpeg, so the second-newest is
+    // the latest FINISHED segment. With fewer than two, nothing has finished yet;
+    // grabbing the in-progress file would copy a truncated, unplayable clip.
+    if (stats.length < 2) {
+      return res.status(409).json({ error: 'No finished segment yet. Is the camera capturing?' })
+    }
+    const pick = stats[stats.length - 2]
     if (Date.now() - pick.mtimeMs > 60_000) {
-      return res.status(409).json({ error: 'Newest segment is stale — is the camera capturing?' })
+      return res.status(409).json({ error: 'Newest segment is stale. Is the camera capturing?' })
     }
     const seg = pick.f
 
@@ -60,23 +65,15 @@ const upload = multer({
   }
 })
 
-// GET /api/recordings/highlights — PUBLIC: only non-normal labeled clips, for
-// the demo page. Never exposes the full archive or unlabeled/resting footage.
+// GET /api/recordings/highlights — PUBLIC: only non-normal labeled clips the
+// owner has not hidden, for the demo page. Never exposes the full archive or
+// unlabeled/resting footage.
 router.get('/highlights', async (_req, res) => {
   try {
-    const labels = await readLabels().catch(() => ({}))
-    const hidden = await readHidden().catch(() => new Set())
-    const files  = (await fs.readdir(RECORDINGS_DIR)).filter(f => f.endsWith('.webm'))
-    const highlights = await Promise.all(
-      files
-        .filter(f => labels[f] && labels[f] !== 'normal' && !hidden.has(f))
-        .map(async (filename) => {
-          const stat = await fs.stat(path.join(RECORDINGS_DIR, filename))
-          return { filename, label: labels[filename], createdAt: stat.mtime.toISOString(), size: stat.size }
-        })
-    )
-    highlights.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-    res.json({ recordings: highlights })
+    const items = await listHighlights({ includeHidden: false })
+    const recordings = items.map(({ filename, label, createdAt, size }) =>
+      ({ filename, label, createdAt, size }))
+    res.json({ recordings })
   } catch {
     res.status(500).json({ error: 'Failed to list highlights' })
   }
@@ -121,7 +118,7 @@ router.post('/', upload.single('video'), async (req, res) => {
 
 router.delete('/:filename', async (req, res) => {
   const { filename } = req.params
-  if (!filename.startsWith('recording-') || !filename.endsWith('.webm')) {
+  if (!isRecordingFilename(filename)) {
     return res.status(400).json({ error: 'Invalid filename' })
   }
 

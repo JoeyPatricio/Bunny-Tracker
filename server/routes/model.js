@@ -2,6 +2,7 @@ import express from 'express'
 import path from 'path'
 import fs from 'fs/promises'
 import { fileURLToPath } from 'url'
+import { isAuthed } from './auth.js'
 
 const __dirname   = path.dirname(fileURLToPath(import.meta.url))
 const MODEL_DIR   = path.join(__dirname, '..', 'model')
@@ -65,8 +66,10 @@ router.post('/', async (req, res) => {
   }
 })
 
-// GET /api/model — check if model exists + return metadata + backup list
-router.get('/', async (_req, res) => {
+// GET /api/model — PRIVATE: exposes the label map and the list of dated model
+// backups. adminGuard only covers non-GET requests, so this must guard itself.
+router.get('/', async (req, res) => {
+  if (!isAuthed(req)) return res.status(401).json({ error: 'Login required' })
   try {
     const modelPath  = path.join(MODEL_DIR, 'model.json')
     const labelsPath = path.join(MODEL_DIR, 'labels.json')

@@ -1,16 +1,9 @@
 import React, { useState, useRef, useCallback } from 'react'
 import * as tf from '@tensorflow/tfjs'
 import * as mobilenetModule from '@tensorflow-models/mobilenet'
+import { LABELS, LABEL_COLOR } from '../labels.js'
 
 // ── Constants ────────────────────────────────────────────────────────────────
-const LABELS      = ['grooming', 'normal', 'standing', 'yawn', 'zoomies']
-const LABEL_COLOR = {
-  grooming: '#dc82ff',
-  normal:   '#88aaff',
-  standing: '#ff9f3c',
-  yawn:     '#ffd264',
-  zoomies:  '#7dff7d',
-}
 const FRAMES_PER_CLIP = 8   // frames sampled per clip
 // Augmented variants per TRAINING clip, on top of the original: a mirrored
 // copy plus a brightness/contrast-jittered copy. Multiplies effective training
@@ -32,6 +25,28 @@ const LEARNING_RATE   = 0.001
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+/**
+ * Resolve a usable duration. Clips saved by the browser Record button
+ * (MediaRecorder) report duration === Infinity until the video is seeked to the
+ * end, which would make every seek time non-finite and throw. Seeking past the
+ * end forces the real duration to materialize.
+ */
+function resolveDuration(video) {
+  if (Number.isFinite(video.duration) && video.duration > 0) {
+    return Promise.resolve(video.duration)
+  }
+  return new Promise(resolve => {
+    const onSeeked = () => {
+      video.removeEventListener('seeked', onSeeked)
+      const d = video.duration
+      video.currentTime = 0
+      resolve(Number.isFinite(d) && d > 0 ? d : 0)
+    }
+    video.addEventListener('seeked', onSeeked)
+    video.currentTime = 1e101 // clamped to the end, triggers 'seeked'
+  })
+}
+
 /** Extract N evenly-spaced frames from a video element as ImageData */
 async function extractFrames(videoEl, n) {
   const canvas  = document.createElement('canvas')
@@ -39,7 +54,7 @@ async function extractFrames(videoEl, n) {
   canvas.height = 224
   const ctx     = canvas.getContext('2d')
   const frames  = []
-  const duration = videoEl.duration
+  const duration = await resolveDuration(videoEl)
 
   for (let i = 0; i < n; i++) {
     const t = duration > 0 ? (i / (n - 1 || 1)) * duration * 0.95 : 0
@@ -258,11 +273,14 @@ export default function TrainingStudio() {
       // 1 ── Fetch labeled clips from server
       addLog('Fetching labels from server…')
       const labelsRes = await fetch('/api/labels')
+      if (labelsRes.status === 401) throw new Error('Session expired. Reload and log in again.')
+      if (!labelsRes.ok) throw new Error(`Could not load labels (HTTP ${labelsRes.status})`)
       const { labels } = await labelsRes.json()
       const entries = Object.entries(labels).filter(([, l]) => LABELS.includes(l))
       addLog(`Found ${entries.length} labeled clips`)
 
       const recRes = await fetch('/api/recordings')
+      if (!recRes.ok) throw new Error(`Could not load recordings (HTTP ${recRes.status})`)
       const { recordings } = await recRes.json()
       const recSet = new Set(recordings.map(r => r.filename))
 
@@ -275,7 +293,7 @@ export default function TrainingStudio() {
       // copies are only ever created for training clips.
       const split = splitByGroup(valid)
       if (split.fallback) {
-        addLog('⚠ Too few source groups for a grouped split — falling back to random 80/20', 'warn')
+        addLog('⚠ Too few source groups for a grouped split, falling back to random 80/20', 'warn')
       } else {
         addLog(`Group-aware split: ${split.groups} source groups → ${split.train.length} train clips / ${split.val.length} val clips`)
         addLog(`  val per class: ${LABELS.map((l, k) => `${l} ${split.valPerClass[k]}/${split.totalPerClass[k]}`).join(' · ')}`)

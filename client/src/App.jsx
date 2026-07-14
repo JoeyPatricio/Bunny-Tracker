@@ -12,6 +12,7 @@ const TrainingStudio = lazy(() => import('./components/TrainingStudio.jsx'))
 import { useWebcam } from './hooks/useWebcam.js'
 import { useMotion } from './hooks/useMotion.js'
 import { useInference } from './hooks/useInference.js'
+import { LABEL_COLOR, LABEL_PHRASE } from './labels.js'
 
 export default function App() {
   const [authed, setAuthed]               = useState(null) // null = checking | false | true
@@ -68,8 +69,8 @@ export default function App() {
       // Notify if AI predicts a non-normal behavior. Clips are left UNLABELED
       // so they can be reviewed and labeled by hand (e.g. as `absent`).
       const pred = currentPredictionRef.current
-      if (pred && data.filename && pred.label !== 'normal') {
-        fetch('/api/sms/notify', {
+      if (pred && pred.warm && data.filename && pred.label !== 'normal') {
+        fetch('/api/notify', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -165,7 +166,7 @@ export default function App() {
       }
     ])
 
-    if (Notification.permission === 'granted') {
+    if ('Notification' in window && Notification.permission === 'granted') {
       new Notification('BunnyCam 🐇', { body: 'Motion detected!', silent: true })
     }
 
@@ -271,18 +272,6 @@ export default function App() {
     if (prediction.label === lastPredictionLabelRef.current) return
     lastPredictionLabelRef.current = prediction.label
 
-    const PHRASE = {
-      grooming: 'Bunny is grooming',
-      normal:   'Bunny is resting',
-      standing: 'Bunny is standing up',
-      yawn:     'Bunny is yawning',
-      zoomies:  'Bunny has the zoomies',
-    }
-    const COLOR = {
-      grooming: '#dc82ff', normal: '#88aaff', standing: '#ff9f3c',
-      yawn: '#ffd264', zoomies: '#7dff7d',
-    }
-
     const id = ++eventIdRef.current
     setEvents(prev => [
       ...prev.slice(-199),
@@ -290,18 +279,21 @@ export default function App() {
         id,
         timestamp: new Date(),
         type: 'prediction',
-        message: PHRASE[prediction.label] ?? prediction.label,
+        message: LABEL_PHRASE[prediction.label] ?? prediction.label,
         confidence: prediction.confidence,
-        color: COLOR[prediction.label],
+        color: LABEL_COLOR[prediction.label],
       },
     ])
 
-    // Publish to the server's public text-only demo feed
-    fetch('/api/predictions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ label: prediction.label, confidence: prediction.confidence }),
-    }).catch(() => {})
+    // Publish to the server's public text-only demo feed, but not warmup labels
+    // (sub-window std features are unreliable until the embedding window fills)
+    if (prediction.warm) {
+      fetch('/api/predictions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ label: prediction.label, confidence: prediction.confidence }),
+      }).catch(() => {})
+    }
 
     // SMS/email is fired from uploadRecording once a clip is saved (with attachment)
   }, [prediction])

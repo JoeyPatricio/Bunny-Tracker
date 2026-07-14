@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import * as tf from '@tensorflow/tfjs'
 import * as mobilenetModule from '@tensorflow-models/mobilenet'
+import { LABEL_COLOR } from '../labels.js'
 
 // 1.5s matches the frame spacing the classifier was trained on (8 frames
 // sampled evenly across a ~12s clip in TrainingStudio).
@@ -9,13 +10,6 @@ const INFERENCE_INTERVAL_MS = 1500
 // TrainingStudio: the classifier expects the MEAN of this many frame
 // embeddings, not a single-frame embedding.
 const EMBED_WINDOW = 8
-const LABEL_COLOR = {
-  grooming: '#dc82ff',
-  normal:   '#88aaff',
-  standing: '#ff9f3c',
-  yawn:     '#ffd264',
-  zoomies:  '#7dff7d',
-}
 
 export function useInference({ videoRef, isActive, enabled }) {
   const [status, setStatus]         = useState('idle') // idle | loading | ready | error
@@ -129,6 +123,9 @@ export function useInference({ videoRef, isActive, enabled }) {
         label,
         confidence: Math.round(confidence * 100),
         color: LABEL_COLOR[label] ?? '#ffffff',
+        // Trained on a full EMBED_WINDOW; sub-window std features are off
+        // distribution. Consumers use this to gate the public feed and alerts.
+        warm: window.length >= EMBED_WINDOW,
       })
     })
   }, [videoRef])

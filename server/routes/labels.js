@@ -1,6 +1,7 @@
 import express from 'express'
 import { readLabels, updateLabels, readAutoLabels, updateAutoLabels } from '../lib/labelStore.js'
 import { VALID_LABELS } from '../lib/validLabels.js'
+import { isRecordingFilename } from '../lib/recordingName.js'
 import { isAuthed } from './auth.js'
 
 const router = express.Router()
@@ -31,7 +32,7 @@ router.post('/:filename/suggest', async (req, res) => {
   const { filename } = req.params
   const { label } = req.body
 
-  if (!filename.startsWith('recording-') || !filename.endsWith('.webm')) {
+  if (!isRecordingFilename(filename)) {
     return res.status(400).json({ error: 'Invalid filename' })
   }
   if (!VALID.includes(label)) {
@@ -51,7 +52,7 @@ router.post('/:filename', async (req, res) => {
   const { filename } = req.params
   const { label } = req.body
 
-  if (!filename.startsWith('recording-') || !filename.endsWith('.webm')) {
+  if (!isRecordingFilename(filename)) {
     return res.status(400).json({ error: 'Invalid filename' })
   }
   if (!VALID.includes(label)) {
@@ -71,6 +72,9 @@ router.post('/:filename', async (req, res) => {
 // DELETE /api/labels/:filename — remove label (and any suggestion) from a clip
 router.delete('/:filename', async (req, res) => {
   const { filename } = req.params
+  if (!isRecordingFilename(filename)) {
+    return res.status(400).json({ error: 'Invalid filename' })
+  }
   try {
     await updateLabels(labels => { delete labels[filename]; return labels })
     await updateAutoLabels(auto => { delete auto[filename]; return auto }).catch(() => {})

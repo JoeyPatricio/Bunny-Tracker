@@ -1,16 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
-
-const BASE_COLOR = {
-  grooming: '#dc82ff', normal: '#88aaff', standing: '#ff9f3c',
-  yawn: '#ffd264', zoomies: '#7dff7d',
-}
-const PHRASE = {
-  grooming: 'Bunny is grooming',
-  normal:   'Bunny is resting',
-  standing: 'Bunny is standing up',
-  yawn:     'Bunny is yawning',
-  zoomies:  'Bunny has the zoomies',
-}
+import { LABEL_COLOR as BASE_COLOR, LABEL_PHRASE as PHRASE } from '../labels.js'
 
 const baseOf = (lbl) => (lbl || '').replace('ml_', '')
 
@@ -89,11 +78,11 @@ export default function DemoView({ onLogin }) {
         <h1 className="demo-title">🐇 BunnyCam</h1>
         <p className="demo-tagline">
           A machine-learning pet monitor that watches rabbits and recognizes what
-          they're doing — zoomies, yawning, grooming, standing — in real time.
+          they're doing (zoomies, yawning, grooming, standing) in real time.
         </p>
         <div className="demo-status">
           <span className={`status-dot ${isLive ? 'live' : ''}`} />
-          {isLive ? 'System live — detecting right now' : 'Monitor currently offline'}
+          {isLive ? 'System live, detecting right now' : 'Monitor currently offline'}
         </div>
       </section>
 
@@ -107,7 +96,7 @@ export default function DemoView({ onLogin }) {
           </p>
           <div className="demo-feed">
             {feed.length === 0 && (
-              <div className="demo-feed-empty">No predictions yet — the camera is offline.</div>
+              <div className="demo-feed-empty">No predictions yet. The camera is offline.</div>
             )}
             {feed.map((ev, i) => {
               const base = baseOf(ev.label)
@@ -129,10 +118,10 @@ export default function DemoView({ onLogin }) {
         <section className="demo-about-card">
           <h2 className="demo-section-title">How It Works</h2>
           <ol className="demo-steps">
-            <li><b>Capture</b> — a camera watches the bunny pen; motion detection triggers recording.</li>
-            <li><b>Embed</b> — frames run through MobileNetV2 (transfer learning) producing 1280-dim features.</li>
-            <li><b>Classify</b> — a custom dense network (trained on 150+ hand-labeled clips) maps features to one of five behaviors.</li>
-            <li><b>Alert</b> — non-normal behaviors trigger an email with the clip attached, with smart cooldowns.</li>
+            <li><b>Capture:</b> a camera watches the bunny pen; motion detection triggers recording.</li>
+            <li><b>Embed:</b> frames run through MobileNetV2 (transfer learning) producing 1280-dim features.</li>
+            <li><b>Classify:</b> a custom dense network (trained on 150+ hand-labeled clips) maps features to one of five behaviors.</li>
+            <li><b>Alert:</b> non-normal behaviors trigger an email with the clip attached, with smart cooldowns.</li>
           </ol>
           <div className="demo-chips">
             {Object.entries(BASE_COLOR).map(([l, c]) => (
