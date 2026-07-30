@@ -12,7 +12,10 @@
  * via a "press K" prompt instead of closing.
  */
 const path = require('path')
-const SERVER = path.join(__dirname, 'server')
+const SERVER_PY = path.join(__dirname, 'server_py')
+// The runtime venv's own python.exe directly, not `interpreter: 'python3'` —
+// that assumes a PATH entry this Windows box does not guarantee.
+const PYTHON = path.join(SERVER_PY, '.venv', 'Scripts', 'python.exe')
 
 // cloudflared location (Windows install path). Override with CLOUDFLARED_PATH.
 const CLOUDFLARED = process.env.CLOUDFLARED_PATH ||
@@ -26,19 +29,23 @@ module.exports = {
   apps: [
     {
       name: 'bunnycam-server',
-      script: 'index.js',
-      cwd: SERVER,
+      script: PYTHON,
+      args: '-m uvicorn app.main:app --host 0.0.0.0 --port 3001',
+      cwd: SERVER_PY,
       autorestart: true,
       max_restarts: 20,
       restart_delay: 3000,
+      env: { PYTHONIOENCODING: 'utf-8', PYTHONUNBUFFERED: '1', PY_PORT: '3001' },
     },
     {
       name: 'bunnycam-agent',
-      script: 'agent/capture.mjs',
-      cwd: SERVER,
+      script: PYTHON,
+      args: '-m agent.capture',
+      cwd: SERVER_PY,
       autorestart: true,
       max_restarts: 20,
       restart_delay: 5000,
+      env: { PYTHONIOENCODING: 'utf-8', PYTHONUNBUFFERED: '1' },
     },
     {
       name: 'bunnycam-tunnel',
@@ -65,7 +72,7 @@ module.exports = {
         N8N_DIAGNOSTICS_ENABLED: 'false', // disable telemetry
         // Allow the Read/Write File node to reach the clips (2.x sandboxes it
         // to .n8n-files by default).
-        N8N_RESTRICT_FILE_ACCESS_TO: 'C:\\Users\\joepa\\Desktop\\PetCam\\server\\recordings',
+        N8N_RESTRICT_FILE_ACCESS_TO: 'C:\\Users\\joepa\\Desktop\\BunnyTracker\\server\\recordings',
         GENERIC_TIMEZONE: 'America/Los_Angeles',
       },
     },

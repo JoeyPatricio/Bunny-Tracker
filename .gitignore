@@ -28,3 +28,16 @@ server/hidden.json*
 
 # MobileNet backbone (fetch with scripts/download-mobilenet.mjs)
 server/model/mobilenet/
+
+# Python port (server_py)
+server_py/.venv/
+server_py/.venv-train/
+server_py/models/cache/
+server_py/agent/live_frame.jpg
+__pycache__/
+*.pyc
+
+# Raw-bytes copy of the motion fixture, same frames as the .npy next to it.
+# Only scripts/js_motion_ground_truth.mjs reads it; scripts/dump_agent_frames.py
+# writes both, so regenerate it there rather than carrying 9.6 MB twice.
+server_py/tests/fixtures/motion_fixture_frames.bin

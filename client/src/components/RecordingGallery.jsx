@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { LABEL_COLOR as BASE_COLOR } from '../labels.js'
 
 const labelColor = (lbl) => {
@@ -27,8 +27,11 @@ export default function RecordingGallery({ refreshTrigger }) {
   const [loading, setLoading]       = useState(false)
   const [filter, setFilter]         = useState('all')
 
-  const fetchAll = useCallback(async () => {
-    setLoading(true)
+  // `quiet` skips the loading state. Only the first load should blank the list
+  // behind a "Loading…" placeholder; a background refresh that did that would
+  // make the gallery flicker empty every minute.
+  const fetchAll = useCallback(async ({ quiet = false } = {}) => {
+    if (!quiet) setLoading(true)
     try {
       const [recRes, lblRes] = await Promise.all([
         fetch('/api/recordings'),
@@ -41,11 +44,24 @@ export default function RecordingGallery({ refreshTrigger }) {
     } catch (err) {
       console.error('Failed to load recordings:', err)
     } finally {
-      setLoading(false)
+      if (!quiet) setLoading(false)
     }
   }, [])
 
-  useEffect(() => { fetchAll() }, [fetchAll, refreshTrigger])
+  // refreshTrigger covers clips this browser saved (the Record button bumps it
+  // in App). The agent also writes clips on its own with no client-side event
+  // to hang a refresh on, so poll slowly as well — it only fires a few times a
+  // day, but without this those clips stay invisible until a page reload.
+  const loadedOnce = useRef(false)
+  useEffect(() => {
+    fetchAll({ quiet: loadedOnce.current })
+    loadedOnce.current = true
+  }, [fetchAll, refreshTrigger])
+
+  useEffect(() => {
+    const id = setInterval(() => fetchAll({ quiet: true }), 60000)
+    return () => clearInterval(id)
+  }, [fetchAll])
 
   const deleteRecording = async (filename) => {
     try {

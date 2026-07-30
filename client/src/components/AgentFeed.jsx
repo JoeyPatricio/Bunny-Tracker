@@ -6,7 +6,7 @@ import { LABEL_COLOR as BASE_COLOR, LABEL_PHRASE as PHRASE } from '../labels.js'
  * Live MJPEG view from the headless camera agent, with the agent's latest
  * prediction overlaid. Replaces the browser-webcam view when the agent runs.
  */
-export default function AgentFeed() {
+export default function AgentFeed({ onClipSaved }) {
   const [latest, setLatest]     = useState(null) // { label, confidence, time }
   const [recording, setRecording] = useState(false)
   const [flash, setFlash]       = useState('')
@@ -51,6 +51,7 @@ export default function AgentFeed() {
       const res = await fetch('/api/recordings/grab', { method: 'POST' })
       const d   = await res.json()
       setFlash(res.ok ? '✓ Saved clip' : `⚠ ${d.error || 'Failed'}`)
+      if (res.ok) onClipSaved?.() // tell the gallery to refetch, or the clip won't appear until reload
     } catch {
       setFlash('⚠ Failed')
     } finally {

@@ -1,16 +1,46 @@
-import React, { useEffect, useRef } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
+import { LABEL_COLOR, LABEL_PHRASE } from '../labels.js'
 
 /**
  * ActivityLog
- * Scrollable list of timestamped motion detection events.
+ * Scrollable list of the agent's recent behavior predictions, polled from
+ * /api/predictions (the same feed AgentFeed.jsx uses for its live badge).
+ * Only behavior-label changes appear here — the agent's feed doesn't carry
+ * raw motion-level events, so this no longer shows generic motion blips.
  */
-export default function ActivityLog({ events, onClear }) {
+export default function ActivityLog() {
+  const [events, setEvents] = useState([])
   const bottomRef = useRef(null)
 
-  // Auto-scroll to latest entry
   useEffect(() => {
+    const poll = () =>
+      fetch('/api/predictions')
+        .then(r => r.json())
+        .then(d => {
+          const items = (d.events || []).map((ev, i) => ({
+            id: `${ev.time}-${i}`,
+            timestamp: new Date(ev.time),
+            message: LABEL_PHRASE[ev.label] ?? ev.label,
+            confidence: ev.confidence,
+            color: LABEL_COLOR[ev.label],
+          }))
+          setEvents(items)
+        })
+        .catch(() => {})
+    poll()
+    const id = setInterval(poll, 3000)
+    return () => clearInterval(id)
+  }, [])
+
+  // Auto-scroll to the latest entry, but only when a genuinely new one arrives.
+  // The 3s poll rebuilds `events` as a fresh array every tick, so depending on
+  // it directly re-scrolled every 3 seconds whether anything had changed or
+  // not, yanking the view back down while you were reading older entries.
+  const newestId = events.length ? events[events.length - 1].id : null
+  useEffect(() => {
+    if (newestId === null) return
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [events])
+  }, [newestId])
 
   const formatTime = (date) => {
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
@@ -20,11 +50,6 @@ export default function ActivityLog({ events, onClear }) {
     <div className="activity-log">
       <div className="log-header">
         <span className="log-title">Activity Log</span>
-        {events.length > 0 && (
-          <button className="clear-btn" onClick={onClear} title="Clear log">
-            Clear
-          </button>
-        )}
       </div>
 
       <div className="log-body">
@@ -36,7 +61,7 @@ export default function ActivityLog({ events, onClear }) {
         ) : (
           <>
             {events.map((event) => (
-              <div key={event.id} className={`log-entry${event.type === 'prediction' ? ' log-entry-prediction' : ''}`}>
+              <div key={event.id} className="log-entry log-entry-prediction">
                 <span className="entry-time">{formatTime(event.timestamp)}</span>
                 <span
                   className={`entry-dot${event.color ? ' colored' : ''}`}
@@ -47,9 +72,6 @@ export default function ActivityLog({ events, onClear }) {
                 </span>
                 {event.confidence !== undefined && (
                   <span className="entry-level">{event.confidence}%</span>
-                )}
-                {event.level !== undefined && (
-                  <span className="entry-level">{event.level}%</span>
                 )}
               </div>
             ))}
@@ -85,22 +107,6 @@ export default function ActivityLog({ events, onClear }) {
           font-size: 13px;
           color: var(--text-secondary);
           letter-spacing: 0.04em;
-        }
-
-        .clear-btn {
-          background: none;
-          color: var(--text-muted);
-          font-family: var(--font-mono);
-          font-size: 11px;
-          padding: 2px 6px;
-          border-radius: 3px;
-          border: 1px solid var(--border);
-          transition: all 0.15s;
-        }
-
-        .clear-btn:hover {
-          color: var(--text-secondary);
-          border-color: var(--border-light);
         }
 
         .log-body {

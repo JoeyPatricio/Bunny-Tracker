@@ -1,4 +1,4 @@
-# 🐇 PetCam (Bunny Tracker)
+# 🐇 Bunny Tracker
 
 A self-hosted machine-learning pet monitor. A camera watches your rabbits, a
 classifier recognizes what they're doing, zoomies, yawning, grooming, standing,
@@ -12,38 +12,47 @@ private to the owner).
 ## How it works
 
 ```
-[camera] ──► capture agent (ffmpeg) ──► MobileNetV2 embedding ──► classifier ──► behavior
-                  │                                                        │
-                  ├──► rolling 12s clips                                   ├──► email alert + clip
-                  └──► MJPEG live stream ──► dashboard                     └──► public text feed
+[camera] ──► capture agent (ffmpeg) ──► ONNX backbone embedding ──► temporal head ──► behavior
+                  │                                                            │
+                  ├──► rolling 12s clips                                       ├──► email alert + clip
+                  └──► MJPEG live stream ──► dashboard                         └──► public text feed
 ```
 
-- **Capture agent** (`server/agent/capture.mjs`): a headless Node service that
-  reads the camera with one `ffmpeg` process, sampling a frame every few seconds
-  for inference, recording rolling clips, and pushing a live MJPEG stream. Runs
-  the same on a PC (`dshow`) or a Raspberry Pi (`v4l2`), only two `.env` lines change.
-- **Classifier**: MobileNetV2 transfer learning in TensorFlow.js. A dense head
-  trained on 150+ hand-labeled clips maps the mean ‖ std of 8 frame embeddings
-  (2×1280 dims, the std across frames is the motion signal) to five behaviors.
-  Train it from the browser in the Training tab; validation is split by source
-  video so the accuracy number reflects real generalization.
-- **Alerts**: a non-normal behavior emails you the clip (Nodemailer + Gmail),
-  with motion gating, a multi-frame debounce, and a global cooldown to suppress
-  false positives.
+- **Capture agent** (`server_py/agent/capture.py`): a headless Python service
+  that reads the camera with one `ffmpeg` process, sampling a frame every few
+  seconds for inference, recording rolling clips, and pushing a live view to
+  the dashboard. Runs the same on a PC (`dshow`) or a Raspberry Pi (`v4l2`),
+  only two `.env` lines change.
+- **Classifier**: a frozen `timm` edge backbone (`mobilenetv4_conv_small`) plus
+  a small learned temporal head, exported to ONNX and run via ONNX Runtime -
+  replaced the original browser-trained TensorFlow.js/MobileNetV2 classifier.
+  Retraining is now an offline CLI script (`server_py/training/train.py`), not
+  a browser tab; see the note below.
+- **Alerts**: a non-normal behavior emails you the clip (Python `smtplib` +
+  Gmail), with motion gating, a multi-frame debounce, and a global cooldown to
+  suppress false positives.
 - **Web app**: Camera (live feed + predictions), Label Studio (label clips),
-  and Training (extract features + train the model). A separate public demo page
-  shows highlights and a live behavior feed without exposing the camera.
+  and Training (a read-only panel showing the deployed model's metadata). A
+  separate public demo page shows highlights and a live behavior feed without
+  exposing the camera.
+
+**Model accuracy note:** the currently deployed classifier is measurably weaker
+than the one it replaced (61.5% vs. 74.4% held-out accuracy) - the retrain
+didn't have enough labeled data yet to beat the original. The rest of the
+system (capture, motion detection, alerting, dashboard) was ported and verified
+independently of this; it's a known, accepted gap pending more labeled clips.
 
 ## Tech stack
 
-| Layer       | Tech                                                        |
-|-------------|-------------------------------------------------------------|
-| Frontend    | React + Vite, TensorFlow.js, MobileNetV2                     |
-| Backend     | Node.js + Express                                           |
-| Capture/ML  | ffmpeg (bundled), TensorFlow.js (Node), pixel-diff motion   |
-| Alerts      | Nodemailer (Gmail SMTP)                                     |
-| Process mgmt| pm2 (server, agent, tunnel)                                 |
-| Deployment  | Cloudflare named tunnel (HTTPS, custom domain)             |
+| Layer       | Tech                                                             |
+|-------------|--------------------------------------------------------------------|
+| Frontend    | React + Vite                                                       |
+| Backend     | Python (FastAPI + uvicorn)                                          |
+| Capture/ML  | ffmpeg (`imageio-ffmpeg`), ONNX Runtime, pixel-diff motion detection |
+| Training    | PyTorch + `timm`, offline CLI script                                |
+| Alerts      | `smtplib` (Gmail SMTP)                                              |
+| Process mgmt| pm2 (server, agent, tunnel, n8n)                                    |
+| Deployment  | Cloudflare named tunnel (HTTPS, custom domain)                      |
 
 ---
 
@@ -52,14 +61,16 @@ private to the owner).
 ### 1. Install dependencies
 
 ```bash
-npm run install:all
+cd client && npm install && npm run build
+cd ../server_py
+python -m venv .venv && .venv/Scripts/pip install -r requirements.txt
+# Only if you're retraining the model:
+python -m venv .venv-train && .venv-train/Scripts/pip install -r requirements-train.txt
 ```
-
-Installs packages for the root, client, and server.
 
 ### 2. Configure the environment
 
-Create `server/.env`:
+Create `server/.env` (shared by both the server and the agent):
 
 ```ini
 # Email alerts (Gmail App Password, not your normal password)
@@ -71,6 +82,10 @@ NOTIFY_COOLDOWN_MINUTES=10
 # Dashboard login (wrap in quotes if it contains a # )
 ADMIN_PASSWORD="your-password"
 
+# Camera agent's own service credential (not the human login) — any random
+# 64-char hex string, e.g. `python -c "import secrets; print(secrets.token_hex(32))"`
+AGENT_TOKEN="generate-your-own-random-token"
+
 # Camera agent, PC defaults shown; for a Raspberry Pi use v4l2 / /dev/video0
 CAMERA_FORMAT=dshow
 CAMERA_INPUT=video=Your Webcam Name
@@ -81,23 +96,9 @@ AGENT_ALERT_STREAK=3
 
 Find your camera name (Windows): `ffmpeg -f dshow -list_devices true -i dummy`.
 
-### 3. Build the client
+### 3. Run
 
-```bash
-cd client && npm run build
-```
-
-The server serves the built app, so everything runs on one port.
-
-### 4. Run
-
-Development (server + client dev server):
-
-```bash
-npm run dev
-```
-
-Production / 24-7 (server, capture agent, and tunnel under pm2):
+Production / 24-7 (server, capture agent, tunnel, and n8n under pm2):
 
 ```bash
 pm2 start ecosystem.config.cjs
@@ -111,11 +112,12 @@ the camera, labeling, and training tabs. Without login you see the public demo.
 
 ## Using it
 
-1. **Label**: record or import clips, then tag them in **Label Studio**
+1. **Label**: import clips, then tag them in **Label Studio**
    (`Z` zoomies, `Y` yawn, `N` normal, `G` grooming, `S` standing).
-2. **Train**: open **Training** and hit Start. It extracts MobileNet features,
-   trains the classifier, shows a confusion matrix, and saves the model.
-3. **Monitor**: the agent loads the saved model and runs live. Toggle
+2. **Train**: run `server_py/training/train.py` (see that file's docstring for
+   the full pipeline: extract -> split -> fit -> export to ONNX). The Training
+   tab in the dashboard is now a read-only view of whatever model is deployed.
+3. **Monitor**: the agent loads the exported ONNX model and runs live. Toggle
    **Monitoring** and **Email** from the dashboard header.
 
 Clips the agent records during an alert carry the predicted behavior as a
@@ -125,49 +127,76 @@ model's own predictions can't feed back into its training data.
 
 ---
 
+## Tests
+
+Plain scripts, not pytest. Run them from `server_py/` with the runtime venv:
+
+```bash
+.venv/Scripts/python.exe tests/test_motion_parity.py
+.venv/Scripts/python.exe tests/test_security_regressions.py
+.venv/Scripts/python.exe tests/test_server_robustness.py
+.venv/Scripts/python.exe tests/test_capture_loop.py
+.venv/Scripts/python.exe agent/test_capture_offline.py
+```
+
+`training/test_train_guards.py` needs torch, so run that one with
+`.venv-train/Scripts/python.exe`.
+
+---
+
 ## Project structure
 
 ```
-PetCam/
-├── ecosystem.config.cjs        # pm2 process definitions (server, agent, tunnel)
+BunnyTracker/
+├── ecosystem.config.cjs        # pm2 process definitions (server, agent, tunnel, n8n)
 ├── client/                     # React + Vite frontend
 │   └── src/
-│       ├── components/
-│       │   ├── VideoFeed.jsx        # Browser webcam view (fallback)
-│       │   ├── AgentFeed.jsx        # Live MJPEG stream from the agent + record
-│       │   ├── LabelingStudio.jsx   # Clip labeling UI
-│       │   ├── TrainingStudio.jsx   # Feature extraction + model training
-│       │   ├── RecordingGallery.jsx # Recordings, filterable by label
-│       │   └── DemoView.jsx         # Public demo (highlights + live feed)
-│       └── hooks/                   # useWebcam, useMotion, useInference
+│       └── components/
+│           ├── AgentFeed.jsx        # Live view from the agent + record button
+│           ├── LabelingStudio.jsx   # Clip labeling UI
+│           ├── TrainingStudio.jsx   # Read-only deployed-model metadata panel
+│           ├── ActivityLog.jsx      # Recent behavior predictions (polls /api/predictions)
+│           ├── RecordingGallery.jsx # Recordings, filterable by label
+│           └── DemoView.jsx         # Public demo (highlights + live feed)
 │
-└── server/                     # Express backend
-    ├── agent/capture.mjs       # Headless capture + inference service
-    ├── lib/labelStore.js       # Atomic, serialized label storage
-    ├── lib/backupLabels.js     # Daily label backups (7-day retention)
-    ├── routes/                 # recordings, labels, model, sms, auth,
-    │                           #   stream, monitor, predictions
-    ├── model/                  # Saved TensorFlow.js model + label map
-    ├── recordings/             # Saved .webm clips (git-ignored)
-    └── index.js                # Server entry point
+├── server/                     # Data only - no server code lives here anymore
+│   ├── recordings/             # Saved .webm clips (git-ignored)
+│   ├── model/                  # Retired tfjs artifacts. No Python code path
+│   │                           #   can run them; still served read-only at
+│   │                           #   /model/* and covered by the traversal tests
+│   ├── labels.json, hidden.json, monitor.json, activity-log.json, ...
+│   └── agent/segments/         # Rolling capture segments
+│
+└── server_py/                   # Python backend + agent + training
+    ├── app/                      # FastAPI server (routers, auth, storage)
+    ├── agent/                    # Headless capture agent (capture.py, ffmpeg_io.py, client.py)
+    ├── inference/                 # ONNX Runtime wrappers (backbone, temporal head, predictor)
+    ├── shared/                    # Code shared by the trainer and the agent (frames, motion, labels)
+    ├── training/                  # Offline PyTorch training CLI
+    ├── models/                    # Deployed ONNX artifacts (backbone, head)
+    ├── .venv/                     # Runtime deps (no torch) - what actually runs in production
+    └── .venv-train/               # Training deps (torch, timm) - dev box only
 ```
 
 ---
 
 ## Deployment
 
-Three processes run under pm2 and auto-start at login: `bunnycam-server`,
-`bunnycam-agent`, and `bunnycam-tunnel` (Cloudflare). The tunnel maps a custom
-domain to the local server over HTTPS, so the camera PC never exposes a port.
+Four processes run under pm2 and auto-start at login: `bunnycam-server`,
+`bunnycam-agent` (both Python), `bunnycam-tunnel` (Cloudflare), and
+`bunnycam-n8n`. The tunnel maps a custom domain to the local server over HTTPS,
+so the camera PC never exposes a port.
 
-Security: cookie session auth (Secure over HTTPS), rate-limited login,
-timing-safe password check, and a server-enforced private live stream.
+Security: cookie session auth (Secure over HTTPS) for the human login, a
+separate service-token (`AGENT_TOKEN`) for the camera agent so it can never
+lock out the human admin, rate-limited login, timing-safe password check, and
+a server-enforced private live stream.
 
 ### Raspberry Pi
 
-The capture agent is platform-agnostic. To move from a PC to a Pi: clone, run
-`npm install`, swap two `.env` lines (`CAMERA_FORMAT=v4l2`,
-`CAMERA_INPUT=/dev/video0`), and start the same pm2 processes.
+The capture agent is platform-agnostic in principle - swap two `.env` lines
+(`CAMERA_FORMAT=v4l2`, `CAMERA_INPUT=/dev/video0`) and point `ecosystem.config.cjs`
+at the Pi's own venv/cloudflared/n8n paths.
 
 ---
 
@@ -183,17 +212,17 @@ the full plan):
 - **Room environment**: a BME280 on the same Pi tracks temperature and
   humidity, with heat-stress alerts (rabbits overheat above ~28C).
 
-Model improvements from the research paper's future-work agenda remain open:
-temporal modeling, an "other/absent" class, larger and more varied training
-data, and confidence calibration.
+**Retrain once more labeled data exists** - the current classifier is a known
+regression from the one it replaced; see the model accuracy note above.
 
 ---
 
 ## Notes
 
-- Recordings (`server/recordings/`), labels (`server/labels.json`), the model,
-  backups, and `.env` are all git-ignored.
+- Recordings (`server/recordings/`), labels (`server/labels.json`), backups,
+  and `.env` are all git-ignored. The deployed ONNX artifacts in
+  `server_py/models/` are committed, so a clone can run inference without
+  retraining.
 - Labels are written atomically and serialized, with `.bak` plus daily backups,
   so concurrent edits can't corrupt or wipe them.
-- No third-party ML service, inference runs locally in TensorFlow.js.
-```
+- No third-party ML service, inference runs locally via ONNX Runtime.

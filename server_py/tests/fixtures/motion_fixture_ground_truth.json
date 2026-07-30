@@ -1,0 +1,337 @@
+[
+  {
+    "level": 0,
+    "hotCells": 0,
+    "lighting": false
+  },
+  {
+    "level": 3.1568877551020407,
+    "hotCells": 3,
+    "lighting": false
+  },
+  {
+    "level": 2.965561224489796,
+    "hotCells": 3,
+    "lighting": false
+  },
+  {
+    "level": 2.7104591836734695,
+    "hotCells": 3,
+    "lighting": false
+  },
+  {
+    "level": 1.3073979591836735,
+    "hotCells": 1,
+    "lighting": false
+  },
+  {
+    "level": 0.9885204081632654,
+    "hotCells": 0,
+    "lighting": false
+  },
+  {
+    "level": 1.8494897959183674,
+    "hotCells": 1,
+    "lighting": false
+  },
+  {
+    "level": 1.211734693877551,
+    "hotCells": 0,
+    "lighting": false
+  },
+  {
+    "level": 1.0841836734693877,
+    "hotCells": 1,
+    "lighting": false
+  },
+  {
+    "level": 1.0522959183673468,
+    "hotCells": 1,
+    "lighting": false
+  },
+  {
+    "level": 1.6581632653061225,
+    "hotCells": 0,
+    "lighting": false
+  },
+  {
+    "level": 0.6696428571428571,
+    "hotCells": 0,
+    "lighting": false
+  },
+  {
+    "level": 0.3826530612244898,
+    "hotCells": 0,
+    "lighting": false
+  },
+  {
+    "level": 0.4145408163265306,
+    "hotCells": 0,
+    "lighting": false
+  },
+  {
+    "level": 0.6058673469387755,
+    "hotCells": 0,
+    "lighting": false
+  },
+  {
+    "level": 0.4464285714285714,
+    "hotCells": 0,
+    "lighting": false
+  },
+  {
+    "level": 1.0841836734693877,
+    "hotCells": 0,
+    "lighting": false
+  },
+  {
+    "level": 0.350765306122449,
+    "hotCells": 0,
+    "lighting": false
+  },
+  {
+    "level": 0.5102040816326531,
+    "hotCells": 0,
+    "lighting": false
+  },
+  {
+    "level": 1.0841836734693877,
+    "hotCells": 1,
+    "lighting": false
+  },
+  {
+    "level": 1.530612244897959,
+    "hotCells": 1,
+    "lighting": false
+  },
+  {
+    "level": 1.0841836734693877,
+    "hotCells": 1,
+    "lighting": false
+  },
+  {
+    "level": 3.3801020408163267,
+    "hotCells": 3,
+    "lighting": false
+  },
+  {
+    "level": 1.6900510204081634,
+    "hotCells": 2,
+    "lighting": false
+  },
+  {
+    "level": 1.403061224489796,
+    "hotCells": 0,
+    "lighting": false
+  },
+  {
+    "level": 1.5625,
+    "hotCells": 2,
+    "lighting": false
+  },
+  {
+    "level": 1.7538265306122447,
+    "hotCells": 2,
+    "lighting": false
+  },
+  {
+    "level": 1.5625,
+    "hotCells": 2,
+    "lighting": false
+  },
+  {
+    "level": 0.6696428571428571,
+    "hotCells": 0,
+    "lighting": false
+  },
+  {
+    "level": 0.5420918367346939,
+    "hotCells": 0,
+    "lighting": false
+  },
+  {
+    "level": 0.6696428571428571,
+    "hotCells": 0,
+    "lighting": false
+  },
+  {
+    "level": 0.4464285714285714,
+    "hotCells": 0,
+    "lighting": false
+  },
+  {
+    "level": 1.8494897959183674,
+    "hotCells": 2,
+    "lighting": false
+  },
+  {
+    "level": 1.9451530612244898,
+    "hotCells": 2,
+    "lighting": false
+  },
+  {
+    "level": 1.4349489795918369,
+    "hotCells": 1,
+    "lighting": false
+  },
+  {
+    "level": 1.4987244897959182,
+    "hotCells": 1,
+    "lighting": false
+  },
+  {
+    "level": 0.7653061224489796,
+    "hotCells": 1,
+    "lighting": false
+  },
+  {
+    "level": 1.211734693877551,
+    "hotCells": 2,
+    "lighting": false
+  },
+  {
+    "level": 0.3826530612244898,
+    "hotCells": 0,
+    "lighting": false
+  },
+  {
+    "level": 0.6377551020408163,
+    "hotCells": 0,
+    "lighting": false
+  },
+  {
+    "level": 0.9885204081632654,
+    "hotCells": 1,
+    "lighting": false
+  },
+  {
+    "level": 0.701530612244898,
+    "hotCells": 0,
+    "lighting": false
+  },
+  {
+    "level": 0.701530612244898,
+    "hotCells": 0,
+    "lighting": false
+  },
+  {
+    "level": 0.350765306122449,
+    "hotCells": 0,
+    "lighting": false
+  },
+  {
+    "level": 1.1479591836734695,
+    "hotCells": 1,
+    "lighting": false
+  },
+  {
+    "level": 1.4668367346938775,
+    "hotCells": 2,
+    "lighting": false
+  },
+  {
+    "level": 0.9247448979591837,
+    "hotCells": 1,
+    "lighting": false
+  },
+  {
+    "level": 0,
+    "hotCells": 63,
+    "lighting": true
+  },
+  {
+    "level": 1.1798469387755102,
+    "hotCells": 1,
+    "lighting": false
+  },
+  {
+    "level": 1.7219387755102038,
+    "hotCells": 1,
+    "lighting": false
+  },
+  {
+    "level": 0,
+    "hotCells": 53,
+    "lighting": true
+  },
+  {
+    "level": 0,
+    "hotCells": 52,
+    "lighting": true
+  },
+  {
+    "level": 0,
+    "hotCells": 50,
+    "lighting": true
+  },
+  {
+    "level": 0,
+    "hotCells": 57,
+    "lighting": true
+  },
+  {
+    "level": 0,
+    "hotCells": 46,
+    "lighting": true
+  },
+  {
+    "level": 0,
+    "hotCells": 46,
+    "lighting": true
+  },
+  {
+    "level": 0,
+    "hotCells": 45,
+    "lighting": true
+  },
+  {
+    "level": 41.80484693877551,
+    "hotCells": 42,
+    "lighting": false
+  },
+  {
+    "level": 36.92602040816326,
+    "hotCells": 43,
+    "lighting": false
+  },
+  {
+    "level": 20.66326530612245,
+    "hotCells": 22,
+    "lighting": false
+  },
+  {
+    "level": 0,
+    "hotCells": 46,
+    "lighting": true
+  },
+  {
+    "level": 0,
+    "hotCells": 51,
+    "lighting": true
+  },
+  {
+    "level": 33.45025510204081,
+    "hotCells": 35,
+    "lighting": false
+  },
+  {
+    "level": 14.955357142857142,
+    "hotCells": 14,
+    "lighting": false
+  },
+  {
+    "level": 53.50765306122449,
+    "hotCells": 40,
+    "lighting": false
+  },
+  {
+    "level": 0,
+    "hotCells": 64,
+    "lighting": true
+  },
+  {
+    "level": 0,
+    "hotCells": 63,
+    "lighting": true
+  }
+]

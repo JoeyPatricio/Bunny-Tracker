@@ -1,0 +1,12 @@
+{
+  "name": "bunnytracker-py-port-scripts",
+  "private": true,
+  "type": "module",
+  "description": "Self-contained Node deps for the Python port's JS-baseline comparison script. Kept separate from server/ so this scratch tooling never touches the live Node service.",
+  "dependencies": {
+    "@tensorflow-models/mobilenet": "^2.1.1",
+    "@tensorflow/tfjs": "^4.22.0",
+    "@tensorflow/tfjs-node": "^4.22.0",
+    "express": "^4.21.2"
+  }
+}

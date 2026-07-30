@@ -1,0 +1,7 @@
+{
+  "js_baseline_acc": 0.7435897435897436,
+  "torch_fp32_acc": 0.6153846153846154,
+  "onnx_fp32_acc": 0.6153846153846154,
+  "onnx_int8_acc": 0.6153846153846154,
+  "gate_passed": false
+}

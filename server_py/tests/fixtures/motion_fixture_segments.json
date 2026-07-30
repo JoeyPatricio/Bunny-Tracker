@@ -1,0 +1,27 @@
+[
+  {
+    "name": "idle",
+    "source": "recording-rabbitat-normal-07.webm",
+    "count": 47
+  },
+  {
+    "name": "motion_burst",
+    "source": "recording-binky-compilation-01.webm",
+    "count": 6
+  },
+  {
+    "name": "motion_burst",
+    "source": "recording-binky-compilation-02.webm",
+    "count": 6
+  },
+  {
+    "name": "motion_burst",
+    "source": "recording-binky-compilation-03.webm",
+    "count": 6
+  },
+  {
+    "name": "synthesized_lighting_step",
+    "source": "synthesized (dark+bright frame pair)",
+    "count": 2
+  }
+]

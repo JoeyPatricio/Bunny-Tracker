@@ -1,195 +1,22 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react'
-import VideoFeed from './components/VideoFeed.jsx'
-import Controls from './components/Controls.jsx'
+import React, { useState, useEffect, useCallback } from 'react'
 import ActivityLog from './components/ActivityLog.jsx'
 import RecordingGallery from './components/RecordingGallery.jsx'
 import LabelingStudio from './components/LabelingStudio.jsx'
 import DemoView from './components/DemoView.jsx'
 import AgentFeed from './components/AgentFeed.jsx'
 import HighlightsManager from './components/HighlightsManager.jsx'
-import { lazy, Suspense } from 'react'
-const TrainingStudio = lazy(() => import('./components/TrainingStudio.jsx'))
-import { useWebcam } from './hooks/useWebcam.js'
-import { useMotion } from './hooks/useMotion.js'
-import { useInference } from './hooks/useInference.js'
-import { LABEL_COLOR, LABEL_PHRASE } from './labels.js'
+import TrainingStudio from './components/TrainingStudio.jsx'
 
 export default function App() {
-  const [authed, setAuthed]               = useState(null) // null = checking | false | true
-  const [agentLive, setAgentLive]         = useState(false)
-  const [monitorOn, setMonitorOn]         = useState(null) // null until fetched
-  const [emailOn, setEmailOn]             = useState(null)
-  const [tab, setTab]                     = useState('camera') // 'camera' | 'label' | 'train'
-  const [inferenceEnabled, setInferenceEnabled] = useState(
-    () => localStorage.getItem('bunnycam.aiEnabled') === 'true'
-  )
-  const [events, setEvents]               = useState([])
-  const [sensitivity, setSensitivity]     = useState(30)
-  const [recordingTick, setRecordingTick] = useState(0)
-  const [autoRecordEnabled, setAutoRecordEnabled] = useState(
-    () => localStorage.getItem('bunnycam.autoRecord') === 'true'
-  )
-  const [isRecording, setIsRecording]     = useState(false)
-  const eventIdRef = useRef(0)
-  const recorderRef = useRef(null)
-  const chunksRef = useRef([])
-  const recordTimeoutRef = useRef(null)
-  const lastPredictionLabelRef = useRef(null)
-  const currentPredictionRef = useRef(null)
-
-  // ── Webcam ──────────────────────────────────────────────
-  const {
-    videoRef, isActive, error,
-    devices, selectedDevice,
-    startCamera, stopCamera, switchCamera,
-  } = useWebcam()
-
-  const getSupportedMimeType = useCallback(() => {
-    if (typeof window === 'undefined' || !window.MediaRecorder) return ''
-    const candidateTypes = [
-      'video/webm; codecs=vp9',
-      'video/webm; codecs=vp8',
-      'video/webm',
-    ]
-    return candidateTypes.find(type => MediaRecorder.isTypeSupported(type)) || ''
-  }, [])
-
-  const uploadRecording = useCallback(async () => {
-    if (chunksRef.current.length === 0) return
-
-    const mimeType = getSupportedMimeType() || 'video/webm'
-    const blob = new Blob(chunksRef.current, { type: mimeType })
-    const formData = new FormData()
-    formData.append('video', blob, `recording-${new Date().toISOString().replace(/[:.]/g, '-')}.webm`)
-
-    try {
-      const res  = await fetch('/api/recordings', { method: 'POST', body: formData })
-      const data = await res.json()
-
-      // Notify if AI predicts a non-normal behavior. Clips are left UNLABELED
-      // so they can be reviewed and labeled by hand (e.g. as `absent`).
-      const pred = currentPredictionRef.current
-      if (pred && pred.warm && data.filename && pred.label !== 'normal') {
-        fetch('/api/notify', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            label:      pred.label,
-            confidence: pred.confidence,
-            filename:   data.filename,
-          }),
-        }).catch(() => {})
-      }
-
-      setRecordingTick(t => t + 1)
-    } catch (err) {
-      console.error('Recording upload failed:', err)
-    } finally {
-      chunksRef.current = []
-    }
-  }, [getSupportedMimeType])
-
-  const stopRecording = useCallback(() => {
-    if (recordTimeoutRef.current) {
-      window.clearTimeout(recordTimeoutRef.current)
-      recordTimeoutRef.current = null
-    }
-
-    const recorder = recorderRef.current
-    if (recorder && recorder.state !== 'inactive') {
-      recorder.stop()
-    }
-  }, [])
-
-  const scheduleRecordingStop = useCallback(() => {
-    if (recordTimeoutRef.current) {
-      window.clearTimeout(recordTimeoutRef.current)
-    }
-
-    recordTimeoutRef.current = window.setTimeout(() => {
-      stopRecording()
-    }, 10000)
-  }, [stopRecording])
-
-  const startRecording = useCallback(() => {
-    const video = videoRef.current
-    if (!video || !video.srcObject || !window.MediaRecorder) return
-
-    if (recorderRef.current && recorderRef.current.state !== 'inactive') {
-      scheduleRecordingStop()
-      return
-    }
-
-    const mimeType = getSupportedMimeType()
-    const options = mimeType ? { mimeType } : undefined
-    const recorder = new MediaRecorder(video.srcObject, options)
-
-    chunksRef.current = []
-    recorderRef.current = recorder
-
-    recorder.ondataavailable = (event) => {
-      if (event.data && event.data.size > 0) {
-        chunksRef.current.push(event.data)
-      }
-    }
-
-    recorder.onstop = () => {
-      setIsRecording(false)
-      recorderRef.current = null
-      uploadRecording()
-    }
-
-    recorder.start()
-    setIsRecording(true)
-    scheduleRecordingStop()
-  }, [getSupportedMimeType, scheduleRecordingStop, uploadRecording, videoRef])
-
-  const handleManualRecord = useCallback(() => {
-    if (!isRecording) {
-      startRecording()
-    }
-  }, [isRecording, startRecording])
-
-  const handleToggleAutoRecord = useCallback(() => {
-    setAutoRecordEnabled(prev => !prev)
-  }, [])
-
-  const handleMotion = useCallback(({ level, timestamp }) => {
-    const id = ++eventIdRef.current
-    setEvents(prev => [
-      ...prev.slice(-199), // keep last 200 events
-      {
-        id,
-        timestamp,
-        message: 'Bunnies moving!',
-        level,
-      }
-    ])
-
-    if ('Notification' in window && Notification.permission === 'granted') {
-      new Notification('BunnyCam 🐇', { body: 'Motion detected!', silent: true })
-    }
-
-    if (autoRecordEnabled) {
-      if (recorderRef.current && recorderRef.current.state !== 'inactive') {
-        scheduleRecordingStop()
-      } else {
-        startRecording()
-      }
-    }
-  }, [autoRecordEnabled, scheduleRecordingStop, startRecording])
-
-  const {
-    motionLevel, isMotion,
-    motionEnabled, toggleMotion,
-    overlayCanvasRef,
-  } = useMotion({ videoRef, isActive, sensitivity, onMotion: handleMotion })
-
-  const { status: inferenceStatus, prediction, modelExists } = useInference({
-    videoRef,
-    isActive,
-    enabled: inferenceEnabled,
-  })
+  const [authed, setAuthed]       = useState(null) // null = checking | false | true
+  const [agentLive, setAgentLive] = useState(false)
+  const [monitorOn, setMonitorOn] = useState(null) // null until fetched
+  const [emailOn, setEmailOn]     = useState(null)
+  const [tab, setTab]             = useState('camera') // 'camera' | 'label' | 'highlights' | 'train'
+  // Bumped whenever something saves a clip, so RecordingGallery refetches.
+  // Its effect only reruns on mount otherwise, which left saved clips invisible
+  // until a full page reload.
+  const [galleryTick, setGalleryTick] = useState(0)
 
   // Poll whether the headless camera agent is streaming
   useEffect(() => {
@@ -251,76 +78,7 @@ export default function App() {
 
   const handleLogout = useCallback(async () => {
     await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {})
-    stopCamera()
     setAuthed(false)
-  }, [stopCamera])
-
-  // Keep current prediction accessible inside uploadRecording callback
-  useEffect(() => { currentPredictionRef.current = prediction }, [prediction])
-
-  // Persist toggles so a page reload doesn't disarm overnight monitoring
-  useEffect(() => {
-    localStorage.setItem('bunnycam.aiEnabled', String(inferenceEnabled))
-  }, [inferenceEnabled])
-  useEffect(() => {
-    localStorage.setItem('bunnycam.autoRecord', String(autoRecordEnabled))
-  }, [autoRecordEnabled])
-
-  // Log to activity log + trigger SMS when the predicted label changes
-  useEffect(() => {
-    if (!prediction) { lastPredictionLabelRef.current = null; return }
-    if (prediction.label === lastPredictionLabelRef.current) return
-    lastPredictionLabelRef.current = prediction.label
-
-    const id = ++eventIdRef.current
-    setEvents(prev => [
-      ...prev.slice(-199),
-      {
-        id,
-        timestamp: new Date(),
-        type: 'prediction',
-        message: LABEL_PHRASE[prediction.label] ?? prediction.label,
-        confidence: prediction.confidence,
-        color: LABEL_COLOR[prediction.label],
-      },
-    ])
-
-    // Publish to the server's public text-only demo feed, but not warmup labels
-    // (sub-window std features are unreliable until the embedding window fills)
-    if (prediction.warm) {
-      fetch('/api/predictions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ label: prediction.label, confidence: prediction.confidence }),
-      }).catch(() => {})
-    }
-
-    // SMS/email is fired from uploadRecording once a clip is saved (with attachment)
-  }, [prediction])
-
-  // ── Notification permission ───────────────────────────────
-  const requestNotifications = useCallback(() => {
-    if ('Notification' in window && Notification.permission === 'default') {
-      Notification.requestPermission()
-    }
-  }, [])
-
-  const handleStart = useCallback(() => {
-    requestNotifications()
-    startCamera()
-  }, [startCamera, requestNotifications])
-
-  useEffect(() => {
-    return () => {
-      if (recordTimeoutRef.current) {
-        window.clearTimeout(recordTimeoutRef.current)
-      }
-
-      const recorder = recorderRef.current
-      if (recorder && recorder.state !== 'inactive') {
-        recorder.stop()
-      }
-    }
   }, [])
 
   // ── Auth gate ───────────────────────────────────────────
@@ -388,8 +146,6 @@ export default function App() {
           )}
           {agentLive ? (
             <span className="status-active">● agent live</span>
-          ) : isActive ? (
-            <span className="status-active">● watching</span>
           ) : (
             <span className="status-idle">○ idle</span>
           )}
@@ -401,62 +157,19 @@ export default function App() {
 
       {tab === 'label' && <LabelingStudio />}
       {tab === 'highlights' && <HighlightsManager />}
-      {tab === 'train' && (
-        <Suspense fallback={<div style={{ padding: 32, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>Loading TensorFlow.js…</div>}>
-          <TrainingStudio />
-        </Suspense>
-      )}
+      {tab === 'train' && <TrainingStudio />}
 
       {/* Main layout — only mounted when on camera tab */}
       <main className="app-main" style={{ display: tab === 'camera' ? 'grid' : 'none' }}>
-        {/* Left col: video + controls */}
+        {/* Left col: agent video feed */}
         <section className="col-main">
-          {agentLive ? (
-            <AgentFeed />
-          ) : (
-            <VideoFeed
-              videoRef={videoRef}
-              overlayCanvasRef={overlayCanvasRef}
-              isActive={isActive}
-              isMotion={isMotion}
-              error={error}
-              prediction={prediction}
-              inferenceStatus={inferenceStatus}
-            />
-          )}
-
-          <div className="controls-card" style={{ display: agentLive ? 'none' : undefined }}>
-            <Controls
-              isActive={isActive}
-              motionEnabled={motionEnabled}
-              isRecording={isRecording}
-              autoRecordEnabled={autoRecordEnabled}
-              motionLevel={motionLevel}
-              sensitivity={sensitivity}
-              devices={devices}
-              selectedDevice={selectedDevice}
-              onStart={handleStart}
-              onStop={stopCamera}
-              onRecord={handleManualRecord}
-              onToggleAutoRecord={handleToggleAutoRecord}
-              onToggleMotion={toggleMotion}
-              onSensitivityChange={setSensitivity}
-              onSwitchCamera={switchCamera}
-              inferenceEnabled={inferenceEnabled}
-              inferenceStatus={inferenceStatus}
-              modelExists={modelExists}
-              onToggleInference={() => setInferenceEnabled(e => !e)}
-            />
-          </div>
+          <AgentFeed onClipSaved={() => setGalleryTick(n => n + 1)} />
         </section>
 
         {/* Right col: log + galleries */}
         <aside className="col-side">
-          <ActivityLog
-            events={events}
-            onClear={() => setEvents([])}
-          />
-          <RecordingGallery refreshTrigger={recordingTick} />
+          <ActivityLog />
+          <RecordingGallery refreshTrigger={galleryTick} />
         </aside>
       </main>
 
@@ -586,13 +299,6 @@ export default function App() {
           display: flex;
           flex-direction: column;
           gap: 16px;
-        }
-
-        .controls-card {
-          background: var(--bg-card);
-          border: 1px solid var(--border);
-          border-radius: var(--radius-lg);
-          padding: 16px;
         }
 
         .col-side {

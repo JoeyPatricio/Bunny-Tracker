@@ -1,0 +1,9 @@
+torch
+torchvision
+timm
+onnx
+onnxruntime
+onnxscript
+numpy
+scikit-learn
+imageio-ffmpeg
