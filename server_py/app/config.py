@@ -72,3 +72,16 @@ NOTIFY_COOLDOWN_MINUTES = _numberish(
     name="NOTIFY_COOLDOWN_MINUTES",
     default=NOTIFY_COOLDOWN_DEFAULT_MINUTES,
 )
+
+# Clipping-mode budget. These are first-run defaults only — once monitor.json
+# holds clippingMaxUnlabeled / clippingMinFreeGb, that store is authoritative.
+CLIPPING_MAX_UNLABELED = _numberish(
+    os.environ.get("CLIPPING_MAX_UNLABELED", "500"),
+    name="CLIPPING_MAX_UNLABELED",
+    default=500,
+)
+CLIPPING_MIN_FREE_GB = _numberish(
+    os.environ.get("CLIPPING_MIN_FREE_GB", "10"),
+    name="CLIPPING_MIN_FREE_GB",
+    default=10,
+)

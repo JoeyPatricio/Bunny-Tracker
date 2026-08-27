@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import ActivityLog from './components/ActivityLog.jsx'
 import RecordingGallery from './components/RecordingGallery.jsx'
 import LabelingStudio from './components/LabelingStudio.jsx'
@@ -6,12 +6,14 @@ import DemoView from './components/DemoView.jsx'
 import AgentFeed from './components/AgentFeed.jsx'
 import HighlightsManager from './components/HighlightsManager.jsx'
 import TrainingStudio from './components/TrainingStudio.jsx'
+import ClippingPanel from './components/ClippingPanel.jsx'
 
 export default function App() {
   const [authed, setAuthed]       = useState(null) // null = checking | false | true
   const [agentLive, setAgentLive] = useState(false)
   const [monitorOn, setMonitorOn] = useState(null) // null until fetched
   const [emailOn, setEmailOn]     = useState(null)
+  const [clippingOn, setClippingOn] = useState(null)
   const [tab, setTab]             = useState('camera') // 'camera' | 'label' | 'highlights' | 'train'
   // Bumped whenever something saves a clip, so RecordingGallery refetches.
   // Its effect only reruns on mount otherwise, which left saved clips invisible
@@ -38,16 +40,32 @@ export default function App() {
       .catch(() => setAuthed(false))
   }, [])
 
-  // Monitoring + email-alert state
+  // Monitoring + email-alert + clipping state. Re-polled so a server-side
+  // auto-stop of clipping (budget reached) shows up without a reload.
+  //
+  // A poll issued just before a toggle click resolves just after it, so
+  // applying every response would flip the button back to its old state for up
+  // to 5s before correcting itself. Ignore poll results for a moment after a
+  // write instead.
+  const settleUntil = useRef(0)
+
   useEffect(() => {
-    fetch('/api/monitor')
-      .then(r => r.json())
-      .then(d => { setMonitorOn(!!d.enabled); setEmailOn(!!d.emailAlerts) })
-      .catch(() => {})
+    const poll = () =>
+      fetch('/api/monitor')
+        .then(r => r.json())
+        .then(d => {
+          if (Date.now() < settleUntil.current) return
+          setMonitorOn(!!d.enabled); setEmailOn(!!d.emailAlerts); setClippingOn(!!d.clipping)
+        })
+        .catch(() => {})
+    poll()
+    const id = setInterval(poll, 5000)
+    return () => clearInterval(id)
   }, [])
 
   const toggleMonitor = useCallback(async () => {
     const next = !monitorOn
+    settleUntil.current = Date.now() + 2000
     setMonitorOn(next) // optimistic
     try {
       const res = await fetch('/api/monitor', {
@@ -63,6 +81,7 @@ export default function App() {
 
   const toggleEmail = useCallback(async () => {
     const next = !emailOn
+    settleUntil.current = Date.now() + 2000
     setEmailOn(next) // optimistic
     try {
       const res = await fetch('/api/monitor', {
@@ -75,6 +94,22 @@ export default function App() {
       setEmailOn(!next)
     }
   }, [emailOn])
+
+  const toggleClipping = useCallback(async () => {
+    const next = !clippingOn
+    settleUntil.current = Date.now() + 2000
+    setClippingOn(next) // optimistic
+    try {
+      const res = await fetch('/api/monitor', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clipping: next }),
+      })
+      if (!res.ok) setClippingOn(!next)
+    } catch {
+      setClippingOn(!next)
+    }
+  }, [clippingOn])
 
   const handleLogout = useCallback(async () => {
     await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {})
@@ -144,6 +179,17 @@ export default function App() {
               {emailOn ? '✉ Email ON' : '✉ Email OFF'}
             </button>
           )}
+          {clippingOn !== null && (
+            <button
+              className={`monitor-toggle ${clippingOn ? 'clipping-on' : 'monitor-off'}`}
+              onClick={toggleClipping}
+              title={clippingOn
+                ? 'Stop harvesting clips (restores normal monitoring)'
+                : 'Harvest unlabeled clips on motion — pauses predictions and alerts'}
+            >
+              {clippingOn ? '✂ Clipping ON' : '✂ Clipping OFF'}
+            </button>
+          )}
           {agentLive ? (
             <span className="status-active">● agent live</span>
           ) : (
@@ -164,6 +210,11 @@ export default function App() {
         {/* Left col: agent video feed */}
         <section className="col-main">
           <AgentFeed onClipSaved={() => setGalleryTick(n => n + 1)} />
+          <ClippingPanel
+            clippingOn={clippingOn}
+            onToggle={toggleClipping}
+            onClipSaved={() => setGalleryTick(n => n + 1)}
+          />
         </section>
 
         {/* Right col: log + galleries */}
@@ -260,6 +311,10 @@ export default function App() {
         }
         .monitor-on  { color: #7dff7d; border-color: #7dff7d66; }
         .monitor-on:hover  { background: #7dff7d14; }
+        /* Deliberately not the green .monitor-on — harvesting is a temporary
+           data-collection state, and it should never read as "all normal". */
+        .clipping-on { color: #ffb347; border-color: #ffb34788; }
+        .clipping-on:hover { background: #ffb34714; }
         .monitor-off { color: var(--text-muted); border-color: var(--border); }
         .monitor-off:hover { color: var(--text-secondary); }
 

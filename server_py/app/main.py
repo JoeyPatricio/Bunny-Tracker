@@ -16,6 +16,7 @@ from app.config import (
     MODEL_DIR,
     PORT,
     RECORDINGS_DIR,
+    SEGMENTS_DIR,
 )
 from app.lib.backup_labels import start_label_backups
 from app.lib.hidden_store import read_hidden
@@ -29,6 +30,7 @@ from app.routers import (
     logs,
     model,
     monitor,
+    motion,
     notify,
     predictions,
     recordings,
@@ -100,6 +102,7 @@ app.include_router(notify.router, prefix="/api/notify")
 app.include_router(predictions.router, prefix="/api/predictions")
 app.include_router(stream.router, prefix="/api/stream")
 app.include_router(monitor.router, prefix="/api/monitor")
+app.include_router(motion.router, prefix="/api/motion")
 app.include_router(highlights.router, prefix="/api/highlights")
 app.include_router(import_clips.router, prefix="/api/import")
 
@@ -153,5 +156,14 @@ _backup_task = None
 @app.on_event("startup")
 async def on_startup():
     global _backup_task
+    # The data tree is git-ignored, so a fresh clone -- or a wipe -- leaves
+    # these missing. upload_recording() opens its destination directly and
+    # _scan_recordings() scandirs, so both raise until something creates them;
+    # only import_clips.py used to. Create them once at boot instead.
+    for directory in (RECORDINGS_DIR, SEGMENTS_DIR):
+        try:
+            directory.mkdir(parents=True, exist_ok=True)
+        except OSError as err:
+            print(f"startup: could not create {directory}: {err}")
     print(f"BunnyCam Python server running at http://localhost:{PORT}")
     _backup_task = start_label_backups()

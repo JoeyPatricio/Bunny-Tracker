@@ -11,14 +11,16 @@ import shutil
 import time
 from pathlib import Path
 
-from fastapi import APIRouter, Request, UploadFile
+from fastapi import APIRouter, Form, Request, UploadFile
 from fastapi.responses import JSONResponse
 
 from app.auth import is_authed
 from app.config import RECORDINGS_DIR, SEGMENTS_DIR
+from app.lib.clip_budget import recordings_usage
 from app.lib.iso_time import filename_timestamp, to_iso_millis
 from app.lib.list_highlights import list_highlights
 from app.lib.recording_name import is_recording_filename
+from app.routers.monitor import read_monitor_state, stop_clipping
 
 router = APIRouter()
 
@@ -27,12 +29,22 @@ router = APIRouter()
 # to fix here.
 GRAB_STALE_MS = 60_000
 
+# Upload sources. Only clips harvested by Clipping Mode are subject to the
+# budget in lib/clip_budget.py — a manual Record or an alert clip is never
+# refused, however full the labeling queue is.
+CLIPPING_SOURCE = "clipping"
+
 
 def _scan_recordings() -> list[dict]:
     """Whole listing in one thread hop. scandir carries the stat data from the
     directory enumeration itself, so this is one syscall per file rather than
     the two that calling f.stat() separately for mtime and size cost."""
     out = []
+    # The data tree is git-ignored, so this can be missing on a fresh clone or
+    # after a wipe. _scan_segments below already tolerates that; match it,
+    # rather than 500ing every listing until the first upload creates the dir.
+    if not RECORDINGS_DIR.exists():
+        return out
     with os.scandir(RECORDINGS_DIR) as entries:
         for entry in entries:
             if not entry.name.endswith(".webm"):
@@ -61,9 +73,22 @@ def _scan_segments() -> list[dict]:
 
 
 def _save_upload(src, dest: Path) -> os.stat_result:
+    # The data tree is git-ignored, so this directory can be missing on a fresh
+    # clone even though on_startup creates it — belt and braces, since the cost
+    # of getting it wrong is a 500 on every capture.
+    dest.parent.mkdir(parents=True, exist_ok=True)
     with dest.open("wb") as out:
         shutil.copyfileobj(src, out)
     return dest.stat()
+
+
+async def _current_usage() -> dict:
+    state = await read_monitor_state()
+    return await recordings_usage(
+        recordings_dir=RECORDINGS_DIR,
+        max_unlabeled=int(state.get("clippingMaxUnlabeled") or 0),
+        min_free_gb=float(state.get("clippingMinFreeGb") or 0),
+    )
 
 
 @router.get("/highlights")
@@ -116,12 +141,35 @@ async def grab_segment():
         return JSONResponse(status_code=500, content={"error": "Grab failed", "detail": str(err)})
 
 
+@router.get("/usage")
+async def get_usage():
+    """Clip count, labeling backlog and disk headroom — drives the Clipping
+    Mode panel's counter and disk bar. Under a guarded prefix, so login-only."""
+    try:
+        return await _current_usage()
+    except OSError as err:
+        return JSONResponse(status_code=500, content={"error": "Failed to read usage", "detail": str(err)})
+
+
 @router.post("")
 @router.post("/")
-async def upload_recording(video: UploadFile):
+async def upload_recording(video: UploadFile, source: str | None = Form(None)):
     if not video.content_type or not video.content_type.startswith("video/"):
         return JSONResponse(status_code=500, content={"error": "Only video files are allowed"})
-    filename = f"recording-{filename_timestamp()}.webm"
+
+    if source == CLIPPING_SOURCE:
+        usage = await _current_usage()
+        if usage["blocked"]:
+            # Stop the harvest at the source rather than refusing clip after
+            # clip: the agent picks the new state up on its next 5s poll.
+            await stop_clipping(usage["reason"])
+            return JSONResponse(
+                status_code=507,
+                content={"error": "Clipping budget reached", "reason": usage["reason"], "usage": usage},
+            )
+
+    prefix = "recording-clip-" if source == CLIPPING_SOURCE else "recording-"
+    filename = f"{prefix}{filename_timestamp()}.webm"
     dest = RECORDINGS_DIR / filename
     stat = await asyncio.to_thread(_save_upload, video.file, dest)
     return {"filename": filename, "createdAt": to_iso_millis(stat.st_mtime), "size": stat.st_size}

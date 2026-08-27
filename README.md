@@ -92,6 +92,15 @@ CAMERA_INPUT=video=Your Webcam Name
 AGENT_CONFIDENCE_THRESHOLD=70
 AGENT_MOTION_FLOOR=4
 AGENT_ALERT_STREAK=3
+
+# Clipping Mode (bulk clip harvesting). All optional - these are first-run
+# defaults only; once you touch the dashboard controls, monitor.json wins.
+AGENT_CLIPPING_FRAME_SECONDS=0.5    # motion sampling cadence while harvesting
+AGENT_CLIPPING_SEGMENT_SECONDS=8    # length of a harvested clip
+AGENT_CLIPPING_STREAK=1             # frames over threshold before a clip fires
+AGENT_CLIPPING_RUN_MODEL=0          # 1 keeps inference on (diagnostic only)
+CLIPPING_MAX_UNLABELED=500          # auto-stop at this many unlabeled clips
+CLIPPING_MIN_FREE_GB=10             # auto-stop below this much free disk
 ```
 
 Find your camera name (Windows): `ffmpeg -f dshow -list_devices true -i dummy`.
@@ -125,6 +134,51 @@ Clips the agent records during an alert carry the predicted behavior as a
 hand label. Only human-confirmed labels are ever used for training, so the
 model's own predictions can't feed back into its training data.
 
+### Clipping Mode
+
+Normal monitoring only records when the classifier sees something noteworthy,
+which is the wrong shape for building a training set: it needs a working model
+to decide what to keep, and it keeps very little. **Clipping Mode** inverts
+that - it saves a clip every time motion crosses a threshold, so an unattended
+run produces a large pile of unlabeled footage to hand-label later.
+
+Toggle it with **✂ Clipping** in the dashboard header. While it's on:
+
+- **The classifier does not run at all.** No predictions, no email alerts, no
+  label suggestions - a quiet Activity Log is expected, not a bug. This is also
+  why Clipping Mode works with no trained model on disk, which is exactly the
+  situation you're in when you're collecting data to train one.
+- Clips are 8s (vs. 12s), sampled every 0.5s (vs. 1.5s), and the clip you get
+  is the segment the motion happened in rather than the one before it.
+- They land in `server/recordings/` as `recording-clip-*.webm`, unlabeled, so
+  Label Studio's **Unlabeled** filter is your labeling queue.
+
+The panel under the live feed has the controls:
+
+| Control | What it does |
+|---|---|
+| Sensitivity (1-10) | Maps to a motion threshold (8.0 down to 0.4). Higher catches more, including more empty footage. |
+| Cooldown | Minimum gap between clips. At or above the clip length you get at most one clip per segment. |
+| Dry run | Reports what *would* be captured without saving anything. |
+| Live motion trace | The agent's real motion level with your threshold drawn across it. |
+
+**Tuning it.** Don't guess at the threshold - turn on dry run and watch the
+trace for ten minutes. Rabbit movement shows up as clear spikes; put the line
+just under them. A threshold slightly too low will fill the entire clip budget
+overnight with footage of nothing.
+
+**Guardrails.** Harvesting stops automatically at `clippingMaxUnlabeled`
+(default 500) *unlabeled* clips, or when free disk drops below
+`clippingMinFreeGb` (default 10). Labeled clips don't count toward the cap, so
+working through Label Studio frees room. **Nothing is ever deleted** - when a
+limit is hit the dashboard shows why and waits for you to re-arm it.
+
+**Spread the harvest over several days.** `training/dataset.py::group_key`
+groups agent clips by capture hour so clips from one session can't straddle the
+train/val split. 500 clips from a single overnight run is only a handful of
+groups, which makes the split coarse and the validation number noisy; the same
+clip count gathered across several days is a far more useful dataset.
+
 ---
 
 ## Tests
@@ -142,6 +196,18 @@ Plain scripts, not pytest. Run them from `server_py/` with the runtime venv:
 `training/test_train_guards.py` needs torch, so run that one with
 `.venv-train/Scripts/python.exe`.
 
+`tests/test_clipping_mode.py` covers Clipping Mode end to end (model-free
+decision loop, segment selection, budget) and needs no camera or model.
+
+To exercise the whole capture pipeline with no webcam, point the agent at a
+synthetic source - `_build_args` paces `lavfi` with `-re` so the frame and
+segment timings stay realistic:
+
+```ini
+CAMERA_FORMAT=lavfi
+CAMERA_INPUT=testsrc2=size=640x480:rate=15
+```
+
 ---
 
 ## Project structure
@@ -153,6 +219,7 @@ BunnyTracker/
 │   └── src/
 │       └── components/
 │           ├── AgentFeed.jsx        # Live view from the agent + record button
+│           ├── ClippingPanel.jsx    # Clipping Mode tuning (sensitivity, trace, budget)
 │           ├── LabelingStudio.jsx   # Clip labeling UI
 │           ├── TrainingStudio.jsx   # Read-only deployed-model metadata panel
 │           ├── ActivityLog.jsx      # Recent behavior predictions (polls /api/predictions)

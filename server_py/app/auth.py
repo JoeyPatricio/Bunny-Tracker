@@ -43,6 +43,11 @@ PUBLIC_GET_PATHS = {
 GUARDED_PREFIXES = (
     "/api/recordings", "/api/labels", "/api/logs", "/api/import", "/api/model",
     "/api/notify", "/api/predictions", "/api/stream", "/api/monitor", "/api/highlights",
+    # A new prefix is FULLY PUBLIC until it is listed here — this tuple is what
+    # requires auth, not what exempts it. /api/motion is a live motion trace of
+    # the inside of the house, so it is guarded and stays out of
+    # PUBLIC_GET_PATHS above.
+    "/api/motion",
 )
 
 

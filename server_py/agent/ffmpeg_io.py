@@ -32,6 +32,9 @@ from pathlib import Path
 FRAME_SIZE = 224 * 224 * 3
 RESTART_DELAY_SEC = 5
 
+# Recorded segments run at a constant 15fps against real timestamps.
+SEGMENT_FPS = 15
+
 # Frames are dropped silently by design (see _read_frames), which is exactly
 # how a Pi falling behind the frame budget would hide. Log a line per N drops
 # so a sustained backlog is visible in the pm2 log without spamming it.
@@ -86,7 +89,14 @@ class FfmpegCapture:
         # prompts on stdin for confirmation when the file from a previous run
         # still exists; stdin is DEVNULL, so it hangs indefinitely holding the
         # camera open rather than failing fast.
-        args = [self.ffmpeg_path, "-y", "-hide_banner", "-loglevel", "error", "-f", self.camera_format]
+        args = [self.ffmpeg_path, "-y", "-hide_banner", "-loglevel", "error"]
+        if self.camera_format == "lavfi":
+            # Synthetic source for testing without a camera (see the README's
+            # Clipping Mode section). A real device paces itself; lavfi
+            # generates frames as fast as the CPU allows, which makes the fps=
+            # filters and -segment_time meaningless. -re paces it to realtime.
+            args += ["-re"]
+        args += ["-f", self.camera_format]
         if self.camera_format == "dshow":
             args += ["-rtbufsize", "100M", "-vcodec", "mjpeg",
                       "-video_size", self.camera_size, "-framerate", self.camera_fps]
@@ -95,9 +105,18 @@ class FfmpegCapture:
         fps = f"{(1 / self.frame_interval):.4f}"
         args += ["-vf", f"fps={fps},scale=224:224", "-f", "rawvideo", "-pix_fmt", "rgb24", "pipe:1"]
         # Output 2: rolling recorded segments (constant 15fps against real timestamps).
+        # -g pins the keyframe interval to exactly one segment's worth of
+        # frames. The segment muxer can only cut on a keyframe, and libvpx's
+        # default GOP is much longer than -segment_time, so without this every
+        # segment overshoots to the next keyframe — 12s of requested segment
+        # came out as ~12.5s, and a shorter -segment_time was ignored almost
+        # entirely. Clip length is a real setting now (Clipping Mode advertises
+        # 8s clips), so it has to be honored.
+        segment_frames = max(1, int(self.segment_secs) * SEGMENT_FPS)
         args += [
             "-c:v", "libvpx", "-deadline", "realtime", "-cpu-used", "8",
-            "-b:v", "1M", "-vf", "fps=15,scale=640:360", "-r", "15", "-an",
+            "-b:v", "1M", "-vf", f"fps={SEGMENT_FPS},scale=640:360", "-r", str(SEGMENT_FPS), "-an",
+            "-g", str(segment_frames), "-keyint_min", str(segment_frames),
             "-f", "segment", "-segment_time", str(self.segment_secs), "-reset_timestamps", "1",
             str(self.seg_dir / "seg-%05d.webm"),
         ]
