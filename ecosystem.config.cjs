@@ -12,21 +12,49 @@
  * via a "press K" prompt instead of closing.
  */
 const path = require('path')
-const SERVER_PY = path.join(__dirname, 'server_py')
-// The runtime venv's own python.exe directly, not `interpreter: 'python3'` —
-// that assumes a PATH entry this Windows box does not guarantee.
-const PYTHON = path.join(SERVER_PY, '.venv', 'Scripts', 'python.exe')
+const fs = require('fs')
+const { execFileSync } = require('child_process')
 
-// cloudflared location (Windows install path). Override with CLOUDFLARED_PATH.
-const CLOUDFLARED = process.env.CLOUDFLARED_PATH ||
-  'C:\\Program Files (x86)\\cloudflared\\cloudflared.exe'
+const WINDOWS = process.platform === 'win32'
+const SERVER_PY = path.join(__dirname, 'server_py')
+// The runtime venv's own interpreter directly, not `interpreter: 'python3'` —
+// that assumes a PATH entry this Windows box does not guarantee. The venv
+// layout differs by platform: Scripts/python.exe vs. bin/python.
+const PYTHON = WINDOWS
+  ? path.join(SERVER_PY, '.venv', 'Scripts', 'python.exe')
+  : path.join(SERVER_PY, '.venv', 'bin', 'python')
+
+// Resolve a binary that lives on PATH on Linux but at a fixed install path on
+// Windows. Returns null when it isn't installed, so the app list can drop it
+// rather than hand pm2 a script it will crash-loop on to max_restarts.
+function resolveBin(envOverride, windowsPath, unixName) {
+  if (envOverride) return envOverride
+  if (WINDOWS) return fs.existsSync(windowsPath) ? windowsPath : null
+  try {
+    // stderr ignored: `which` prints a not-found line, and a missing
+    // optional binary is a normal dev-box state, not something to report.
+    return execFileSync('which', [unixName],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() || null
+  } catch {
+    return null
+  }
+}
+
+// cloudflared. Override with CLOUDFLARED_PATH.
+const CLOUDFLARED = resolveBin(
+  process.env.CLOUDFLARED_PATH,
+  'C:\\Program Files (x86)\\cloudflared\\cloudflared.exe',
+  'cloudflared')
 
 // n8n entry point (global npm install). Override with N8N_BIN.
-const N8N_BIN = process.env.N8N_BIN ||
-  'C:\\Users\\joepa\\AppData\\Local\\Packages\\Claude_pzs8sxrjxfjjc\\LocalCache\\Roaming\\npm\\node_modules\\n8n\\bin\\n8n'
+const N8N_BIN = resolveBin(
+  process.env.N8N_BIN,
+  'C:\\Users\\joepa\\AppData\\Local\\Packages\\Claude_pzs8sxrjxfjjc\\LocalCache\\Roaming\\npm\\node_modules\\n8n\\bin\\n8n',
+  'n8n')
 
-module.exports = {
-  apps: [
+const RECORDINGS = path.join(__dirname, 'server', 'recordings')
+
+const apps = [
     {
       name: 'bunnycam-server',
       script: PYTHON,
@@ -72,9 +100,12 @@ module.exports = {
         N8N_DIAGNOSTICS_ENABLED: 'false', // disable telemetry
         // Allow the Read/Write File node to reach the clips (2.x sandboxes it
         // to .n8n-files by default).
-        N8N_RESTRICT_FILE_ACCESS_TO: 'C:\\Users\\joepa\\Desktop\\BunnyTracker\\server\\recordings',
+        N8N_RESTRICT_FILE_ACCESS_TO: RECORDINGS,
         GENERIC_TIMEZONE: 'America/Los_Angeles',
       },
     },
-  ],
-}
+]
+
+// Drop the processes whose binary this machine doesn't have (cloudflared and
+// n8n are absent on a plain dev box); server + agent always run.
+module.exports = { apps: apps.filter((a) => a.script) }

@@ -8,6 +8,7 @@ future agent) depend on.
 """
 import hmac
 import json
+import os
 import secrets
 import time
 
@@ -15,16 +16,59 @@ from fastapi import APIRouter, Request, Response
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from app.config import ADMIN_PASSWORD, AGENT_TOKEN
+from app.config import ADMIN_PASSWORD, AGENT_TOKEN, SESSIONS_FILE
 from app.rate_limit import is_login_rate_limited, record_login_failure
 from app.security import get_client_ip, is_secure_request
 
 COOKIE_NAME = "bunnyauth"
 SESSION_TTL_SECONDS = 30 * 24 * 3600  # matches the cookie Max-Age
 
-# In-memory session tokens -> expiry timestamp (epoch seconds). Cleared on
-# server restart, fine for personal use.
+# Session tokens -> expiry timestamp (epoch seconds), mirrored to
+# SESSIONS_FILE. This used to be memory-only, which logged the admin out on
+# every server restart — with the server now under systemd and restarting at
+# every login and reboot, that meant retyping the password constantly.
+# Reloading the map means one login survives restarts.
 _sessions: dict[str, float] = {}
+
+
+def _load_sessions() -> None:
+    """Best effort, called once at import. A missing, unreadable, or corrupt
+    file must never stop the server booting — the cost of giving up here is
+    one manual login, so this swallows errors rather than raising like
+    JsonStore does for data the user would lose."""
+    try:
+        raw = json.loads(SESSIONS_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    if not isinstance(raw, dict):
+        return
+    now = time.time()
+    for token, exp in raw.items():
+        # Anything malformed is dropped rather than trusted: this file decides
+        # who is admin, so a non-numeric expiry must not become a live session.
+        if isinstance(token, str) and isinstance(exp, (int, float)) and not isinstance(exp, bool):
+            if exp > now:
+                _sessions[token] = float(exp)
+
+
+def _save_sessions() -> None:
+    """Atomic 0600 write of the live sessions, expired entries dropped."""
+    now = time.time()
+    for token in [t for t, exp in _sessions.items() if exp <= now]:
+        _sessions.pop(token, None)
+    tmp = SESSIONS_FILE.with_name(SESSIONS_FILE.name + ".tmp")
+    try:
+        # Mode is set by os.open, not a later chmod, so the tokens are never
+        # briefly world-readable between create and chmod.
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump(_sessions, fh)
+        os.replace(tmp, SESSIONS_FILE)
+    except OSError:
+        pass  # Losing persistence costs a re-login; it must not fail a request.
+
+
+_load_sessions()
 
 # Read endpoints that stay public without a login: the demo page's feeds and
 # the agent's unauthenticated monitor poll. Everything else under the guarded
@@ -141,6 +185,7 @@ async def login(request: Request, response: Response):
 
     token = secrets.token_hex(32)
     _sessions[token] = time.time() + SESSION_TTL_SECONDS
+    _save_sessions()
 
     # Only mark the cookie Secure on a genuine HTTPS connection. Over plain
     # http://localhost the browser would refuse to send a Secure cookie back,
@@ -158,6 +203,7 @@ async def logout(request: Request, response: Response):
     token = request.cookies.get(COOKIE_NAME)
     if token:
         _sessions.pop(token, None)
+        _save_sessions()
     response.headers.append("set-cookie", f"{COOKIE_NAME}=; HttpOnly; Path=/; Max-Age=0")
     return {"ok": True}
 

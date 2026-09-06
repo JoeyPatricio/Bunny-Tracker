@@ -1,95 +1,108 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from "react";
 
-const LABEL_ZOOMIES  = 'zoomies'
-const LABEL_YAWN     = 'yawn'
-const LABEL_NORMAL   = 'normal'
-const LABEL_GROOMING = 'grooming'
-const LABEL_STANDING = 'standing'
-const ACCEPTED_EXTENSIONS = '.mp4,.mov,.avi,.mkv,.webm,.m4v'
+const LABEL_ZOOMIES = "zoomies";
+const LABEL_YAWN = "yawn";
+const LABEL_NORMAL = "normal";
+const LABEL_GROOMING = "grooming";
+const LABEL_STANDING = "standing";
+const ACCEPTED_EXTENSIONS = ".mp4,.mov,.avi,.mkv,.webm,.m4v";
 
 // ── Import Panel ────────────────────────────────────────────────────────────
 function ImportPanel({ onImportDone }) {
-  const [dragging,  setDragging]  = useState(false)
-  const [files,     setFiles]     = useState([])   // [{ file, status, detail }]
-  const [uploading, setUploading] = useState(false)
-  const [open,      setOpen]      = useState(false)
-  const inputRef = useRef(null)
+  const [dragging, setDragging] = useState(false);
+  const [files, setFiles] = useState([]); // [{ file, status, detail }]
+  const [uploading, setUploading] = useState(false);
+  const [open, setOpen] = useState(false);
+  const inputRef = useRef(null);
 
   const addFiles = (incoming) => {
-    const videoFiles = Array.from(incoming).filter(f =>
-      f.type.startsWith('video/') || /\.(mp4|mov|avi|mkv|webm|m4v)$/i.test(f.name)
-    )
-    setFiles(prev => {
-      const existingNames = new Set(prev.map(e => e.file.name))
+    const videoFiles = Array.from(incoming).filter(
+      (f) =>
+        f.type.startsWith("video/") ||
+        /\.(mp4|mov|avi|mkv|webm|m4v)$/i.test(f.name),
+    );
+    setFiles((prev) => {
+      const existingNames = new Set(prev.map((e) => e.file.name));
       const newEntries = videoFiles
-        .filter(f => !existingNames.has(f.name))
-        .map(f => ({ file: f, status: 'pending', detail: '' }))
-      return [...prev, ...newEntries]
-    })
-  }
+        .filter((f) => !existingNames.has(f.name))
+        .map((f) => ({ file: f, status: "pending", detail: "" }));
+      return [...prev, ...newEntries];
+    });
+  };
 
   const onDrop = (e) => {
-    e.preventDefault()
-    setDragging(false)
-    addFiles(e.dataTransfer.files)
-  }
+    e.preventDefault();
+    setDragging(false);
+    addFiles(e.dataTransfer.files);
+  };
 
   const removeFile = (name) =>
-    setFiles(prev => prev.filter(e => e.file.name !== name))
+    setFiles((prev) => prev.filter((e) => e.file.name !== name));
 
   const upload = async () => {
-    if (uploading) return
+    if (uploading) return;
     // Take the pending entries from the CURRENT state, not from what setFiles is
     // about to produce: the state update below has not committed yet, so reading
     // `files` back for status 'converting' would match nothing and upload nothing.
-    const pending = files.filter(e => e.status === 'pending')
-    if (pending.length === 0) return
-    setUploading(true)
+    const pending = files.filter((e) => e.status === "pending");
+    if (pending.length === 0) return;
+    setUploading(true);
 
-    setFiles(prev => prev.map(e =>
-      e.status === 'pending' ? { ...e, status: 'converting' } : e
-    ))
+    setFiles((prev) =>
+      prev.map((e) =>
+        e.status === "pending" ? { ...e, status: "converting" } : e,
+      ),
+    );
 
-    const formData = new FormData()
-    pending.forEach(e => formData.append('videos', e.file))
-    const sent = new Set(pending.map(e => e.file.name))
+    const formData = new FormData();
+    pending.forEach((e) => formData.append("videos", e.file));
+    const sent = new Set(pending.map((e) => e.file.name));
 
     try {
-      const res  = await fetch('/api/import', { method: 'POST', body: formData })
-      const data = await res.json().catch(() => ({}))
+      const res = await fetch("/api/import", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json().catch(() => ({}));
 
       if (!res.ok && !data.results) {
-        throw new Error(data.error || `Import failed (HTTP ${res.status})`)
+        throw new Error(data.error || `Import failed (HTTP ${res.status})`);
       }
 
-      setFiles(prev => prev.map(e => {
-        if (!sent.has(e.file.name)) return e
-        const result = data.results?.find(r => r.original === e.file.name)
-        if (!result) return { ...e, status: 'error', detail: 'No result returned' }
-        return { ...e, status: result.status, detail: result.detail || '' }
-      }))
+      setFiles((prev) =>
+        prev.map((e) => {
+          if (!sent.has(e.file.name)) return e;
+          const result = data.results?.find((r) => r.original === e.file.name);
+          if (!result)
+            return { ...e, status: "error", detail: "No result returned" };
+          return { ...e, status: result.status, detail: result.detail || "" };
+        }),
+      );
 
-      onImportDone()
+      onImportDone();
     } catch (err) {
-      setFiles(prev => prev.map(e =>
-        sent.has(e.file.name) && e.status === 'converting'
-          ? { ...e, status: 'error', detail: err.message }
-          : e
-      ))
+      setFiles((prev) =>
+        prev.map((e) =>
+          sent.has(e.file.name) && e.status === "converting"
+            ? { ...e, status: "error", detail: err.message }
+            : e,
+        ),
+      );
     } finally {
-      setUploading(false)
+      setUploading(false);
     }
-  }
+  };
 
-  const clearDone = () => setFiles(prev => prev.filter(e => e.status !== 'ok'))
+  const clearDone = () =>
+    setFiles((prev) => prev.filter((e) => e.status !== "ok"));
 
-  const pendingCount = files.filter(e => e.status === 'pending').length
-  const doneCount    = files.filter(e => e.status === 'ok').length
+  const pendingCount = files.filter((e) => e.status === "pending").length;
+  const doneCount = files.filter((e) => e.status === "ok").length;
 
   return (
     <div className="import-panel">
-      <button className="import-toggle" onClick={() => setOpen(o => !o)}>
-        <span>{open ? '▾' : '▸'} Import Footage</span>
+      <button className="import-toggle" onClick={() => setOpen((o) => !o)}>
+        <span>{open ? "▾" : "▸"} Import Footage</span>
         <span className="import-toggle-sub">mp4, mov, avi, mkv, webm</span>
       </button>
 
@@ -97,22 +110,29 @@ function ImportPanel({ onImportDone }) {
         <div className="import-body">
           {/* Drop zone */}
           <div
-            className={`drop-zone ${dragging ? 'drop-zone-active' : ''}`}
-            onDragOver={e => { e.preventDefault(); setDragging(true) }}
+            className={`drop-zone ${dragging ? "drop-zone-active" : ""}`}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDragging(true);
+            }}
             onDragLeave={() => setDragging(false)}
             onDrop={onDrop}
             onClick={() => inputRef.current?.click()}
           >
             <span className="drop-icon">📂</span>
-            <p className="drop-text">Drop video files here or click to browse</p>
-            <p className="drop-sub">Up to 20 files · 500 MB each · ffmpeg converts automatically</p>
+            <p className="drop-text">
+              Drop video files here or click to browse
+            </p>
+            <p className="drop-sub">
+              Up to 20 files · 500 MB each · ffmpeg converts automatically
+            </p>
             <input
               ref={inputRef}
               type="file"
               multiple
               accept={ACCEPTED_EXTENSIONS}
-              style={{ display: 'none' }}
-              onChange={e => addFiles(e.target.files)}
+              style={{ display: "none" }}
+              onChange={(e) => addFiles(e.target.files)}
             />
           </div>
 
@@ -120,18 +140,34 @@ function ImportPanel({ onImportDone }) {
           {files.length > 0 && (
             <div className="import-file-list">
               {files.map(({ file, status, detail }) => (
-                <div key={file.name} className={`import-file-row status-${status}`}>
+                <div
+                  key={file.name}
+                  className={`import-file-row status-${status}`}
+                >
                   <span className="import-file-icon">
-                    {status === 'pending'    && '⏳'}
-                    {status === 'converting' && '⚙️'}
-                    {status === 'ok'         && '✓'}
-                    {status === 'error'      && '✕'}
+                    {status === "pending" && "⏳"}
+                    {status === "converting" && "⚙️"}
+                    {status === "ok" && "✓"}
+                    {status === "error" && "✕"}
                   </span>
-                  <span className="import-file-name" title={file.name}>{file.name}</span>
-                  <span className="import-file-size">{formatSize(file.size)}</span>
-                  {status === 'error' && <span className="import-file-err" title={detail}>failed</span>}
-                  {status === 'pending' && (
-                    <button className="import-file-remove" onClick={() => removeFile(file.name)}>✕</button>
+                  <span className="import-file-name" title={file.name}>
+                    {file.name}
+                  </span>
+                  <span className="import-file-size">
+                    {formatSize(file.size)}
+                  </span>
+                  {status === "error" && (
+                    <span className="import-file-err" title={detail}>
+                      failed
+                    </span>
+                  )}
+                  {status === "pending" && (
+                    <button
+                      className="import-file-remove"
+                      onClick={() => removeFile(file.name)}
+                    >
+                      ✕
+                    </button>
                   )}
                 </div>
               ))}
@@ -152,228 +188,316 @@ function ImportPanel({ onImportDone }) {
                 disabled={uploading || pendingCount === 0}
               >
                 {uploading
-                  ? '⚙️ Converting…'
-                  : `↑ Import ${pendingCount} clip${pendingCount !== 1 ? 's' : ''}`}
+                  ? "⚙️ Converting…"
+                  : `↑ Import ${pendingCount} clip${pendingCount !== 1 ? "s" : ""}`}
               </button>
             </div>
           )}
         </div>
       )}
     </div>
-  )
+  );
 }
 
 function formatDate(isoStr) {
   return new Date(isoStr).toLocaleString([], {
-    month: 'short', day: 'numeric',
-    hour: '2-digit', minute: '2-digit', second: '2-digit',
-  })
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
 }
 
 function formatSize(bytes) {
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+// ── Lazy filmstrip thumbnail ──────────────────────────────────────────
+// Mounting a <video> for every clip is what froze the studio: with a few
+// hundred recordings the browser opened that many media pipelines at once,
+// each demuxing a ~1 MB webm on the main thread. A thumb now only carries a
+// src while it is on (or near) screen, so at most a screenful decodes at a time.
+
+// Retention policy for a filmstrip thumbnail: hold a decoded <video> only
+// while the thumb is on (or near) screen, and drop it otherwise. Strict, so
+// memory stays flat no matter how many clips accumulate.
+//
+// Anti-thrash is handled by the observer's rootMargin rather than by an
+// intersectionRatio band. A ratio band would be dead weight here: when a
+// target is not intersecting its ratio is exactly 0, and the observer's
+// default threshold of [0] only fires on the crossing into and out of
+// intersection — it never reports intermediate ratios to test against.
+function shouldHoldVideo(entry) {
+  return Boolean(entry && entry.isIntersecting);
+}
+
+function StripThumb({ filename, onClick }) {
+  const holderRef = useRef(null);
+  const [holding, setHolding] = useState(false);
+
+  useEffect(() => {
+    const el = holderRef.current;
+    if (!el) return;
+    // rootMargin pre-loads a little above/below the fold so scrolling the
+    // strip doesn't show a wall of empty placeholders.
+    const io = new IntersectionObserver(
+      ([entry]) => setHolding(shouldHoldVideo(entry)),
+      { rootMargin: "300px 0px" },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+
+  return (
+    <div ref={holderRef} className="strip-video-holder" onClick={onClick}>
+      {holding ? (
+        <video
+          muted
+          preload="metadata"
+          src={`/recordings/${filename}#t=0.5`}
+          className="strip-video"
+        />
+      ) : (
+        <div className="strip-video strip-video-placeholder" />
+      )}
+    </div>
+  );
 }
 
 export default function LabelingStudio() {
-  const [recordings, setRecordings] = useState([])  // [{ filename, createdAt, size }]
-  const [labels, setLabels]         = useState({})   // { filename: 'zoomies'|'yawn'|'normal'|'grooming'|'standing' }
-  const [suggestions, setSuggestions] = useState({}) // agent-predicted labels awaiting review (not training data)
-  const [index, setIndex]           = useState(0)
-  const [filter, setFilter]         = useState('all') // 'all' | 'unlabeled' | 'zoomies' | 'yawn' | 'normal' | 'grooming' | 'standing'
-  const [saving, setSaving]         = useState(false)
-  const [loading, setLoading]       = useState(true)
-  const [openMenu, setOpenMenu]     = useState(null)  // filename of open three-dot menu
-  const videoRef = useRef(null)
+  const [recordings, setRecordings] = useState([]); // [{ filename, createdAt, size }]
+  const [labels, setLabels] = useState({}); // { filename: 'zoomies'|'yawn'|'normal'|'grooming'|'standing' }
+  const [suggestions, setSuggestions] = useState({}); // agent-predicted labels awaiting review (not training data)
+  const [index, setIndex] = useState(0);
+  const [filter, setFilter] = useState("all"); // 'all' | 'unlabeled' | 'zoomies' | 'yawn' | 'normal' | 'grooming' | 'standing'
+  const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [openMenu, setOpenMenu] = useState(null); // filename of open three-dot menu
+  const videoRef = useRef(null);
 
   // ── Load recordings + labels ──────────────────────────────────────────────
   const loadData = useCallback(async () => {
     try {
       const [recRes, labRes] = await Promise.all([
-        fetch('/api/recordings'),
-        fetch('/api/labels'),
-      ])
-      const recData = await recRes.json()
-      const labData = await labRes.json()
-      setRecordings(recData.recordings || [])
-      setLabels(labData.labels || {})
-      setSuggestions(labData.suggestions || {})
+        fetch("/api/recordings"),
+        fetch("/api/labels"),
+      ]);
+      const recData = await recRes.json();
+      const labData = await labRes.json();
+      setRecordings(recData.recordings || []);
+      setLabels(labData.labels || {});
+      setSuggestions(labData.suggestions || {});
     } catch (err) {
-      console.error('Failed to load labeling data:', err)
+      console.error("Failed to load labeling data:", err);
     }
-  }, [])
+  }, []);
 
   useEffect(() => {
     async function load() {
-      setLoading(true)
+      setLoading(true);
       try {
         const [recRes, labRes] = await Promise.all([
-          fetch('/api/recordings'),
-          fetch('/api/labels'),
-        ])
-        const recData = await recRes.json()
-        const labData = await labRes.json()
-        setRecordings(recData.recordings || [])
-        setLabels(labData.labels || {})
-        setSuggestions(labData.suggestions || {})
+          fetch("/api/recordings"),
+          fetch("/api/labels"),
+        ]);
+        const recData = await recRes.json();
+        const labData = await labRes.json();
+        setRecordings(recData.recordings || []);
+        setLabels(labData.labels || {});
+        setSuggestions(labData.suggestions || {});
       } catch (err) {
-        console.error('Failed to load labeling data:', err)
+        console.error("Failed to load labeling data:", err);
       } finally {
-        setLoading(false)
+        setLoading(false);
       }
     }
-    load()
-  }, [])
+    load();
+  }, []);
 
   // ── Filtered + sorted clip list ───────────────────────────────────────────
-  const filtered = recordings.filter(r => {
-    if (filter === 'unlabeled') return !labels[r.filename]
-    if (filter === 'zoomies')     return labels[r.filename] === LABEL_ZOOMIES
-    if (filter === 'yawn')      return labels[r.filename] === LABEL_YAWN
-    if (filter === 'normal')    return labels[r.filename] === LABEL_NORMAL
-    if (filter === 'grooming')  return labels[r.filename] === LABEL_GROOMING
-    if (filter === 'standing')  return labels[r.filename] === LABEL_STANDING
-    return true
-  })
+  const filtered = recordings.filter((r) => {
+    if (filter === "unlabeled") return !labels[r.filename];
+    if (filter === "zoomies") return labels[r.filename] === LABEL_ZOOMIES;
+    if (filter === "yawn") return labels[r.filename] === LABEL_YAWN;
+    if (filter === "normal") return labels[r.filename] === LABEL_NORMAL;
+    if (filter === "grooming") return labels[r.filename] === LABEL_GROOMING;
+    if (filter === "standing") return labels[r.filename] === LABEL_STANDING;
+    return true;
+  });
 
-  const current = filtered[index] || null
+  const current = filtered[index] || null;
 
   // Reset index when filter changes
-  useEffect(() => { setIndex(0) }, [filter])
+  useEffect(() => {
+    setIndex(0);
+  }, [filter]);
 
   // Replay video when clip changes
   useEffect(() => {
     if (videoRef.current) {
-      videoRef.current.load()
-      videoRef.current.play().catch(() => {})
+      videoRef.current.load();
+      videoRef.current.play().catch(() => {});
     }
-  }, [current?.filename])
+  }, [current?.filename]);
 
   // ── Label actions ─────────────────────────────────────────────────────────
-  const applyLabel = useCallback(async (label) => {
-    if (!current || saving) return
-    setSaving(true)
-    try {
-      const res = await fetch(`/api/labels/${current.filename}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ label }),
-      })
-      if (!res.ok) {
-        const detail = res.status === 401
-          ? 'Not logged in. Your session expired. Reload and log in again.'
-          : `Save failed (HTTP ${res.status})`
-        alert(detail)
-        return // do NOT optimistically update — the label did not save
+  const applyLabel = useCallback(
+    async (label) => {
+      if (!current || saving) return;
+      setSaving(true);
+      try {
+        const res = await fetch(`/api/labels/${current.filename}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ label }),
+        });
+        if (!res.ok) {
+          const detail =
+            res.status === 401
+              ? "Not logged in. Your session expired. Reload and log in again."
+              : `Save failed (HTTP ${res.status})`;
+          alert(detail);
+          return; // do NOT optimistically update — the label did not save
+        }
+        setLabels((prev) => ({ ...prev, [current.filename]: label }));
+        // Labeling resolves the agent's suggestion (server clears it too)
+        setSuggestions((prev) => {
+          const next = { ...prev };
+          delete next[current.filename];
+          return next;
+        });
+        // Advance to next clip automatically
+        setIndex((prev) => Math.min(prev + 1, filtered.length - 1));
+      } catch (err) {
+        console.error("Label save failed:", err);
+        alert("Label save failed. Check your connection.");
+      } finally {
+        setSaving(false);
       }
-      setLabels(prev => ({ ...prev, [current.filename]: label }))
-      // Labeling resolves the agent's suggestion (server clears it too)
-      setSuggestions(prev => {
-        const next = { ...prev }
-        delete next[current.filename]
-        return next
-      })
-      // Advance to next clip automatically
-      setIndex(prev => Math.min(prev + 1, filtered.length - 1))
-    } catch (err) {
-      console.error('Label save failed:', err)
-      alert('Label save failed. Check your connection.')
-    } finally {
-      setSaving(false)
-    }
-  }, [current, saving, filtered.length])
+    },
+    [current, saving, filtered.length],
+  );
 
   const removeLabel = useCallback(async () => {
-    if (!current || !labels[current.filename]) return
+    if (!current || !labels[current.filename]) return;
     try {
-      await fetch(`/api/labels/${current.filename}`, { method: 'DELETE' })
-      setLabels(prev => {
-        const next = { ...prev }
-        delete next[current.filename]
-        return next
-      })
+      await fetch(`/api/labels/${current.filename}`, { method: "DELETE" });
+      setLabels((prev) => {
+        const next = { ...prev };
+        delete next[current.filename];
+        return next;
+      });
     } catch (err) {
-      console.error('Label remove failed:', err)
+      console.error("Label remove failed:", err);
     }
-  }, [current, labels])
+  }, [current, labels]);
 
-  const deleteClip = useCallback(async (filename) => {
-    const target = filename || current?.filename
-    if (!target) return
-    if (!window.confirm(`Delete "${target}" permanently? This cannot be undone.`)) return
-    setOpenMenu(null)
-    try {
-      await fetch(`/api/recordings/${target}`, { method: 'DELETE' })
-      await fetch(`/api/labels/${target}`, { method: 'DELETE' }).catch(() => {})
-      setLabels(prev => {
-        const next = { ...prev }
-        delete next[target]
-        return next
-      })
-      setRecordings(prev => prev.filter(r => r.filename !== target))
-      setIndex(prev => Math.max(0, prev > 0 ? prev - 1 : 0))
-    } catch (err) {
-      console.error('Delete failed:', err)
-    }
-  }, [current])
+  const deleteClip = useCallback(
+    async (filename) => {
+      const target = filename || current?.filename;
+      if (!target) return;
+      if (
+        !window.confirm(
+          `Delete "${target}" permanently? This cannot be undone.`,
+        )
+      )
+        return;
+      setOpenMenu(null);
+      try {
+        await fetch(`/api/recordings/${target}`, { method: "DELETE" });
+        await fetch(`/api/labels/${target}`, { method: "DELETE" }).catch(
+          () => {},
+        );
+        setLabels((prev) => {
+          const next = { ...prev };
+          delete next[target];
+          return next;
+        });
+        setRecordings((prev) => prev.filter((r) => r.filename !== target));
+        setIndex((prev) => Math.max(0, prev > 0 ? prev - 1 : 0));
+      } catch (err) {
+        console.error("Delete failed:", err);
+      }
+    },
+    [current],
+  );
 
-  const downloadClip = useCallback((filename) => {
-    const target = filename || current?.filename
-    if (!target) return
-    setOpenMenu(null)
-    const a = document.createElement('a')
-    a.href = `/recordings/${target}`
-    a.download = target
-    a.click()
-  }, [current])
+  const downloadClip = useCallback(
+    (filename) => {
+      const target = filename || current?.filename;
+      if (!target) return;
+      setOpenMenu(null);
+      const a = document.createElement("a");
+      a.href = `/recordings/${target}`;
+      a.download = target;
+      a.click();
+    },
+    [current],
+  );
 
   // ── Close three-dot menu on outside click ────────────────────────────────
   useEffect(() => {
-    if (!openMenu) return
-    const close = () => setOpenMenu(null)
-    window.addEventListener('click', close)
-    return () => window.removeEventListener('click', close)
-  }, [openMenu])
+    if (!openMenu) return;
+    const close = () => setOpenMenu(null);
+    window.addEventListener("click", close);
+    return () => window.removeEventListener("click", close);
+  }, [openMenu]);
 
   // ── Keyboard shortcuts ────────────────────────────────────────────────────
   useEffect(() => {
     const handler = (e) => {
-      if (e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON') return
-      if (e.key === 'z' || e.key === 'Z') applyLabel(LABEL_ZOOMIES)
-      if (e.key === 'y' || e.key === 'Y') applyLabel(LABEL_YAWN)
-      if (e.key === 'n' || e.key === 'N') applyLabel(LABEL_NORMAL)
-      if (e.key === 'g' || e.key === 'G') applyLabel(LABEL_GROOMING)
-      if (e.key === 's' || e.key === 'S') applyLabel(LABEL_STANDING)
-      if (e.key === 'ArrowRight' || e.key === 'd')
-        setIndex(prev => Math.min(prev + 1, filtered.length - 1))
-      if (e.key === 'ArrowLeft' || e.key === 'a')
-        setIndex(prev => Math.max(prev - 1, 0))
-      if (e.key === 'Delete' || e.key === 'Backspace') removeLabel()
-    }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  }, [applyLabel, removeLabel, filtered.length])
+      if (e.target.tagName === "INPUT" || e.target.tagName === "BUTTON") return;
+      if (e.key === "z" || e.key === "Z") applyLabel(LABEL_ZOOMIES);
+      if (e.key === "y" || e.key === "Y") applyLabel(LABEL_YAWN);
+      if (e.key === "n" || e.key === "N") applyLabel(LABEL_NORMAL);
+      if (e.key === "g" || e.key === "G") applyLabel(LABEL_GROOMING);
+      if (e.key === "s" || e.key === "S") applyLabel(LABEL_STANDING);
+      if (e.key === "ArrowRight" || e.key === "d")
+        setIndex((prev) => Math.min(prev + 1, filtered.length - 1));
+      if (e.key === "ArrowLeft" || e.key === "a")
+        setIndex((prev) => Math.max(prev - 1, 0));
+      if (e.key === "Delete" || e.key === "Backspace") removeLabel();
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [applyLabel, removeLabel, filtered.length]);
 
   // ── Export labels.json ────────────────────────────────────────────────────
   const exportLabels = () => {
-    const blob = new Blob([JSON.stringify(labels, null, 2)], { type: 'application/json' })
-    const url  = URL.createObjectURL(blob)
-    const a    = document.createElement('a')
-    a.href     = url
-    a.download = 'labels.json'
-    a.click()
-    URL.revokeObjectURL(url)
-  }
+    const blob = new Blob([JSON.stringify(labels, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "labels.json";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   // ── Stats ─────────────────────────────────────────────────────────────────
-  const totalCount    = recordings.length
-  const zoomiesCount  = Object.values(labels).filter(l => l === LABEL_ZOOMIES).length
-  const yawnCount     = Object.values(labels).filter(l => l === LABEL_YAWN).length
-  const normalCount   = Object.values(labels).filter(l => l === LABEL_NORMAL).length
-  const groomingCount = Object.values(labels).filter(l => l === LABEL_GROOMING).length
-  const standingCount = Object.values(labels).filter(l => l === LABEL_STANDING).length
-  const labeledCount  = zoomiesCount + yawnCount + normalCount + groomingCount + standingCount
-  const pctDone      = totalCount > 0 ? Math.round((labeledCount / totalCount) * 100) : 0
+  const totalCount = recordings.length;
+  const zoomiesCount = Object.values(labels).filter(
+    (l) => l === LABEL_ZOOMIES,
+  ).length;
+  const yawnCount = Object.values(labels).filter(
+    (l) => l === LABEL_YAWN,
+  ).length;
+  const normalCount = Object.values(labels).filter(
+    (l) => l === LABEL_NORMAL,
+  ).length;
+  const groomingCount = Object.values(labels).filter(
+    (l) => l === LABEL_GROOMING,
+  ).length;
+  const standingCount = Object.values(labels).filter(
+    (l) => l === LABEL_STANDING,
+  ).length;
+  const labeledCount =
+    zoomiesCount + yawnCount + normalCount + groomingCount + standingCount;
+  const pctDone =
+    totalCount > 0 ? Math.round((labeledCount / totalCount) * 100) : 0;
 
   if (loading) {
     return (
@@ -382,7 +506,7 @@ export default function LabelingStudio() {
         <p>Loading clips…</p>
         <style>{`.studio-loading { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; min-height:400px; color:var(--text-muted); font-size:14px; }`}</style>
       </div>
-    )
+    );
   }
 
   if (recordings.length === 0) {
@@ -390,7 +514,9 @@ export default function LabelingStudio() {
       <div className="studio-empty">
         <span>🎥</span>
         <p>No recordings to label yet.</p>
-        <p className="sub">Record clips from the Camera tab, or import footage below.</p>
+        <p className="sub">
+          Record clips from the Camera tab, or import footage below.
+        </p>
         <ImportPanel onImportDone={loadData} />
         <style>{`
           .studio-empty { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; min-height:400px; color:var(--text-muted); }
@@ -399,15 +525,15 @@ export default function LabelingStudio() {
           .studio-empty .sub { font-size:12px; }
         `}</style>
       </div>
-    )
+    );
   }
 
-  const currentLabel      = current ? labels[current.filename] : null
-  const currentSuggestion = current && !currentLabel ? suggestions[current.filename] : null
+  const currentLabel = current ? labels[current.filename] : null;
+  const currentSuggestion =
+    current && !currentLabel ? suggestions[current.filename] : null;
 
   return (
     <div className="studio">
-
       <ImportPanel onImportDone={loadData} />
 
       {/* ── Progress header ─────────────────────────────────────────────── */}
@@ -417,55 +543,90 @@ export default function LabelingStudio() {
           <span className="stat-chip stat-zoomies">{zoomiesCount} zoomies</span>
           <span className="stat-chip stat-yawn">{yawnCount} yawn</span>
           <span className="stat-chip stat-normal">{normalCount} normal</span>
-          <span className="stat-chip stat-grooming">{groomingCount} grooming</span>
-          <span className="stat-chip stat-standing">{standingCount} standing</span>
-          <span className="stat-chip stat-unlabeled">{totalCount - labeledCount} unlabeled</span>
+          <span className="stat-chip stat-grooming">
+            {groomingCount} grooming
+          </span>
+          <span className="stat-chip stat-standing">
+            {standingCount} standing
+          </span>
+          <span className="stat-chip stat-unlabeled">
+            {totalCount - labeledCount} unlabeled
+          </span>
         </div>
-        <button className="export-btn" onClick={exportLabels} disabled={labeledCount === 0}>
+        <button
+          className="export-btn"
+          onClick={exportLabels}
+          disabled={labeledCount === 0}
+        >
           ↓ Export labels.json
         </button>
       </div>
 
       {/* ── Progress bar ────────────────────────────────────────────────── */}
-      <div className="progress-track" title={`${labeledCount} of ${totalCount} labeled`}>
+      <div
+        className="progress-track"
+        title={`${labeledCount} of ${totalCount} labeled`}
+      >
         <div
           className="progress-zoomies"
-          style={{ width: `${totalCount > 0 ? (zoomiesCount / totalCount) * 100 : 0}%` }}
+          style={{
+            width: `${totalCount > 0 ? (zoomiesCount / totalCount) * 100 : 0}%`,
+          }}
         />
         <div
           className="progress-yawn"
-          style={{ width: `${totalCount > 0 ? (yawnCount / totalCount) * 100 : 0}%` }}
+          style={{
+            width: `${totalCount > 0 ? (yawnCount / totalCount) * 100 : 0}%`,
+          }}
         />
         <div
           className="progress-normal"
-          style={{ width: `${totalCount > 0 ? (normalCount / totalCount) * 100 : 0}%` }}
+          style={{
+            width: `${totalCount > 0 ? (normalCount / totalCount) * 100 : 0}%`,
+          }}
         />
         <div
           className="progress-grooming"
-          style={{ width: `${totalCount > 0 ? (groomingCount / totalCount) * 100 : 0}%` }}
+          style={{
+            width: `${totalCount > 0 ? (groomingCount / totalCount) * 100 : 0}%`,
+          }}
         />
         <div
           className="progress-standing"
-          style={{ width: `${totalCount > 0 ? (standingCount / totalCount) * 100 : 0}%` }}
+          style={{
+            width: `${totalCount > 0 ? (standingCount / totalCount) * 100 : 0}%`,
+          }}
         />
       </div>
-      <div className="progress-label">{pctDone}% labeled, {labeledCount} / {totalCount} clips</div>
+      <div className="progress-label">
+        {pctDone}% labeled, {labeledCount} / {totalCount} clips
+      </div>
 
       {/* ── Filter tabs ─────────────────────────────────────────────────── */}
       <div className="filter-tabs">
-        {['all', 'unlabeled', 'zoomies', 'yawn', 'normal', 'grooming', 'standing'].map(f => (
+        {[
+          "all",
+          "unlabeled",
+          "zoomies",
+          "yawn",
+          "normal",
+          "grooming",
+          "standing",
+        ].map((f) => (
           <button
             key={f}
-            className={`filter-tab ${filter === f ? 'active' : ''}`}
+            className={`filter-tab ${filter === f ? "active" : ""}`}
             onClick={() => setFilter(f)}
           >
-            {f === 'all'       ? `All (${totalCount})`                      : ''}
-            {f === 'unlabeled' ? `Unlabeled (${totalCount - labeledCount})` : ''}
-            {f === 'zoomies'   ? `Zoomies (${zoomiesCount})`                : ''}
-            {f === 'yawn'      ? `Yawn (${yawnCount})`                      : ''}
-            {f === 'normal'    ? `Normal (${normalCount})`                  : ''}
-            {f === 'grooming'  ? `Grooming (${groomingCount})`              : ''}
-            {f === 'standing'  ? `Standing (${standingCount})`              : ''}
+            {f === "all" ? `All (${totalCount})` : ""}
+            {f === "unlabeled"
+              ? `Unlabeled (${totalCount - labeledCount})`
+              : ""}
+            {f === "zoomies" ? `Zoomies (${zoomiesCount})` : ""}
+            {f === "yawn" ? `Yawn (${yawnCount})` : ""}
+            {f === "normal" ? `Normal (${normalCount})` : ""}
+            {f === "grooming" ? `Grooming (${groomingCount})` : ""}
+            {f === "standing" ? `Standing (${standingCount})` : ""}
           </button>
         ))}
       </div>
@@ -474,10 +635,11 @@ export default function LabelingStudio() {
         <div className="no-clips">No clips match this filter.</div>
       ) : (
         <div className="studio-body">
-
           {/* ── Video player ──────────────────────────────────────────────── */}
           <div className="player-section">
-            <div className={`player-wrap ${currentLabel === LABEL_ZOOMIES ? 'border-zoomies' : currentLabel === LABEL_YAWN ? 'border-yawn' : currentLabel === LABEL_NORMAL ? 'border-normal' : currentLabel === LABEL_GROOMING ? 'border-grooming' : currentLabel === LABEL_STANDING ? 'border-standing' : ''}`}>
+            <div
+              className={`player-wrap ${currentLabel === LABEL_ZOOMIES ? "border-zoomies" : currentLabel === LABEL_YAWN ? "border-yawn" : currentLabel === LABEL_NORMAL ? "border-normal" : currentLabel === LABEL_GROOMING ? "border-grooming" : currentLabel === LABEL_STANDING ? "border-standing" : ""}`}
+            >
               {current && (
                 <video
                   ref={videoRef}
@@ -491,8 +653,18 @@ export default function LabelingStudio() {
                 />
               )}
               {currentLabel && (
-                <div className={`current-label-badge ${currentLabel === LABEL_ZOOMIES ? 'badge-zoomies' : currentLabel === LABEL_YAWN ? 'badge-yawn' : currentLabel === LABEL_GROOMING ? 'badge-grooming' : currentLabel === LABEL_STANDING ? 'badge-standing' : 'badge-normal'}`}>
-                  {currentLabel === LABEL_ZOOMIES ? '⚡ ZOOMIES' : currentLabel === LABEL_YAWN ? '🥱 YAWN' : currentLabel === LABEL_GROOMING ? '🐾 GROOMING' : currentLabel === LABEL_STANDING ? '🦘 STANDING' : '🚶 NORMAL'}
+                <div
+                  className={`current-label-badge ${currentLabel === LABEL_ZOOMIES ? "badge-zoomies" : currentLabel === LABEL_YAWN ? "badge-yawn" : currentLabel === LABEL_GROOMING ? "badge-grooming" : currentLabel === LABEL_STANDING ? "badge-standing" : "badge-normal"}`}
+                >
+                  {currentLabel === LABEL_ZOOMIES
+                    ? "⚡ ZOOMIES"
+                    : currentLabel === LABEL_YAWN
+                      ? "🥱 YAWN"
+                      : currentLabel === LABEL_GROOMING
+                        ? "🐾 GROOMING"
+                        : currentLabel === LABEL_STANDING
+                          ? "🦘 STANDING"
+                          : "🚶 NORMAL"}
                 </div>
               )}
             </div>
@@ -501,14 +673,17 @@ export default function LabelingStudio() {
             {current && (
               <div className="clip-meta">
                 <span className="clip-name">{current.filename}</span>
-                <span className="clip-detail">{formatDate(current.createdAt)} · {formatSize(current.size)}</span>
+                <span className="clip-detail">
+                  {formatDate(current.createdAt)} · {formatSize(current.size)}
+                </span>
               </div>
             )}
 
             {/* Agent suggestion — a prediction awaiting review, not a saved label */}
             {currentSuggestion && (
               <div className="suggestion-hint">
-                🤖 Agent suggests <strong>{currentSuggestion}</strong>. Label to confirm or correct.
+                🤖 Agent suggests <strong>{currentSuggestion}</strong>. Label to
+                confirm or correct.
               </div>
             )}
 
@@ -516,15 +691,19 @@ export default function LabelingStudio() {
             <div className="nav-row">
               <button
                 className="nav-btn"
-                onClick={() => setIndex(prev => Math.max(prev - 1, 0))}
+                onClick={() => setIndex((prev) => Math.max(prev - 1, 0))}
                 disabled={index === 0}
               >
                 ← Prev
               </button>
-              <span className="nav-counter">{index + 1} / {filtered.length}</span>
+              <span className="nav-counter">
+                {index + 1} / {filtered.length}
+              </span>
               <button
                 className="nav-btn"
-                onClick={() => setIndex(prev => Math.min(prev + 1, filtered.length - 1))}
+                onClick={() =>
+                  setIndex((prev) => Math.min(prev + 1, filtered.length - 1))
+                }
                 disabled={index === filtered.length - 1}
               >
                 Next →
@@ -534,7 +713,7 @@ export default function LabelingStudio() {
             {/* Label buttons */}
             <div className="label-buttons">
               <button
-                className={`label-btn btn-zoomies ${currentLabel === LABEL_ZOOMIES ? 'selected' : ''}`}
+                className={`label-btn btn-zoomies ${currentLabel === LABEL_ZOOMIES ? "selected" : ""}`}
                 onClick={() => applyLabel(LABEL_ZOOMIES)}
                 disabled={saving}
               >
@@ -544,7 +723,7 @@ export default function LabelingStudio() {
               </button>
 
               <button
-                className={`label-btn btn-yawn ${currentLabel === LABEL_YAWN ? 'selected' : ''}`}
+                className={`label-btn btn-yawn ${currentLabel === LABEL_YAWN ? "selected" : ""}`}
                 onClick={() => applyLabel(LABEL_YAWN)}
                 disabled={saving}
               >
@@ -554,7 +733,7 @@ export default function LabelingStudio() {
               </button>
 
               <button
-                className={`label-btn btn-normal ${currentLabel === LABEL_NORMAL ? 'selected' : ''}`}
+                className={`label-btn btn-normal ${currentLabel === LABEL_NORMAL ? "selected" : ""}`}
                 onClick={() => applyLabel(LABEL_NORMAL)}
                 disabled={saving}
               >
@@ -564,7 +743,7 @@ export default function LabelingStudio() {
               </button>
 
               <button
-                className={`label-btn btn-grooming ${currentLabel === LABEL_GROOMING ? 'selected' : ''}`}
+                className={`label-btn btn-grooming ${currentLabel === LABEL_GROOMING ? "selected" : ""}`}
                 onClick={() => applyLabel(LABEL_GROOMING)}
                 disabled={saving}
               >
@@ -574,7 +753,7 @@ export default function LabelingStudio() {
               </button>
 
               <button
-                className={`label-btn btn-standing ${currentLabel === LABEL_STANDING ? 'selected' : ''}`}
+                className={`label-btn btn-standing ${currentLabel === LABEL_STANDING ? "selected" : ""}`}
                 onClick={() => applyLabel(LABEL_STANDING)}
                 disabled={saving}
               >
@@ -590,47 +769,62 @@ export default function LabelingStudio() {
                   ✕ Remove label
                 </button>
               )}
-              <button className="delete-clip-btn" onClick={() => deleteClip()} title="Permanently delete this clip">
+              <button
+                className="delete-clip-btn"
+                onClick={() => deleteClip()}
+                title="Permanently delete this clip"
+              >
                 🗑 Delete clip
               </button>
             </div>
 
             <div className="shortcut-hint">
-              Arrow keys to navigate · Z / Y / N / G / S to label · Delete to clear
+              Arrow keys to navigate · Z / Y / N / G / S to label · Delete to
+              clear
             </div>
           </div>
 
           {/* ── Filmstrip ─────────────────────────────────────────────────── */}
           <div className="filmstrip">
             {filtered.map((r, i) => {
-              const lbl = labels[r.filename]
-              const menuOpen = openMenu === r.filename
+              const lbl = labels[r.filename];
+              const menuOpen = openMenu === r.filename;
               return (
                 <div
                   key={r.filename}
-                  className={`strip-thumb ${i === index ? 'strip-current' : ''} ${lbl === LABEL_ZOOMIES ? 'strip-zoomies' : lbl === LABEL_YAWN ? 'strip-yawn' : lbl === LABEL_NORMAL ? 'strip-normal' : lbl === LABEL_GROOMING ? 'strip-grooming' : lbl === LABEL_STANDING ? 'strip-standing' : 'strip-unlabeled'}`}
-                  title={`${r.filename} — ${lbl || 'unlabeled'}`}
+                  className={`strip-thumb ${i === index ? "strip-current" : ""} ${lbl === LABEL_ZOOMIES ? "strip-zoomies" : lbl === LABEL_YAWN ? "strip-yawn" : lbl === LABEL_NORMAL ? "strip-normal" : lbl === LABEL_GROOMING ? "strip-grooming" : lbl === LABEL_STANDING ? "strip-standing" : "strip-unlabeled"}`}
+                  title={`${r.filename} — ${lbl || "unlabeled"}`}
                 >
                   {/* Thumbnail — clicking selects the clip */}
-                  <video
-                    muted
-                    preload="metadata"
-                    src={`/recordings/${r.filename}#t=0.5`}
-                    className="strip-video"
+                  <StripThumb
+                    filename={r.filename}
                     onClick={() => setIndex(i)}
                   />
 
                   {/* Label badge */}
                   {lbl && (
-                    <span className={`strip-badge ${lbl === LABEL_ZOOMIES ? 'strip-badge-zoomies' : lbl === LABEL_YAWN ? 'strip-badge-yawn' : lbl === LABEL_GROOMING ? 'strip-badge-grooming' : lbl === LABEL_STANDING ? 'strip-badge-standing' : 'strip-badge-normal'}`}>
-                      {lbl === LABEL_ZOOMIES ? 'Z' : lbl === LABEL_YAWN ? 'Y' : lbl === LABEL_GROOMING ? 'G' : lbl === LABEL_STANDING ? 'S' : 'N'}
+                    <span
+                      className={`strip-badge ${lbl === LABEL_ZOOMIES ? "strip-badge-zoomies" : lbl === LABEL_YAWN ? "strip-badge-yawn" : lbl === LABEL_GROOMING ? "strip-badge-grooming" : lbl === LABEL_STANDING ? "strip-badge-standing" : "strip-badge-normal"}`}
+                    >
+                      {lbl === LABEL_ZOOMIES
+                        ? "Z"
+                        : lbl === LABEL_YAWN
+                          ? "Y"
+                          : lbl === LABEL_GROOMING
+                            ? "G"
+                            : lbl === LABEL_STANDING
+                              ? "S"
+                              : "N"}
                     </span>
                   )}
 
                   {/* Three-dot menu button */}
                   <button
                     className="strip-menu-btn"
-                    onClick={e => { e.stopPropagation(); setOpenMenu(menuOpen ? null : r.filename) }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setOpenMenu(menuOpen ? null : r.filename);
+                    }}
                     title="Options"
                   >
                     ⋯
@@ -638,20 +832,28 @@ export default function LabelingStudio() {
 
                   {/* Dropdown */}
                   {menuOpen && (
-                    <div className="strip-menu" onClick={e => e.stopPropagation()}>
-                      <button className="strip-menu-item" onClick={() => downloadClip(r.filename)}>
+                    <div
+                      className="strip-menu"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <button
+                        className="strip-menu-item"
+                        onClick={() => downloadClip(r.filename)}
+                      >
                         ↓ Download
                       </button>
-                      <button className="strip-menu-item strip-menu-delete" onClick={() => deleteClip(r.filename)}>
+                      <button
+                        className="strip-menu-item strip-menu-delete"
+                        onClick={() => deleteClip(r.filename)}
+                      >
                         🗑 Delete
                       </button>
                     </div>
                   )}
                 </div>
-              )
+              );
             })}
           </div>
-
         </div>
       )}
 
@@ -1143,6 +1345,16 @@ export default function LabelingStudio() {
         .strip-grooming:not(.strip-current) { border-color: rgba(220, 130, 255, 0.35); }
         .strip-standing:not(.strip-current) { border-color: rgba(255, 160,  60, 0.35); }
 
+        .strip-video-holder {
+          display: block;
+          width: 100%;
+        }
+
+        .strip-video-placeholder {
+          background: var(--bg-card-hover);
+          border: 1px solid var(--border);
+        }
+
         .strip-video {
           width: 100%;
           aspect-ratio: 16 / 9;
@@ -1341,5 +1553,5 @@ export default function LabelingStudio() {
         }
       `}</style>
     </div>
-  )
+  );
 }

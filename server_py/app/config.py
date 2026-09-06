@@ -23,6 +23,9 @@ MODEL_BACKUP_DIR = MODEL_DIR / "backups"
 # above, which holds the original tfjs model that no Python code path can run.
 MODELS_ONNX_DIR = SERVER_PY_DIR / "models"
 LABELS_BACKUP_DIR = SERVER_DIR / "backups"
+# Admin session tokens, persisted so a server restart doesn't log the admin
+# out. Bearer-equivalent secrets: written 0600 and git-ignored like .env.
+SESSIONS_FILE = SERVER_DIR / "sessions.json"
 
 load_dotenv(SERVER_DIR / ".env")
 

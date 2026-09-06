@@ -100,6 +100,14 @@ class FfmpegCapture:
         if self.camera_format == "dshow":
             args += ["-rtbufsize", "100M", "-vcodec", "mjpeg",
                       "-video_size", self.camera_size, "-framerate", self.camera_fps]
+        elif self.camera_format == "v4l2":
+            # Same intent as the dshow branch, different spelling: v4l2 selects
+            # the device-side format with -input_format, not -vcodec. Without
+            # this the driver picks its own default, and on a UVC webcam that
+            # is the largest raw mode it advertises — 3840x2160 yuyv422 at 1fps,
+            # which dequeues corrupted buffers and yields no frames at all.
+            args += ["-input_format", "mjpeg",
+                      "-video_size", self.camera_size, "-framerate", self.camera_fps]
         args += ["-i", self.camera_input]
         # Output 1: raw frames for inference.
         fps = f"{(1 / self.frame_interval):.4f}"
