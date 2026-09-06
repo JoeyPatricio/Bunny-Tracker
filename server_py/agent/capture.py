@@ -4,6 +4,7 @@
 every 60s. Same log line shapes as capture.mjs (a diagnostic-parity contract
 with the live system, useful when comparing agent logs side by side).
 """
+
 import asyncio
 import os
 import time
@@ -25,7 +26,7 @@ from shared.motion import MotionDetector
 
 # Defaults match capture.mjs's env-var defaults.
 EMBED_WINDOW = 8
-CONF_THRESH = 70
+INTEREST_THRESH = 60
 MOTION_FLOOR = 1.0
 ALERT_STREAK = 3
 MOTION_CAPTURE = 2.5
@@ -38,38 +39,86 @@ CAPTURE_COOLDOWN_SEC = 30
 # free — motion_level() is a numpy pool-and-diff over a 56x56 grid — and a
 # 1-frame streak can catch a binky, which the 3-frame/1.5s alerting cadence
 # cannot see at all.
-CLIPPING_MOTION_THRESHOLD = 2.5   # overridden live by monitor.json
-CLIPPING_STREAK = 1               # fire on the first frame over the threshold
-CLIPPING_COOLDOWN_SEC = 8         # == segment length: at most one clip per segment
+CLIPPING_MOTION_THRESHOLD = 2.5  # overridden live by monitor.json
+CLIPPING_STREAK = 1  # fire on the first frame over the threshold
+CLIPPING_COOLDOWN_SEC = 8  # == segment length: at most one clip per segment
+
+# The resting baseline. Every other class is, by definition, worth a look —
+# which is why the alert decision is binary and `interest_score` below scores
+# it directly instead of routing it through argmax (see notes below).
+NORMAL_LABEL = "normal"
+NORMAL_INDEX = LABELS.index(NORMAL_LABEL)
+
+
+def interest_score(probs: np.ndarray) -> float:
+    """Score one softmax window 0-100: how much is this worth an email?
+
+    Called once per classified frame; the returned score is compared against
+    AGENT_INTEREST_THRESHOLD to decide whether the frame is an alert candidate.
+    `probs` is the full class distribution in LABELS order, summing to 1;
+    probs[NORMAL_INDEX] is the resting baseline.
+
+    Why this is not argmax: the head can be genuinely torn between grooming and
+    yawning while still being confident it is not resting. Argmax throws that
+    agreement away and the old gate then read the frame as boring. On the
+    deployed model's own val set that cost 10 of 26 real events.
+    """
+    # Seed with 0.0, not probs[NORMAL_INDEX]: seeding with the value being
+    # excluded turns "ignore normal" into "must beat normal", which makes this
+    # max(probs) and scores a confidently-resting window ~85.
+    res = 0.0
+    for i, p in enumerate(probs):
+        if i == NORMAL_INDEX:
+            continue
+        if p > res:
+            res = p
+    return res * 100.0  # 0-100% confidence in the most likely non-normal class
+
 
 # What _classify returns when there is no model to run. warm stays False, so
 # `candidate` and therefore behavior_alert are structurally unreachable — that
 # is what guarantees no email, webhook or label suggestion can fire while
 # harvesting, rather than a flag someone can forget to check.
-NO_PREDICTION = {"label": None, "confidence": 0, "windowFill": 0}
+NO_PREDICTION = {
+    "label": None,
+    "confidence": 0,
+    "windowFill": 0,
+    # interest 0 keeps a model-free frame below every possible threshold, so
+    # the alert path stays unreachable on this dict alone, without `warm`.
+    "interest": 0.0,
+    "alertLabel": None,
+    "alertConfidence": 0,
+}
 
 
 class AgentDecisionLoop:
-    def __init__(self, backbone=None, head=None, *,
-                 embed_window: int = EMBED_WINDOW,
-                 conf_thresh: float = CONF_THRESH,
-                 motion_floor: float = MOTION_FLOOR,
-                 alert_streak: int = ALERT_STREAK,
-                 motion_capture: float = MOTION_CAPTURE,
-                 motion_streak: int = MOTION_STREAK,
-                 capture_cooldown_sec: float = CAPTURE_COOLDOWN_SEC,
-                 clip_threshold: float = CLIPPING_MOTION_THRESHOLD,
-                 clip_streak: int = CLIPPING_STREAK,
-                 clip_cooldown_sec: float = CLIPPING_COOLDOWN_SEC,
-                 clip_run_model: bool = False):
+    def __init__(
+        self,
+        backbone=None,
+        head=None,
+        *,
+        embed_window: int = EMBED_WINDOW,
+        interest_thresh: float = INTEREST_THRESH,
+        motion_floor: float = MOTION_FLOOR,
+        alert_streak: int = ALERT_STREAK,
+        motion_capture: float = MOTION_CAPTURE,
+        motion_streak: int = MOTION_STREAK,
+        capture_cooldown_sec: float = CAPTURE_COOLDOWN_SEC,
+        clip_threshold: float = CLIPPING_MOTION_THRESHOLD,
+        clip_streak: int = CLIPPING_STREAK,
+        clip_cooldown_sec: float = CLIPPING_COOLDOWN_SEC,
+        clip_run_model: bool = False,
+    ):
         # backbone/head are optional: without them there is no predictor, and
         # the loop runs motion-only. That is both Clipping Mode's normal state
         # and the degraded mode the agent falls back to when the ONNX artifacts
         # are missing, so one code path covers both.
-        self.predictor = Predictor(backbone, head, embed_window) if (backbone and head) else None
+        self.predictor = (
+            Predictor(backbone, head, embed_window) if (backbone and head) else None
+        )
         self.motion = MotionDetector()
         self.embed_window = embed_window
-        self.conf_thresh = conf_thresh
+        self.interest_thresh = interest_thresh
         self.motion_floor = motion_floor
         self.alert_streak = alert_streak
         self.motion_capture = motion_capture
@@ -86,14 +135,26 @@ class AgentDecisionLoop:
         self.dry_run = False
 
         self.last_label: str | None = None
-        self.streak_label: str | None = None
+        # A streak is now counted over consecutive *interesting* frames, not
+        # over a repeated label: the label is allowed to flicker between
+        # grooming/yawn/standing while the "not resting" signal holds steady,
+        # which is exactly the case the old label-matching streak dropped.
+        # streak_scores accumulates alertConfidence per label across the streak
+        # so the fired alert is named by the whole streak, not its last frame.
         self.streak_count = 0
+        self.streak_scores: dict[str, float] = {}
         self.motion_streak = 0
         self.last_capture_at = 0.0
 
-    def apply_clipping_config(self, *, clipping: bool, threshold: float | None = None,
-                              cooldown: float | None = None, streak: int | None = None,
-                              dry_run: bool = False) -> bool:
+    def apply_clipping_config(
+        self,
+        *,
+        clipping: bool,
+        threshold: float | None = None,
+        cooldown: float | None = None,
+        streak: int | None = None,
+        dry_run: bool = False,
+    ) -> bool:
         """Push dashboard settings onto the loop. Returns True if the mode
         itself flipped, which is the only case the caller has to restart ffmpeg
         for (frame_interval and segment_secs are baked into its args); a pure
@@ -113,8 +174,8 @@ class AgentDecisionLoop:
             # new ones, and the embedding window would blend across a gap in
             # which the camera was restarted.
             self.motion_streak = 0
-            self.streak_label = None
             self.streak_count = 0
+            self.streak_scores = {}
             self.last_label = None
             # last_capture_at is shared by both paths, and the two cooldowns
             # differ by a factor of four. Carrying it across the flip made a
@@ -135,9 +196,26 @@ class AgentDecisionLoop:
         probs = self.predictor.push_frame(normalize(pixel_frame))
         window_fill = len(self.predictor.buffer)
         if probs is None:
-            return {"label": None, "confidence": 0, "windowFill": window_fill}
+            return {**NO_PREDICTION, "windowFill": window_fill}
         idx = int(np.argmax(probs))
-        return {"label": LABELS[idx], "confidence": round(float(probs[idx]) * 100), "windowFill": window_fill}
+
+        # The best NON-baseline class. Once interest_score has decided a frame
+        # is worth alerting on, something has to name it: /api/notify rejects
+        # "normal" outright and a "normal" suggestion in Label Studio is no
+        # help to a reviewer. This is the descriptive answer to "interesting
+        # how?", deliberately separate from the gate above it.
+        alert_idx = max(
+            range(len(LABELS)),
+            key=lambda k: -1.0 if k == NORMAL_INDEX else float(probs[k]),
+        )
+        return {
+            "label": LABELS[idx],
+            "confidence": round(float(probs[idx]) * 100),
+            "windowFill": window_fill,
+            "interest": float(interest_score(probs)),
+            "alertLabel": LABELS[alert_idx],
+            "alertConfidence": round(float(probs[alert_idx]) * 100),
+        }
 
     def handle_frame(self, pixel_frame: np.ndarray, now: float | None = None) -> dict:
         """pixel_frame: [224,224,3] uint8 RGB, raw. Motion detection consumes
@@ -152,7 +230,9 @@ class AgentDecisionLoop:
         # hatch is set): the point is volume of unlabeled footage, and a model
         # that has no current training data behind it would only add noise to
         # the public prediction feed.
-        run_model = self.predictor is not None and (not self.clipping or self.clip_run_model)
+        run_model = self.predictor is not None and (
+            not self.clipping or self.clip_run_model
+        )
         pred = self._classify(pixel_frame) if run_model else dict(NO_PREDICTION)
 
         warm = pred["windowFill"] >= self.embed_window
@@ -160,29 +240,50 @@ class AgentDecisionLoop:
         candidate = (
             not self.clipping
             and warm
-            and pred["label"] != "normal"
-            and pred["confidence"] >= self.conf_thresh
+            and pred["interest"] >= self.interest_thresh
             and motion["level"] >= self.motion_floor
         )
 
-        if candidate and pred["label"] == self.streak_label:
+        if candidate:
             self.streak_count += 1
-        elif candidate:
-            self.streak_label = pred["label"]
-            self.streak_count = 1
+            self.streak_scores[pred["alertLabel"]] = (
+                self.streak_scores.get(pred["alertLabel"], 0.0)
+                + pred["alertConfidence"]
+            )
         else:
-            self.streak_label = None
             self.streak_count = 0
+            self.streak_scores = {}
 
         behavior_alert = candidate and self.streak_count >= self.alert_streak
+
+        # Name the alert from the whole streak rather than whichever frame
+        # happened to trip the counter: summed confidence, so three frames of
+        # weak "zoomies" outrank one strong flicker of "standing".
+        alert = None
+        if behavior_alert:
+            best = max(self.streak_scores, key=lambda k: self.streak_scores[k])
+            alert = {
+                "label": best,
+                "confidence": pred["alertConfidence"]
+                if best == pred["alertLabel"]
+                else round(self.streak_scores[best] / self.streak_count),
+            }
 
         # Clipping Mode runs the same streak/cooldown machinery on its own,
         # much more permissive, numbers.
         threshold = self.clip_threshold if self.clipping else self.motion_capture
-        streak_needed = self.clip_streak_threshold if self.clipping else self.motion_streak_threshold
-        cooldown = self.clip_cooldown_sec if self.clipping else self.capture_cooldown_sec
+        streak_needed = (
+            self.clip_streak_threshold
+            if self.clipping
+            else self.motion_streak_threshold
+        )
+        cooldown = (
+            self.clip_cooldown_sec if self.clipping else self.capture_cooldown_sec
+        )
 
-        self.motion_streak = self.motion_streak + 1 if motion["level"] >= threshold else 0
+        self.motion_streak = (
+            self.motion_streak + 1 if motion["level"] >= threshold else 0
+        )
         motion_event = self.motion_streak >= streak_needed
 
         capture_ready = (now - self.last_capture_at) >= cooldown
@@ -190,7 +291,9 @@ class AgentDecisionLoop:
         # Nothing reaches the public prediction feed while harvesting — with no
         # model there is no label to publish anyway, and under RUN_MODEL the
         # predictions are diagnostic only.
-        publish_prediction = not self.clipping and warm and pred["label"] != self.last_label
+        publish_prediction = (
+            not self.clipping and warm and pred["label"] != self.last_label
+        )
         if publish_prediction:
             self.last_label = pred["label"]
 
@@ -198,6 +301,7 @@ class AgentDecisionLoop:
         if (behavior_alert or motion_event) and capture_ready:
             self.last_capture_at = now
             self.streak_count = 0
+            self.streak_scores = {}
             self.motion_streak = 0
             if self.clipping:
                 action = "clip"
@@ -210,6 +314,9 @@ class AgentDecisionLoop:
             "warm": warm,
             "candidate": candidate,
             "behaviorAlert": behavior_alert,
+            # The {label, confidence} the alert should be sent under, or None.
+            # Shaped like `prediction` so _upload_and_alert takes either one.
+            "alert": alert,
             "motionEvent": motion_event,
             "publishPrediction": publish_prediction,
             "threshold": threshold,
@@ -241,20 +348,35 @@ class Agent:
         self.embed_window = int(os.environ.get("AGENT_EMBED_WINDOW", "8"))
         self.segment_secs = int(os.environ.get("AGENT_SEGMENT_SECONDS", "12"))
         self.segment_max_age_sec = self.segment_secs * 2.5
-        self.conf_thresh = float(os.environ.get("AGENT_CONFIDENCE_THRESHOLD", "70"))
+        self.interest_thresh = float(
+            os.environ.get("AGENT_INTEREST_THRESHOLD", str(INTEREST_THRESH))
+        )
         self.motion_floor = float(os.environ.get("AGENT_MOTION_FLOOR", "1"))
         self.alert_streak = int(os.environ.get("AGENT_ALERT_STREAK", "3"))
         self.motion_capture = float(os.environ.get("AGENT_MOTION_CAPTURE", "2.5"))
         self.motion_streak = int(os.environ.get("AGENT_MOTION_STREAK", "3"))
-        self.capture_cooldown_sec = float(os.environ.get("AGENT_CAPTURE_COOLDOWN_SEC", "30"))
+        self.capture_cooldown_sec = float(
+            os.environ.get("AGENT_CAPTURE_COOLDOWN_SEC", "30")
+        )
 
         # Clipping Mode. These are boot defaults only — monitor.json is
         # authoritative for threshold/cooldown/dry-run once the dashboard has
         # written it, and _poll_monitor_loop pushes those in every 5s.
-        self.clip_frame_interval = float(os.environ.get("AGENT_CLIPPING_FRAME_SECONDS", "0.5"))
-        self.clip_segment_secs = int(os.environ.get("AGENT_CLIPPING_SEGMENT_SECONDS", "8"))
-        self.clip_streak = int(os.environ.get("AGENT_CLIPPING_STREAK", str(CLIPPING_STREAK)))
-        self.clip_run_model = os.environ.get("AGENT_CLIPPING_RUN_MODEL", "0") not in ("", "0", "false", "False")
+        self.clip_frame_interval = float(
+            os.environ.get("AGENT_CLIPPING_FRAME_SECONDS", "0.5")
+        )
+        self.clip_segment_secs = int(
+            os.environ.get("AGENT_CLIPPING_SEGMENT_SECONDS", "8")
+        )
+        self.clip_streak = int(
+            os.environ.get("AGENT_CLIPPING_STREAK", str(CLIPPING_STREAK))
+        )
+        self.clip_run_model = os.environ.get("AGENT_CLIPPING_RUN_MODEL", "0") not in (
+            "",
+            "0",
+            "false",
+            "False",
+        )
         # Segments whose motion fired a clip, awaiting the segment closing.
         # Each entry: {"name", "mtime", "motion"}.
         self.pending_clips: list[dict] = []
@@ -294,16 +416,23 @@ class Agent:
             head = TemporalHead(str(MODELS_DIR / "head.onnx"))
         except Exception as err:
             backbone = head = None
-            log(f"⚠ ONNX models unavailable ({err}) — running motion-only, alerts disabled.")
+            log(
+                f"⚠ ONNX models unavailable ({err}) — running motion-only, alerts disabled."
+            )
             log("  Clipping Mode still works; it never uses the model.")
 
         self.decision_loop = AgentDecisionLoop(
-            backbone, head,
-            embed_window=self.embed_window, conf_thresh=self.conf_thresh,
-            motion_floor=self.motion_floor, alert_streak=self.alert_streak,
-            motion_capture=self.motion_capture, motion_streak=self.motion_streak,
+            backbone,
+            head,
+            embed_window=self.embed_window,
+            interest_thresh=self.interest_thresh,
+            motion_floor=self.motion_floor,
+            alert_streak=self.alert_streak,
+            motion_capture=self.motion_capture,
+            motion_streak=self.motion_streak,
             capture_cooldown_sec=self.capture_cooldown_sec,
-            clip_streak=self.clip_streak, clip_run_model=self.clip_run_model,
+            clip_streak=self.clip_streak,
+            clip_run_model=self.clip_run_model,
         )
         if backbone and head:
             log(f"✓ Models ready (backend: onnxruntime; classes: {', '.join(LABELS)})")
@@ -326,7 +455,9 @@ class Agent:
             return None
         return seg["name"]
 
-    async def _upload_segment(self, seg_name: str | None = None, source: str | None = None) -> str | None:
+    async def _upload_segment(
+        self, seg_name: str | None = None, source: str | None = None
+    ) -> str | None:
         """seg_name=None keeps the original behavior verbatim for the alert
         path: upload the latest FINISHED segment, i.e. the ~12s leading up to
         the event. Clipping Mode passes an explicit name instead (see
@@ -359,7 +490,9 @@ class Agent:
                     reason = resp.json().get("reason")
                 except Exception:
                     reason = None
-                log(f"  ⛔ Clipping stopped by the server: {reason or 'budget reached'}")
+                log(
+                    f"  ⛔ Clipping stopped by the server: {reason or 'budget reached'}"
+                )
             return None
         if resp.status_code != 200:
             log("  upload failed:", resp.status_code)
@@ -375,7 +508,9 @@ class Agent:
                     self.alert_webhook_url,
                     headers={"X-BunnyCam-Secret": self.alert_webhook_secret},
                     json={
-                        "label": pred["label"], "confidence": pred["confidence"], "filename": filename,
+                        "label": pred["label"],
+                        "confidence": pred["confidence"],
+                        "filename": filename,
                         "clipUrl": f"{self.client.client.base_url}/recordings/{filename}",
                         "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                     },
@@ -385,19 +520,35 @@ class Agent:
             log("  webhook failed:", err)
 
     async def _upload_and_alert(self, pred: dict) -> None:
+        """`pred` is the decision's `alert` dict — {label, confidence} named by
+        the whole streak, never the raw argmax. It is guaranteed non-"normal",
+        which /api/notify's ALERT_LABELS requires and a Label Studio reviewer
+        needs; the raw prediction can and often does still read "normal" on the
+        very frame that fires, which is the point of the interest gate.
+        """
         filename = await self._upload_segment()
         if not filename:
             return
-        log(f"  ↑ Uploaded clip {filename} → suggested {pred['label']} (review in Label Studio)")
+        log(
+            f"  ↑ Uploaded clip {filename} → suggested {pred['label']} (review in Label Studio)"
+        )
 
         try:
-            await self.client.post(f"/api/labels/{filename}/suggest", json={"label": pred["label"]})
+            await self.client.post(
+                f"/api/labels/{filename}/suggest", json={"label": pred["label"]}
+            )
         except Exception:
             pass
 
         if self.alert_webhook_url:
-            gate_resp = await self.client.post("/api/notify/gate", json={"label": pred["label"]})
-            gate = gate_resp.json() if gate_resp.status_code == 200 else {"allow": False, "reason": "gate unreachable"}
+            gate_resp = await self.client.post(
+                "/api/notify/gate", json={"label": pred["label"]}
+            )
+            gate = (
+                gate_resp.json()
+                if gate_resp.status_code == 200
+                else {"allow": False, "reason": "gate unreachable"}
+            )
             if gate.get("allow"):
                 await self._notify_webhook(pred, filename)
             else:
@@ -405,16 +556,24 @@ class Agent:
         else:
             resp = await self.client.post(
                 "/api/notify",
-                json={"label": pred["label"], "confidence": pred["confidence"], "filename": filename},
+                json={
+                    "label": pred["label"],
+                    "confidence": pred["confidence"],
+                    "filename": filename,
+                },
             )
             result = resp.json()
-            log(f"  ✉ Email: {'sent' if result.get('sent') else result.get('reason') or result.get('error')}")
+            log(
+                f"  ✉ Email: {'sent' if result.get('sent') else result.get('reason') or result.get('error')}"
+            )
 
     async def _upload_motion_clip(self, motion_level: float) -> None:
         filename = await self._upload_segment()
         if not filename:
             return
-        log(f"  ↑ Motion clip {filename} saved unlabeled (motion={motion_level:.1f}) — review in Label Studio")
+        log(
+            f"  ↑ Motion clip {filename} saved unlabeled (motion={motion_level:.1f}) — review in Label Studio"
+        )
 
     # ── Clipping Mode: defer to the segment the motion happened in ─────────
 
@@ -445,11 +604,16 @@ class Agent:
         key = (target["name"], round(target["mtime"], 3))
         if key in self.clipped_segments:
             return
-        self.pending_clips.append({
-            "name": target["name"], "mtime": target["mtime"],
-            "motion": motion_level,
-        })
-        log(f"  ⧗ Clip queued (motion={motion_level:.1f}) — waiting for {target['name']} to close")
+        self.pending_clips.append(
+            {
+                "name": target["name"],
+                "mtime": target["mtime"],
+                "motion": motion_level,
+            }
+        )
+        log(
+            f"  ⧗ Clip queued (motion={motion_level:.1f}) — waiting for {target['name']} to close"
+        )
 
     async def _drain_pending_clips_loop(self) -> None:
         while True:
@@ -497,7 +661,10 @@ class Agent:
             #      length, so capture stopped and ffmpeg finalized it. Without
             #      this, the last clip before monitoring is turned off is
             #      stranded forever, since no newer segment ever appears.
-            closed = newest_mtime > current["mtime"] or (now - current["mtime"]) > settled_after
+            closed = (
+                newest_mtime > current["mtime"]
+                or (now - current["mtime"]) > settled_after
+            )
             if not closed:
                 still_pending.append(clip)
                 continue
@@ -510,8 +677,10 @@ class Agent:
             self.clipped_segments.add((clip["name"], round(current["mtime"], 3)))
             filename = await self._upload_segment(clip["name"], source="clipping")
             if filename:
-                log(f"  ↑ Clip {filename} saved unlabeled (motion={clip['motion']:.1f})"
-                    f" — review in Label Studio")
+                log(
+                    f"  ↑ Clip {filename} saved unlabeled (motion={clip['motion']:.1f})"
+                    f" — review in Label Studio"
+                )
 
         self.pending_clips = still_pending
 
@@ -537,32 +706,46 @@ class Agent:
             # and exception-swallowed, exactly like the predictions post below:
             # a telemetry hiccup must never interrupt capture.
             try:
-                await self.client.post("/api/motion", json={
-                    "level": motion["level"], "hotCells": motion["hotCells"],
-                    "lighting": motion["lighting"], "threshold": decision["threshold"],
-                    "wouldCapture": decision["action"] == "clip",
-                    "captured": decision["action"] == "clip" and not self.decision_loop.dry_run,
-                })
+                await self.client.post(
+                    "/api/motion",
+                    json={
+                        "level": motion["level"],
+                        "hotCells": motion["hotCells"],
+                        "lighting": motion["lighting"],
+                        "threshold": decision["threshold"],
+                        "wouldCapture": decision["action"] == "clip",
+                        "captured": decision["action"] == "clip"
+                        and not self.decision_loop.dry_run,
+                    },
+                )
             except Exception:
                 pass
         else:
-            warmup_tag = f"  (warmup {pred['windowFill']}/{self.embed_window})" if not decision["warm"] else ""
+            warmup_tag = (
+                f"  (warmup {pred['windowFill']}/{self.embed_window})"
+                if not decision["warm"]
+                else ""
+            )
             log(
                 f"frame  motion={motion['level']:.1f}  cells={motion['hotCells']}"
                 f"{'  (scene-wide change, scored 0)' if motion['lighting'] else ''}"
-                f"  →  {pred['label']} {pred['confidence']}%{warmup_tag}"
-                f"{'  ⚠ ALERT' if decision['behaviorAlert'] else '  ● MOTION' if decision['motionEvent'] else ''}"
+                f"  →  {pred['label']} {pred['confidence']}%"
+                f"  interest={pred['interest']:.0f}/{self.interest_thresh:.0f}{warmup_tag}"
+                f"{'  ⚠ ALERT ' + decision['alert']['label'] if decision['behaviorAlert'] else '  ● MOTION' if decision['motionEvent'] else ''}"
             )
 
         if decision["publishPrediction"]:
             try:
-                await self.client.post("/api/predictions", json={"label": pred["label"], "confidence": pred["confidence"]})
+                await self.client.post(
+                    "/api/predictions",
+                    json={"label": pred["label"], "confidence": pred["confidence"]},
+                )
             except Exception:
                 pass
 
         if decision["action"] == "alert":
             try:
-                await self._upload_and_alert(pred)
+                await self._upload_and_alert(decision["alert"])
             except Exception as err:
                 log("  alert error:", err)
         elif decision["action"] == "motion_capture":
@@ -579,7 +762,9 @@ class Agent:
     async def _on_live_frame(self, jpeg_bytes: bytes) -> None:
         try:
             await self.client.post(
-                "/api/stream/frame", content=jpeg_bytes, headers={"Content-Type": "image/jpeg"},
+                "/api/stream/frame",
+                content=jpeg_bytes,
+                headers={"Content-Type": "image/jpeg"},
             )
         except Exception:
             pass
@@ -595,11 +780,16 @@ class Agent:
         self.segment_max_age_sec = segment_secs * 2.5
 
         self.ffmpeg = FfmpegCapture(
-            ffmpeg_path=os.environ.get("FFMPEG_PATH") or imageio_ffmpeg.get_ffmpeg_exe(),
-            camera_format=self.camera_format, camera_input=self.camera_input,
-            camera_size=self.camera_size, camera_fps=self.camera_fps,
-            frame_interval=frame_interval, segment_secs=segment_secs,
-            seg_dir=self.seg_dir, live_frame_path=self.live_frame_path,
+            ffmpeg_path=os.environ.get("FFMPEG_PATH")
+            or imageio_ffmpeg.get_ffmpeg_exe(),
+            camera_format=self.camera_format,
+            camera_input=self.camera_input,
+            camera_size=self.camera_size,
+            camera_fps=self.camera_fps,
+            frame_interval=frame_interval,
+            segment_secs=segment_secs,
+            seg_dir=self.seg_dir,
+            live_frame_path=self.live_frame_path,
             on_frame=self._on_frame,
         )
         await self.ffmpeg.start()
@@ -700,10 +890,16 @@ class Agent:
 
             self.clip_budget_blocked = False
             if clipping:
-                dry = " (dry run — nothing will be saved)" if self.decision_loop.dry_run else ""
-                log(f"✂ Clipping Mode ON{dry} — motion ≥ {self.decision_loop.clip_threshold:.1f}, "
+                dry = (
+                    " (dry run — nothing will be saved)"
+                    if self.decision_loop.dry_run
+                    else ""
+                )
+                log(
+                    f"✂ Clipping Mode ON{dry} — motion ≥ {self.decision_loop.clip_threshold:.1f}, "
                     f"{self.clip_segment_secs}s clips, {self.decision_loop.clip_cooldown_sec:.0f}s cooldown. "
-                    f"Alerts and predictions are paused.")
+                    f"Alerts and predictions are paused."
+                )
             else:
                 reason = state.get("clippingStoppedReason")
                 log(f"✂ Clipping Mode OFF{f' — {reason}' if reason else ''}")
@@ -722,7 +918,7 @@ class Agent:
                 await self.start_capture()
 
     async def run(self) -> None:
-        log("\U0001F407 BunnyCam Python Agent starting...")
+        log("\U0001f407 BunnyCam Python Agent starting...")
         self.seg_dir.mkdir(parents=True, exist_ok=True)
         await self.client.verify()
         log("✓ AGENT_TOKEN verified")
@@ -762,6 +958,7 @@ async def main():
     loop = asyncio.get_running_loop()
     try:
         import signal
+
         loop.add_signal_handler(signal.SIGTERM, _shutdown)
         loop.add_signal_handler(signal.SIGINT, _shutdown)
     except (NotImplementedError, AttributeError):
