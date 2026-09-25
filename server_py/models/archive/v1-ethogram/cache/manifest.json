@@ -1,0 +1,3533 @@
+{
+  "train": [
+    {
+      "filename": "recording-clip-2026-09-04T07-10-24-158Z.webm",
+      "label": "zoomies",
+      "variant": 0,
+      "embeddings": "recording-clip-2026-09-04T07-10-24-158Z.webm.train0.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-04T07-10-24-158Z.webm",
+      "label": "zoomies",
+      "variant": 1,
+      "embeddings": "recording-clip-2026-09-04T07-10-24-158Z.webm.train1.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-04T07-10-24-158Z.webm",
+      "label": "zoomies",
+      "variant": 2,
+      "embeddings": "recording-clip-2026-09-04T07-10-24-158Z.webm.train2.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-04T07-10-16-134Z.webm",
+      "label": "zoomies",
+      "variant": 0,
+      "embeddings": "recording-clip-2026-09-04T07-10-16-134Z.webm.train0.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-04T07-10-16-134Z.webm",
+      "label": "zoomies",
+      "variant": 1,
+      "embeddings": "recording-clip-2026-09-04T07-10-16-134Z.webm.train1.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-04T07-10-16-134Z.webm",
+      "label": "zoomies",
+      "variant": 2,
+      "embeddings": "recording-clip-2026-09-04T07-10-16-134Z.webm.train2.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-04T07-07-27-950Z.webm",
+      "label": "zoomies",
+      "variant": 0,
+      "embeddings": "recording-clip-2026-09-04T07-07-27-950Z.webm.train0.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-04T07-07-27-950Z.webm",
+      "label": "zoomies",
+      "variant": 1,
+      "embeddings": "recording-clip-2026-09-04T07-07-27-950Z.webm.train1.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-04T07-07-27-950Z.webm",
+      "label": "zoomies",
+      "variant": 2,
+      "embeddings": "recording-clip-2026-09-04T07-07-27-950Z.webm.train2.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-04T07-06-15-861Z.webm",
+      "label": "zoomies",
+      "variant": 0,
+      "embeddings": "recording-clip-2026-09-04T07-06-15-861Z.webm.train0.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-04T07-06-15-861Z.webm",
+      "label": "zoomies",
+      "variant": 1,
+      "embeddings": "recording-clip-2026-09-04T07-06-15-861Z.webm.train1.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-04T07-06-15-861Z.webm",
+      "label": "zoomies",
+      "variant": 2,
+      "embeddings": "recording-clip-2026-09-04T07-06-15-861Z.webm.train2.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-04T07-03-51-770Z.webm",
+      "label": "normal",
+      "variant": 0,
+      "embeddings": "recording-clip-2026-09-04T07-03-51-770Z.webm.train0.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-04T07-03-51-770Z.webm",
+      "label": "normal",
+      "variant": 1,
+      "embeddings": "recording-clip-2026-09-04T07-03-51-770Z.webm.train1.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-04T07-03-51-770Z.webm",
+      "label": "normal",
+      "variant": 2,
+      "embeddings": "recording-clip-2026-09-04T07-03-51-770Z.webm.train2.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-31T12-37-24-818Z.webm",
+      "label": "zoomies",
+      "variant": 0,
+      "embeddings": "recording-clip-2026-08-31T12-37-24-818Z.webm.train0.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-31T12-37-24-818Z.webm",
+      "label": "zoomies",
+      "variant": 1,
+      "embeddings": "recording-clip-2026-08-31T12-37-24-818Z.webm.train1.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-31T12-37-24-818Z.webm",
+      "label": "zoomies",
+      "variant": 2,
+      "embeddings": "recording-clip-2026-08-31T12-37-24-818Z.webm.train2.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-31T12-37-08-763Z.webm",
+      "label": "normal",
+      "variant": 0,
+      "embeddings": "recording-clip-2026-08-31T12-37-08-763Z.webm.train0.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-31T12-37-08-763Z.webm",
+      "label": "normal",
+      "variant": 1,
+      "embeddings": "recording-clip-2026-08-31T12-37-08-763Z.webm.train1.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-31T12-37-08-763Z.webm",
+      "label": "normal",
+      "variant": 2,
+      "embeddings": "recording-clip-2026-08-31T12-37-08-763Z.webm.train2.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-31T12-37-16-791Z.webm",
+      "label": "zoomies",
+      "variant": 0,
+      "embeddings": "recording-clip-2026-08-31T12-37-16-791Z.webm.train0.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-31T12-37-16-791Z.webm",
+      "label": "zoomies",
+      "variant": 1,
+      "embeddings": "recording-clip-2026-08-31T12-37-16-791Z.webm.train1.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-31T12-37-16-791Z.webm",
+      "label": "zoomies",
+      "variant": 2,
+      "embeddings": "recording-clip-2026-08-31T12-37-16-791Z.webm.train2.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-31T12-34-20-526Z.webm",
+      "label": "normal",
+      "variant": 0,
+      "embeddings": "recording-clip-2026-08-31T12-34-20-526Z.webm.train0.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-31T12-34-20-526Z.webm",
+      "label": "normal",
+      "variant": 1,
+      "embeddings": "recording-clip-2026-08-31T12-34-20-526Z.webm.train1.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-31T12-34-20-526Z.webm",
+      "label": "normal",
+      "variant": 2,
+      "embeddings": "recording-clip-2026-08-31T12-34-20-526Z.webm.train2.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-31T12-34-52-575Z.webm",
+      "label": "zoomies",
+      "variant": 0,
+      "embeddings": "recording-clip-2026-08-31T12-34-52-575Z.webm.train0.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-31T12-34-52-575Z.webm",
+      "label": "zoomies",
+      "variant": 1,
+      "embeddings": "recording-clip-2026-08-31T12-34-52-575Z.webm.train1.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-31T12-34-52-575Z.webm",
+      "label": "zoomies",
+      "variant": 2,
+      "embeddings": "recording-clip-2026-08-31T12-34-52-575Z.webm.train2.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-02T13-57-09-479Z.webm",
+      "label": "standing",
+      "variant": 0,
+      "embeddings": "recording-clip-2026-09-02T13-57-09-479Z.webm.train0.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-02T13-57-09-479Z.webm",
+      "label": "standing",
+      "variant": 1,
+      "embeddings": "recording-clip-2026-09-02T13-57-09-479Z.webm.train1.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-02T13-57-09-479Z.webm",
+      "label": "standing",
+      "variant": 2,
+      "embeddings": "recording-clip-2026-09-02T13-57-09-479Z.webm.train2.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-02T13-55-17-370Z.webm",
+      "label": "zoomies",
+      "variant": 0,
+      "embeddings": "recording-clip-2026-09-02T13-55-17-370Z.webm.train0.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-02T13-55-17-370Z.webm",
+      "label": "zoomies",
+      "variant": 1,
+      "embeddings": "recording-clip-2026-09-02T13-55-17-370Z.webm.train1.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-02T13-55-17-370Z.webm",
+      "label": "zoomies",
+      "variant": 2,
+      "embeddings": "recording-clip-2026-09-02T13-55-17-370Z.webm.train2.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-02T13-56-53-444Z.webm",
+      "label": "zoomies",
+      "variant": 0,
+      "embeddings": "recording-clip-2026-09-02T13-56-53-444Z.webm.train0.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-02T13-56-53-444Z.webm",
+      "label": "zoomies",
+      "variant": 1,
+      "embeddings": "recording-clip-2026-09-02T13-56-53-444Z.webm.train1.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-02T13-56-53-444Z.webm",
+      "label": "zoomies",
+      "variant": 2,
+      "embeddings": "recording-clip-2026-09-02T13-56-53-444Z.webm.train2.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-02T13-48-45-003Z.webm",
+      "label": "zoomies",
+      "variant": 0,
+      "embeddings": "recording-clip-2026-09-02T13-48-45-003Z.webm.train0.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-02T13-48-45-003Z.webm",
+      "label": "zoomies",
+      "variant": 1,
+      "embeddings": "recording-clip-2026-09-02T13-48-45-003Z.webm.train1.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-02T13-48-45-003Z.webm",
+      "label": "zoomies",
+      "variant": 2,
+      "embeddings": "recording-clip-2026-09-02T13-48-45-003Z.webm.train2.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-02T13-48-20-941Z.webm",
+      "label": "grooming",
+      "variant": 0,
+      "embeddings": "recording-clip-2026-09-02T13-48-20-941Z.webm.train0.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-02T13-48-20-941Z.webm",
+      "label": "grooming",
+      "variant": 1,
+      "embeddings": "recording-clip-2026-09-02T13-48-20-941Z.webm.train1.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-02T13-48-20-941Z.webm",
+      "label": "grooming",
+      "variant": 2,
+      "embeddings": "recording-clip-2026-09-02T13-48-20-941Z.webm.train2.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-02T13-48-12-906Z.webm",
+      "label": "grooming",
+      "variant": 0,
+      "embeddings": "recording-clip-2026-09-02T13-48-12-906Z.webm.train0.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-02T13-48-12-906Z.webm",
+      "label": "grooming",
+      "variant": 1,
+      "embeddings": "recording-clip-2026-09-02T13-48-12-906Z.webm.train1.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-02T13-48-12-906Z.webm",
+      "label": "grooming",
+      "variant": 2,
+      "embeddings": "recording-clip-2026-09-02T13-48-12-906Z.webm.train2.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-02T13-48-36-982Z.webm",
+      "label": "grooming",
+      "variant": 0,
+      "embeddings": "recording-clip-2026-09-02T13-48-36-982Z.webm.train0.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-02T13-48-36-982Z.webm",
+      "label": "grooming",
+      "variant": 1,
+      "embeddings": "recording-clip-2026-09-02T13-48-36-982Z.webm.train1.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-02T13-48-36-982Z.webm",
+      "label": "grooming",
+      "variant": 2,
+      "embeddings": "recording-clip-2026-09-02T13-48-36-982Z.webm.train2.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-03T07-20-18-156Z.webm",
+      "label": "normal",
+      "variant": 0,
+      "embeddings": "recording-clip-2026-09-03T07-20-18-156Z.webm.train0.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-03T07-20-18-156Z.webm",
+      "label": "normal",
+      "variant": 1,
+      "embeddings": "recording-clip-2026-09-03T07-20-18-156Z.webm.train1.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-03T07-20-18-156Z.webm",
+      "label": "normal",
+      "variant": 2,
+      "embeddings": "recording-clip-2026-09-03T07-20-18-156Z.webm.train2.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-03T07-17-32-028Z.webm",
+      "label": "normal",
+      "variant": 0,
+      "embeddings": "recording-clip-2026-09-03T07-17-32-028Z.webm.train0.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-03T07-17-32-028Z.webm",
+      "label": "normal",
+      "variant": 1,
+      "embeddings": "recording-clip-2026-09-03T07-17-32-028Z.webm.train1.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-03T07-17-32-028Z.webm",
+      "label": "normal",
+      "variant": 2,
+      "embeddings": "recording-clip-2026-09-03T07-17-32-028Z.webm.train2.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-03T12-46-02-031Z.webm",
+      "label": "grooming",
+      "variant": 0,
+      "embeddings": "recording-clip-2026-09-03T12-46-02-031Z.webm.train0.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-03T12-46-02-031Z.webm",
+      "label": "grooming",
+      "variant": 1,
+      "embeddings": "recording-clip-2026-09-03T12-46-02-031Z.webm.train1.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-03T12-46-02-031Z.webm",
+      "label": "grooming",
+      "variant": 2,
+      "embeddings": "recording-clip-2026-09-03T12-46-02-031Z.webm.train2.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-03T12-29-37-586Z.webm",
+      "label": "normal",
+      "variant": 0,
+      "embeddings": "recording-clip-2026-09-03T12-29-37-586Z.webm.train0.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-03T12-29-37-586Z.webm",
+      "label": "normal",
+      "variant": 1,
+      "embeddings": "recording-clip-2026-09-03T12-29-37-586Z.webm.train1.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-03T12-29-37-586Z.webm",
+      "label": "normal",
+      "variant": 2,
+      "embeddings": "recording-clip-2026-09-03T12-29-37-586Z.webm.train2.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-02T04-42-05-156Z.webm",
+      "label": "standing",
+      "variant": 0,
+      "embeddings": "recording-clip-2026-09-02T04-42-05-156Z.webm.train0.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-02T04-42-05-156Z.webm",
+      "label": "standing",
+      "variant": 1,
+      "embeddings": "recording-clip-2026-09-02T04-42-05-156Z.webm.train1.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-02T04-42-05-156Z.webm",
+      "label": "standing",
+      "variant": 2,
+      "embeddings": "recording-clip-2026-09-02T04-42-05-156Z.webm.train2.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-31T13-18-03-934Z.webm",
+      "label": "normal",
+      "variant": 0,
+      "embeddings": "recording-clip-2026-08-31T13-18-03-934Z.webm.train0.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-31T13-18-03-934Z.webm",
+      "label": "normal",
+      "variant": 1,
+      "embeddings": "recording-clip-2026-08-31T13-18-03-934Z.webm.train1.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-31T13-18-03-934Z.webm",
+      "label": "normal",
+      "variant": 2,
+      "embeddings": "recording-clip-2026-08-31T13-18-03-934Z.webm.train2.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-31T13-03-15-534Z.webm",
+      "label": "zoomies",
+      "variant": 0,
+      "embeddings": "recording-clip-2026-08-31T13-03-15-534Z.webm.train0.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-31T13-03-15-534Z.webm",
+      "label": "zoomies",
+      "variant": 1,
+      "embeddings": "recording-clip-2026-08-31T13-03-15-534Z.webm.train1.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-31T13-03-15-534Z.webm",
+      "label": "zoomies",
+      "variant": 2,
+      "embeddings": "recording-clip-2026-08-31T13-03-15-534Z.webm.train2.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-31T13-02-35-463Z.webm",
+      "label": "normal",
+      "variant": 0,
+      "embeddings": "recording-clip-2026-08-31T13-02-35-463Z.webm.train0.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-31T13-02-35-463Z.webm",
+      "label": "normal",
+      "variant": 1,
+      "embeddings": "recording-clip-2026-08-31T13-02-35-463Z.webm.train1.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-31T13-02-35-463Z.webm",
+      "label": "normal",
+      "variant": 2,
+      "embeddings": "recording-clip-2026-08-31T13-02-35-463Z.webm.train2.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-31T13-02-59-493Z.webm",
+      "label": "zoomies",
+      "variant": 0,
+      "embeddings": "recording-clip-2026-08-31T13-02-59-493Z.webm.train0.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-31T13-02-59-493Z.webm",
+      "label": "zoomies",
+      "variant": 1,
+      "embeddings": "recording-clip-2026-08-31T13-02-59-493Z.webm.train1.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-31T13-02-59-493Z.webm",
+      "label": "zoomies",
+      "variant": 2,
+      "embeddings": "recording-clip-2026-08-31T13-02-59-493Z.webm.train2.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-29T13-11-24-785Z.webm",
+      "label": "normal",
+      "variant": 0,
+      "embeddings": "recording-clip-2026-08-29T13-11-24-785Z.webm.train0.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-29T13-11-24-785Z.webm",
+      "label": "normal",
+      "variant": 1,
+      "embeddings": "recording-clip-2026-08-29T13-11-24-785Z.webm.train1.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-29T13-11-24-785Z.webm",
+      "label": "normal",
+      "variant": 2,
+      "embeddings": "recording-clip-2026-08-29T13-11-24-785Z.webm.train2.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-02T12-27-02-462Z.webm",
+      "label": "grooming",
+      "variant": 0,
+      "embeddings": "recording-clip-2026-09-02T12-27-02-462Z.webm.train0.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-02T12-27-02-462Z.webm",
+      "label": "grooming",
+      "variant": 1,
+      "embeddings": "recording-clip-2026-09-02T12-27-02-462Z.webm.train1.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-02T12-27-02-462Z.webm",
+      "label": "grooming",
+      "variant": 2,
+      "embeddings": "recording-clip-2026-09-02T12-27-02-462Z.webm.train2.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-31T08-25-16-561Z.webm",
+      "label": "normal",
+      "variant": 0,
+      "embeddings": "recording-clip-2026-08-31T08-25-16-561Z.webm.train0.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-31T08-25-16-561Z.webm",
+      "label": "normal",
+      "variant": 1,
+      "embeddings": "recording-clip-2026-08-31T08-25-16-561Z.webm.train1.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-31T08-25-16-561Z.webm",
+      "label": "normal",
+      "variant": 2,
+      "embeddings": "recording-clip-2026-08-31T08-25-16-561Z.webm.train2.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-30T11-54-43-849Z.webm",
+      "label": "yawn",
+      "variant": 0,
+      "embeddings": "recording-clip-2026-08-30T11-54-43-849Z.webm.train0.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-30T11-54-43-849Z.webm",
+      "label": "yawn",
+      "variant": 1,
+      "embeddings": "recording-clip-2026-08-30T11-54-43-849Z.webm.train1.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-30T11-54-43-849Z.webm",
+      "label": "yawn",
+      "variant": 2,
+      "embeddings": "recording-clip-2026-08-30T11-54-43-849Z.webm.train2.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-02T14-39-32-883Z.webm",
+      "label": "normal",
+      "variant": 0,
+      "embeddings": "recording-clip-2026-09-02T14-39-32-883Z.webm.train0.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-02T14-39-32-883Z.webm",
+      "label": "normal",
+      "variant": 1,
+      "embeddings": "recording-clip-2026-09-02T14-39-32-883Z.webm.train1.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-02T14-39-32-883Z.webm",
+      "label": "normal",
+      "variant": 2,
+      "embeddings": "recording-clip-2026-09-02T14-39-32-883Z.webm.train2.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-30T13-49-27-094Z.webm",
+      "label": "normal",
+      "variant": 0,
+      "embeddings": "recording-clip-2026-08-30T13-49-27-094Z.webm.train0.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-30T13-49-27-094Z.webm",
+      "label": "normal",
+      "variant": 1,
+      "embeddings": "recording-clip-2026-08-30T13-49-27-094Z.webm.train1.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-30T13-49-27-094Z.webm",
+      "label": "normal",
+      "variant": 2,
+      "embeddings": "recording-clip-2026-08-30T13-49-27-094Z.webm.train2.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-30T13-34-50-688Z.webm",
+      "label": "normal",
+      "variant": 0,
+      "embeddings": "recording-clip-2026-08-30T13-34-50-688Z.webm.train0.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-30T13-34-50-688Z.webm",
+      "label": "normal",
+      "variant": 1,
+      "embeddings": "recording-clip-2026-08-30T13-34-50-688Z.webm.train1.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-30T13-34-50-688Z.webm",
+      "label": "normal",
+      "variant": 2,
+      "embeddings": "recording-clip-2026-08-30T13-34-50-688Z.webm.train2.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-30T13-18-22-247Z.webm",
+      "label": "grooming",
+      "variant": 0,
+      "embeddings": "recording-clip-2026-08-30T13-18-22-247Z.webm.train0.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-30T13-18-22-247Z.webm",
+      "label": "grooming",
+      "variant": 1,
+      "embeddings": "recording-clip-2026-08-30T13-18-22-247Z.webm.train1.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-30T13-18-22-247Z.webm",
+      "label": "grooming",
+      "variant": 2,
+      "embeddings": "recording-clip-2026-08-30T13-18-22-247Z.webm.train2.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-06T13-23-37-672Z.webm",
+      "label": "normal",
+      "variant": 0,
+      "embeddings": "recording-clip-2026-09-06T13-23-37-672Z.webm.train0.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-06T13-23-37-672Z.webm",
+      "label": "normal",
+      "variant": 1,
+      "embeddings": "recording-clip-2026-09-06T13-23-37-672Z.webm.train1.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-06T13-23-37-672Z.webm",
+      "label": "normal",
+      "variant": 2,
+      "embeddings": "recording-clip-2026-09-06T13-23-37-672Z.webm.train2.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-06T13-11-45-360Z.webm",
+      "label": "grooming",
+      "variant": 0,
+      "embeddings": "recording-clip-2026-09-06T13-11-45-360Z.webm.train0.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-06T13-11-45-360Z.webm",
+      "label": "grooming",
+      "variant": 1,
+      "embeddings": "recording-clip-2026-09-06T13-11-45-360Z.webm.train1.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-06T13-11-45-360Z.webm",
+      "label": "grooming",
+      "variant": 2,
+      "embeddings": "recording-clip-2026-09-06T13-11-45-360Z.webm.train2.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-04T13-56-50-438Z.webm",
+      "label": "standing",
+      "variant": 0,
+      "embeddings": "recording-clip-2026-09-04T13-56-50-438Z.webm.train0.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-04T13-56-50-438Z.webm",
+      "label": "standing",
+      "variant": 1,
+      "embeddings": "recording-clip-2026-09-04T13-56-50-438Z.webm.train1.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-04T13-56-50-438Z.webm",
+      "label": "standing",
+      "variant": 2,
+      "embeddings": "recording-clip-2026-09-04T13-56-50-438Z.webm.train2.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-04T13-56-24-382Z.webm",
+      "label": "normal",
+      "variant": 0,
+      "embeddings": "recording-clip-2026-09-04T13-56-24-382Z.webm.train0.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-04T13-56-24-382Z.webm",
+      "label": "normal",
+      "variant": 1,
+      "embeddings": "recording-clip-2026-09-04T13-56-24-382Z.webm.train1.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-04T13-56-24-382Z.webm",
+      "label": "normal",
+      "variant": 2,
+      "embeddings": "recording-clip-2026-09-04T13-56-24-382Z.webm.train2.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-04T13-54-48-235Z.webm",
+      "label": "standing",
+      "variant": 0,
+      "embeddings": "recording-clip-2026-09-04T13-54-48-235Z.webm.train0.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-04T13-54-48-235Z.webm",
+      "label": "standing",
+      "variant": 1,
+      "embeddings": "recording-clip-2026-09-04T13-54-48-235Z.webm.train1.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-04T13-54-48-235Z.webm",
+      "label": "standing",
+      "variant": 2,
+      "embeddings": "recording-clip-2026-09-04T13-54-48-235Z.webm.train2.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-04T11-13-44-164Z.webm",
+      "label": "grooming",
+      "variant": 0,
+      "embeddings": "recording-clip-2026-09-04T11-13-44-164Z.webm.train0.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-04T11-13-44-164Z.webm",
+      "label": "grooming",
+      "variant": 1,
+      "embeddings": "recording-clip-2026-09-04T11-13-44-164Z.webm.train1.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-04T11-13-44-164Z.webm",
+      "label": "grooming",
+      "variant": 2,
+      "embeddings": "recording-clip-2026-09-04T11-13-44-164Z.webm.train2.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-30T14-55-39-286Z.webm",
+      "label": "normal",
+      "variant": 0,
+      "embeddings": "recording-clip-2026-08-30T14-55-39-286Z.webm.train0.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-30T14-55-39-286Z.webm",
+      "label": "normal",
+      "variant": 1,
+      "embeddings": "recording-clip-2026-08-30T14-55-39-286Z.webm.train1.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-30T14-55-39-286Z.webm",
+      "label": "normal",
+      "variant": 2,
+      "embeddings": "recording-clip-2026-08-30T14-55-39-286Z.webm.train2.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-30T14-55-31-257Z.webm",
+      "label": "normal",
+      "variant": 0,
+      "embeddings": "recording-clip-2026-08-30T14-55-31-257Z.webm.train0.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-30T14-55-31-257Z.webm",
+      "label": "normal",
+      "variant": 1,
+      "embeddings": "recording-clip-2026-08-30T14-55-31-257Z.webm.train1.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-30T14-55-31-257Z.webm",
+      "label": "normal",
+      "variant": 2,
+      "embeddings": "recording-clip-2026-08-30T14-55-31-257Z.webm.train2.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-30T14-38-34-567Z.webm",
+      "label": "normal",
+      "variant": 0,
+      "embeddings": "recording-clip-2026-08-30T14-38-34-567Z.webm.train0.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-30T14-38-34-567Z.webm",
+      "label": "normal",
+      "variant": 1,
+      "embeddings": "recording-clip-2026-08-30T14-38-34-567Z.webm.train1.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-30T14-38-34-567Z.webm",
+      "label": "normal",
+      "variant": 2,
+      "embeddings": "recording-clip-2026-08-30T14-38-34-567Z.webm.train2.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-30T14-04-43-610Z.webm",
+      "label": "grooming",
+      "variant": 0,
+      "embeddings": "recording-clip-2026-08-30T14-04-43-610Z.webm.train0.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-30T14-04-43-610Z.webm",
+      "label": "grooming",
+      "variant": 1,
+      "embeddings": "recording-clip-2026-08-30T14-04-43-610Z.webm.train1.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-30T14-04-43-610Z.webm",
+      "label": "grooming",
+      "variant": 2,
+      "embeddings": "recording-clip-2026-08-30T14-04-43-610Z.webm.train2.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-29T14-40-13-244Z.webm",
+      "label": "normal",
+      "variant": 0,
+      "embeddings": "recording-clip-2026-08-29T14-40-13-244Z.webm.train0.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-29T14-40-13-244Z.webm",
+      "label": "normal",
+      "variant": 1,
+      "embeddings": "recording-clip-2026-08-29T14-40-13-244Z.webm.train1.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-29T14-40-13-244Z.webm",
+      "label": "normal",
+      "variant": 2,
+      "embeddings": "recording-clip-2026-08-29T14-40-13-244Z.webm.train2.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-29T14-35-00-985Z.webm",
+      "label": "normal",
+      "variant": 0,
+      "embeddings": "recording-clip-2026-08-29T14-35-00-985Z.webm.train0.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-29T14-35-00-985Z.webm",
+      "label": "normal",
+      "variant": 1,
+      "embeddings": "recording-clip-2026-08-29T14-35-00-985Z.webm.train1.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-29T14-35-00-985Z.webm",
+      "label": "normal",
+      "variant": 2,
+      "embeddings": "recording-clip-2026-08-29T14-35-00-985Z.webm.train2.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-29T14-19-16-566Z.webm",
+      "label": "normal",
+      "variant": 0,
+      "embeddings": "recording-clip-2026-08-29T14-19-16-566Z.webm.train0.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-29T14-19-16-566Z.webm",
+      "label": "normal",
+      "variant": 1,
+      "embeddings": "recording-clip-2026-08-29T14-19-16-566Z.webm.train1.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-29T14-19-16-566Z.webm",
+      "label": "normal",
+      "variant": 2,
+      "embeddings": "recording-clip-2026-08-29T14-19-16-566Z.webm.train2.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-04T15-49-36-376Z.webm",
+      "label": "normal",
+      "variant": 0,
+      "embeddings": "recording-clip-2026-09-04T15-49-36-376Z.webm.train0.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-04T15-49-36-376Z.webm",
+      "label": "normal",
+      "variant": 1,
+      "embeddings": "recording-clip-2026-09-04T15-49-36-376Z.webm.train1.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-04T15-49-36-376Z.webm",
+      "label": "normal",
+      "variant": 2,
+      "embeddings": "recording-clip-2026-09-04T15-49-36-376Z.webm.train2.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-04T15-31-11-806Z.webm",
+      "label": "normal",
+      "variant": 0,
+      "embeddings": "recording-clip-2026-09-04T15-31-11-806Z.webm.train0.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-04T15-31-11-806Z.webm",
+      "label": "normal",
+      "variant": 1,
+      "embeddings": "recording-clip-2026-09-04T15-31-11-806Z.webm.train1.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-04T15-31-11-806Z.webm",
+      "label": "normal",
+      "variant": 2,
+      "embeddings": "recording-clip-2026-09-04T15-31-11-806Z.webm.train2.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-04T15-03-20-909Z.webm",
+      "label": "normal",
+      "variant": 0,
+      "embeddings": "recording-clip-2026-09-04T15-03-20-909Z.webm.train0.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-04T15-03-20-909Z.webm",
+      "label": "normal",
+      "variant": 1,
+      "embeddings": "recording-clip-2026-09-04T15-03-20-909Z.webm.train1.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-04T15-03-20-909Z.webm",
+      "label": "normal",
+      "variant": 2,
+      "embeddings": "recording-clip-2026-09-04T15-03-20-909Z.webm.train2.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-04T15-02-16-850Z.webm",
+      "label": "normal",
+      "variant": 0,
+      "embeddings": "recording-clip-2026-09-04T15-02-16-850Z.webm.train0.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-04T15-02-16-850Z.webm",
+      "label": "normal",
+      "variant": 1,
+      "embeddings": "recording-clip-2026-09-04T15-02-16-850Z.webm.train1.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-04T15-02-16-850Z.webm",
+      "label": "normal",
+      "variant": 2,
+      "embeddings": "recording-clip-2026-09-04T15-02-16-850Z.webm.train2.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-06T15-36-49-999Z.webm",
+      "label": "grooming",
+      "variant": 0,
+      "embeddings": "recording-clip-2026-09-06T15-36-49-999Z.webm.train0.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-06T15-36-49-999Z.webm",
+      "label": "grooming",
+      "variant": 1,
+      "embeddings": "recording-clip-2026-09-06T15-36-49-999Z.webm.train1.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-06T15-36-49-999Z.webm",
+      "label": "grooming",
+      "variant": 2,
+      "embeddings": "recording-clip-2026-09-06T15-36-49-999Z.webm.train2.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-06T15-21-45-376Z.webm",
+      "label": "standing",
+      "variant": 0,
+      "embeddings": "recording-clip-2026-09-06T15-21-45-376Z.webm.train0.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-06T15-21-45-376Z.webm",
+      "label": "standing",
+      "variant": 1,
+      "embeddings": "recording-clip-2026-09-06T15-21-45-376Z.webm.train1.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-06T15-21-45-376Z.webm",
+      "label": "standing",
+      "variant": 2,
+      "embeddings": "recording-clip-2026-09-06T15-21-45-376Z.webm.train2.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-30T04-07-54-476Z.webm",
+      "label": "normal",
+      "variant": 0,
+      "embeddings": "recording-clip-2026-08-30T04-07-54-476Z.webm.train0.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-30T04-07-54-476Z.webm",
+      "label": "normal",
+      "variant": 1,
+      "embeddings": "recording-clip-2026-08-30T04-07-54-476Z.webm.train1.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-30T04-07-54-476Z.webm",
+      "label": "normal",
+      "variant": 2,
+      "embeddings": "recording-clip-2026-08-30T04-07-54-476Z.webm.train2.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-30T04-07-06-411Z.webm",
+      "label": "normal",
+      "variant": 0,
+      "embeddings": "recording-clip-2026-08-30T04-07-06-411Z.webm.train0.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-30T04-07-06-411Z.webm",
+      "label": "normal",
+      "variant": 1,
+      "embeddings": "recording-clip-2026-08-30T04-07-06-411Z.webm.train1.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-30T04-07-06-411Z.webm",
+      "label": "normal",
+      "variant": 2,
+      "embeddings": "recording-clip-2026-08-30T04-07-06-411Z.webm.train2.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-30T04-06-34-297Z.webm",
+      "label": "normal",
+      "variant": 0,
+      "embeddings": "recording-clip-2026-08-30T04-06-34-297Z.webm.train0.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-30T04-06-34-297Z.webm",
+      "label": "normal",
+      "variant": 1,
+      "embeddings": "recording-clip-2026-08-30T04-06-34-297Z.webm.train1.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-30T04-06-34-297Z.webm",
+      "label": "normal",
+      "variant": 2,
+      "embeddings": "recording-clip-2026-08-30T04-06-34-297Z.webm.train2.npy",
+      "windows": [
+        [
+          0,
+          8
+        ],
+        [
+          4,
+          12
+        ],
+        [
+          8,
+          16
+        ]
+      ]
+    }
+  ],
+  "val": [
+    {
+      "filename": "recording-clip-2026-08-29T12-44-12-109Z.webm",
+      "label": "zoomies",
+      "embeddings": "recording-clip-2026-08-29T12-44-12-109Z.webm.val.npy",
+      "windows": [
+        [
+          0,
+          8
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-04T14-50-16-372Z.webm",
+      "label": "normal",
+      "embeddings": "recording-clip-2026-09-04T14-50-16-372Z.webm.val.npy",
+      "windows": [
+        [
+          0,
+          8
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-04T14-35-39-449Z.webm",
+      "label": "grooming",
+      "embeddings": "recording-clip-2026-09-04T14-35-39-449Z.webm.val.npy",
+      "windows": [
+        [
+          0,
+          8
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-04T14-07-12-738Z.webm",
+      "label": "normal",
+      "embeddings": "recording-clip-2026-09-04T14-07-12-738Z.webm.val.npy",
+      "windows": [
+        [
+          0,
+          8
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-30T12-17-06-753Z.webm",
+      "label": "standing",
+      "embeddings": "recording-clip-2026-08-30T12-17-06-753Z.webm.val.npy",
+      "windows": [
+        [
+          0,
+          8
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-30T12-16-26-656Z.webm",
+      "label": "zoomies",
+      "embeddings": "recording-clip-2026-08-30T12-16-26-656Z.webm.val.npy",
+      "windows": [
+        [
+          0,
+          8
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-30T12-15-38-552Z.webm",
+      "label": "normal",
+      "embeddings": "recording-clip-2026-08-30T12-15-38-552Z.webm.val.npy",
+      "windows": [
+        [
+          0,
+          8
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-30T12-14-58-497Z.webm",
+      "label": "normal",
+      "embeddings": "recording-clip-2026-08-30T12-14-58-497Z.webm.val.npy",
+      "windows": [
+        [
+          0,
+          8
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-28T14-09-05-935Z.webm",
+      "label": "standing",
+      "embeddings": "recording-clip-2026-08-28T14-09-05-935Z.webm.val.npy",
+      "windows": [
+        [
+          0,
+          8
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-28T14-08-17-847Z.webm",
+      "label": "standing",
+      "embeddings": "recording-clip-2026-08-28T14-08-17-847Z.webm.val.npy",
+      "windows": [
+        [
+          0,
+          8
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-31T03-56-44-075Z.webm",
+      "label": "normal",
+      "embeddings": "recording-clip-2026-08-31T03-56-44-075Z.webm.val.npy",
+      "windows": [
+        [
+          0,
+          8
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-31T03-44-51-738Z.webm",
+      "label": "normal",
+      "embeddings": "recording-clip-2026-08-31T03-44-51-738Z.webm.val.npy",
+      "windows": [
+        [
+          0,
+          8
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-31T03-44-27-714Z.webm",
+      "label": "normal",
+      "embeddings": "recording-clip-2026-08-31T03-44-27-714Z.webm.val.npy",
+      "windows": [
+        [
+          0,
+          8
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-08-31T03-56-36-053Z.webm",
+      "label": "grooming",
+      "embeddings": "recording-clip-2026-08-31T03-56-36-053Z.webm.val.npy",
+      "windows": [
+        [
+          0,
+          8
+        ]
+      ]
+    },
+    {
+      "filename": "recording-clip-2026-09-06T14-03-30-894Z.webm",
+      "label": "yawn",
+      "embeddings": "recording-clip-2026-09-06T14-03-30-894Z.webm.val.npy",
+      "windows": [
+        [
+          0,
+          8
+        ]
+      ]
+    }
+  ],
+  "window": 8,
+  "train_frames": 16
+}

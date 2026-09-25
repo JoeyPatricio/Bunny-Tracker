@@ -1,6 +1,6 @@
 """Per-step latency benchmark for backbone+head ONNX (section 3.6).
 
-No Raspberry Pi 5 is owned yet (see notes/environment.md), so this runs on
+No Raspberry Pi 5 is owned yet (see docs/pipeline.md docs/pipeline.md,), so this runs on
 the dev box as the closest available signal, NOT the real Pi gate. Numbers
 here are reported as dev-box-only until re-run on actual hardware.
 
@@ -71,7 +71,7 @@ def main():
     if backbone_int8_times is not None and head_times is not None:
         per_step = np.median(backbone_int8_times) + np.median(head_times)
         print(f"\nEstimated per-frame step (int8 backbone + head): {per_step:.2f}ms")
-        print(f"Current agent frame budget: 1500ms (AGENT_FRAME_SECONDS, per notes/environment.md)")
+        print(f"Current agent frame budget: 1500ms (AGENT_FRAME_SECONDS, per docs/pipeline.md docs/pipeline.md,)")
         print(f"Dev-box headroom: {1500/per_step:.1f}x budget (Pi CPU will be slower than this dev box — re-benchmark on real hardware before relying on this number)")
 
 

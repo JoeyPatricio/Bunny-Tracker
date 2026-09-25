@@ -21,7 +21,7 @@ from inference.backbone import Backbone
 from inference.predictor import Predictor
 from inference.temporal_head import TemporalHead
 from shared.frames import normalize
-from shared.labels import LABELS
+from shared.labels import LABELS, RESTING_INDICES
 from shared.motion import MotionDetector
 
 # Defaults match capture.mjs's env-var defaults.
@@ -46,8 +46,12 @@ CLIPPING_COOLDOWN_SEC = 8  # == segment length: at most one clip per segment
 # The resting baseline. Every other class is, by definition, worth a look —
 # which is why the alert decision is binary and `interest_score` below scores
 # it directly instead of routing it through argmax (see notes below).
-NORMAL_LABEL = "normal"
-NORMAL_INDEX = LABELS.index(NORMAL_LABEL)
+#
+# Ethogram v2 replaced v1's single catch-all `normal` with two resting
+# postures (lying and sitting), so this is a set of indices rather than one.
+# Scoring against only one of them would treat the other as an alertable
+# event and email on every clip of a sitting rabbit.
+RESTING_IDX = RESTING_INDICES
 
 
 def interest_score(probs: np.ndarray) -> float:
@@ -56,23 +60,27 @@ def interest_score(probs: np.ndarray) -> float:
     Called once per classified frame; the returned score is compared against
     AGENT_INTEREST_THRESHOLD to decide whether the frame is an alert candidate.
     `probs` is the full class distribution in LABELS order, summing to 1;
-    probs[NORMAL_INDEX] is the resting baseline.
+    the entries at RESTING_IDX are the resting baseline.
 
     Why this is not argmax: the head can be genuinely torn between grooming and
-    yawning while still being confident it is not resting. Argmax throws that
+    rearing while still being confident it is not resting. Argmax throws that
     agreement away and the old gate then read the frame as boring. On the
     deployed model's own val set that cost 10 of 26 real events.
+
+    Note that v2 makes this stronger, not weaker: splitting rest into lying and
+    sitting means probability mass that v1 concentrated in one `normal` class
+    is now divided between two, so an argmax gate would be even easier to fool.
     """
-    # Seed with 0.0, not probs[NORMAL_INDEX]: seeding with the value being
-    # excluded turns "ignore normal" into "must beat normal", which makes this
+    # Seed with 0.0, not a resting probability: seeding with a value being
+    # excluded turns "ignore rest" into "must beat rest", which makes this
     # max(probs) and scores a confidently-resting window ~85.
     res = 0.0
     for i, p in enumerate(probs):
-        if i == NORMAL_INDEX:
+        if i in RESTING_IDX:
             continue
         if p > res:
             res = p
-    return res * 100.0  # 0-100% confidence in the most likely non-normal class
+    return res * 100.0  # 0-100% confidence in the most likely non-resting class
 
 
 # What _classify returns when there is no model to run. warm stays False, so
@@ -201,12 +209,12 @@ class AgentDecisionLoop:
 
         # The best NON-baseline class. Once interest_score has decided a frame
         # is worth alerting on, something has to name it: /api/notify rejects
-        # "normal" outright and a "normal" suggestion in Label Studio is no
-        # help to a reviewer. This is the descriptive answer to "interesting
-        # how?", deliberately separate from the gate above it.
+        # the resting classes outright and a "resting" suggestion in Label
+        # Studio is no help to a reviewer. This is the descriptive answer to
+        # "interesting how?", deliberately separate from the gate above it.
         alert_idx = max(
             range(len(LABELS)),
-            key=lambda k: -1.0 if k == NORMAL_INDEX else float(probs[k]),
+            key=lambda k: -1.0 if k in RESTING_IDX else float(probs[k]),
         )
         return {
             "label": LABELS[idx],
@@ -258,7 +266,7 @@ class AgentDecisionLoop:
 
         # Name the alert from the whole streak rather than whichever frame
         # happened to trip the counter: summed confidence, so three frames of
-        # weak "zoomies" outrank one strong flicker of "standing".
+        # weak "locomotion_rapid" outrank one strong flicker of "rearing".
         alert = None
         if behavior_alert:
             best = max(self.streak_scores, key=lambda k: self.streak_scores[k])
@@ -414,6 +422,17 @@ class Agent:
         try:
             backbone = Backbone(str(MODELS_DIR / "backbone_int8.onnx"))
             head = TemporalHead(str(MODELS_DIR / "head.onnx"))
+            # The head's output width and the label vocabulary have to agree.
+            # They will not after an ethogram change until a retrain lands, and
+            # the failure is silent and worse than a crash: index 3 keeps
+            # resolving to a name, just the wrong one, so the activity feed and
+            # every alert email confidently report a behavior nobody observed.
+            if head.num_classes != len(LABELS):
+                raise ValueError(
+                    f"head.onnx predicts {head.num_classes} classes but the "
+                    f"ethogram declares {len(LABELS)} ({', '.join(LABELS)}). "
+                    f"Retrain and re-export before the classifier can run."
+                )
         except Exception as err:
             backbone = head = None
             log(
@@ -521,10 +540,10 @@ class Agent:
 
     async def _upload_and_alert(self, pred: dict) -> None:
         """`pred` is the decision's `alert` dict — {label, confidence} named by
-        the whole streak, never the raw argmax. It is guaranteed non-"normal",
+        the whole streak, never the raw argmax. It is guaranteed non-resting,
         which /api/notify's ALERT_LABELS requires and a Label Studio reviewer
-        needs; the raw prediction can and often does still read "normal" on the
-        very frame that fires, which is the point of the interest gate.
+        needs; the raw prediction can and often does still read as a resting
+        class on the very frame that fires, which is the point of the gate.
         """
         filename = await self._upload_segment()
         if not filename:

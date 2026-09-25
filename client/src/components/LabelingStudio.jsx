@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
+import { ALL_CODES, LABEL_META, KEY_TO_LABEL } from "../labels";
 
-const LABEL_ZOOMIES = "zoomies";
-const LABEL_YAWN = "yawn";
-const LABEL_NORMAL = "normal";
-const LABEL_GROOMING = "grooming";
-const LABEL_STANDING = "standing";
+// Ethogram v2 has eight codes where v1 had five, and the v1 studio hardcoded a
+// button, a stat chip, a progress segment, a border class and a badge class
+// per label. Everything below is generated from LABEL_META instead, so the next
+// ethogram change is a one-line edit in labels.js rather than a dozen here.
 const ACCEPTED_EXTENSIONS = ".mp4,.mov,.avi,.mkv,.webm,.m4v";
 
 // ── Import Panel ────────────────────────────────────────────────────────────
@@ -268,10 +268,10 @@ function StripThumb({ filename, onClick }) {
 
 export default function LabelingStudio() {
   const [recordings, setRecordings] = useState([]); // [{ filename, createdAt, size }]
-  const [labels, setLabels] = useState({}); // { filename: 'zoomies'|'yawn'|'normal'|'grooming'|'standing' }
+  const [labels, setLabels] = useState({}); // { filename: <one of ALL_CODES> }
   const [suggestions, setSuggestions] = useState({}); // agent-predicted labels awaiting review (not training data)
   const [index, setIndex] = useState(0);
-  const [filter, setFilter] = useState("all"); // 'all' | 'unlabeled' | 'zoomies' | 'yawn' | 'normal' | 'grooming' | 'standing'
+  const [filter, setFilter] = useState("all"); // 'all' | 'unlabeled' | <one of ALL_CODES>
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [openMenu, setOpenMenu] = useState(null); // filename of open three-dot menu
@@ -319,11 +319,7 @@ export default function LabelingStudio() {
   // ── Filtered + sorted clip list ───────────────────────────────────────────
   const filtered = recordings.filter((r) => {
     if (filter === "unlabeled") return !labels[r.filename];
-    if (filter === "zoomies") return labels[r.filename] === LABEL_ZOOMIES;
-    if (filter === "yawn") return labels[r.filename] === LABEL_YAWN;
-    if (filter === "normal") return labels[r.filename] === LABEL_NORMAL;
-    if (filter === "grooming") return labels[r.filename] === LABEL_GROOMING;
-    if (filter === "standing") return labels[r.filename] === LABEL_STANDING;
+    if (filter !== "all") return labels[r.filename] === filter;
     return true;
   });
 
@@ -449,11 +445,8 @@ export default function LabelingStudio() {
   useEffect(() => {
     const handler = (e) => {
       if (e.target.tagName === "INPUT" || e.target.tagName === "BUTTON") return;
-      if (e.key === "z" || e.key === "Z") applyLabel(LABEL_ZOOMIES);
-      if (e.key === "y" || e.key === "Y") applyLabel(LABEL_YAWN);
-      if (e.key === "n" || e.key === "N") applyLabel(LABEL_NORMAL);
-      if (e.key === "g" || e.key === "G") applyLabel(LABEL_GROOMING);
-      if (e.key === "s" || e.key === "S") applyLabel(LABEL_STANDING);
+      const byKey = KEY_TO_LABEL[e.key];
+      if (byKey) applyLabel(byKey);
       if (e.key === "ArrowRight" || e.key === "d")
         setIndex((prev) => Math.min(prev + 1, filtered.length - 1));
       if (e.key === "ArrowLeft" || e.key === "a")
@@ -479,23 +472,12 @@ export default function LabelingStudio() {
 
   // ── Stats ─────────────────────────────────────────────────────────────────
   const totalCount = recordings.length;
-  const zoomiesCount = Object.values(labels).filter(
-    (l) => l === LABEL_ZOOMIES,
-  ).length;
-  const yawnCount = Object.values(labels).filter(
-    (l) => l === LABEL_YAWN,
-  ).length;
-  const normalCount = Object.values(labels).filter(
-    (l) => l === LABEL_NORMAL,
-  ).length;
-  const groomingCount = Object.values(labels).filter(
-    (l) => l === LABEL_GROOMING,
-  ).length;
-  const standingCount = Object.values(labels).filter(
-    (l) => l === LABEL_STANDING,
-  ).length;
-  const labeledCount =
-    zoomiesCount + yawnCount + normalCount + groomingCount + standingCount;
+  // One pass over the label map, not one pass per code.
+  const counts = ALL_CODES.reduce((acc, id) => ({ ...acc, [id]: 0 }), {});
+  for (const l of Object.values(labels)) {
+    if (l in counts) counts[l] += 1;
+  }
+  const labeledCount = ALL_CODES.reduce((n, id) => n + counts[id], 0);
   const pctDone =
     totalCount > 0 ? Math.round((labeledCount / totalCount) * 100) : 0;
 
@@ -540,15 +522,19 @@ export default function LabelingStudio() {
       <div className="studio-header">
         <div className="studio-title">Label Studio</div>
         <div className="studio-stats">
-          <span className="stat-chip stat-zoomies">{zoomiesCount} zoomies</span>
-          <span className="stat-chip stat-yawn">{yawnCount} yawn</span>
-          <span className="stat-chip stat-normal">{normalCount} normal</span>
-          <span className="stat-chip stat-grooming">
-            {groomingCount} grooming
-          </span>
-          <span className="stat-chip stat-standing">
-            {standingCount} standing
-          </span>
+          {ALL_CODES.map((id) => (
+            <span
+              key={id}
+              className="stat-chip"
+              style={{
+                background: `${LABEL_META[id].color}1a`,
+                borderColor: `${LABEL_META[id].color}4d`,
+                color: LABEL_META[id].color,
+              }}
+            >
+              {counts[id]} {LABEL_META[id].short}
+            </span>
+          ))}
           <span className="stat-chip stat-unlabeled">
             {totalCount - labeledCount} unlabeled
           </span>
@@ -567,36 +553,17 @@ export default function LabelingStudio() {
         className="progress-track"
         title={`${labeledCount} of ${totalCount} labeled`}
       >
-        <div
-          className="progress-zoomies"
-          style={{
-            width: `${totalCount > 0 ? (zoomiesCount / totalCount) * 100 : 0}%`,
-          }}
-        />
-        <div
-          className="progress-yawn"
-          style={{
-            width: `${totalCount > 0 ? (yawnCount / totalCount) * 100 : 0}%`,
-          }}
-        />
-        <div
-          className="progress-normal"
-          style={{
-            width: `${totalCount > 0 ? (normalCount / totalCount) * 100 : 0}%`,
-          }}
-        />
-        <div
-          className="progress-grooming"
-          style={{
-            width: `${totalCount > 0 ? (groomingCount / totalCount) * 100 : 0}%`,
-          }}
-        />
-        <div
-          className="progress-standing"
-          style={{
-            width: `${totalCount > 0 ? (standingCount / totalCount) * 100 : 0}%`,
-          }}
-        />
+        {ALL_CODES.map((id) => (
+          <div
+            key={id}
+            className="progress-seg"
+            title={`${counts[id]} ${LABEL_META[id].name}`}
+            style={{
+              background: LABEL_META[id].color,
+              width: `${totalCount > 0 ? (counts[id] / totalCount) * 100 : 0}%`,
+            }}
+          />
+        ))}
       </div>
       <div className="progress-label">
         {pctDone}% labeled, {labeledCount} / {totalCount} clips
@@ -604,29 +571,17 @@ export default function LabelingStudio() {
 
       {/* ── Filter tabs ─────────────────────────────────────────────────── */}
       <div className="filter-tabs">
-        {[
-          "all",
-          "unlabeled",
-          "zoomies",
-          "yawn",
-          "normal",
-          "grooming",
-          "standing",
-        ].map((f) => (
+        {["all", "unlabeled", ...ALL_CODES].map((f) => (
           <button
             key={f}
             className={`filter-tab ${filter === f ? "active" : ""}`}
             onClick={() => setFilter(f)}
           >
-            {f === "all" ? `All (${totalCount})` : ""}
-            {f === "unlabeled"
-              ? `Unlabeled (${totalCount - labeledCount})`
-              : ""}
-            {f === "zoomies" ? `Zoomies (${zoomiesCount})` : ""}
-            {f === "yawn" ? `Yawn (${yawnCount})` : ""}
-            {f === "normal" ? `Normal (${normalCount})` : ""}
-            {f === "grooming" ? `Grooming (${groomingCount})` : ""}
-            {f === "standing" ? `Standing (${standingCount})` : ""}
+            {f === "all"
+              ? `All (${totalCount})`
+              : f === "unlabeled"
+                ? `Unlabeled (${totalCount - labeledCount})`
+                : `${LABEL_META[f].short} (${counts[f]})`}
           </button>
         ))}
       </div>
@@ -638,7 +593,12 @@ export default function LabelingStudio() {
           {/* ── Video player ──────────────────────────────────────────────── */}
           <div className="player-section">
             <div
-              className={`player-wrap ${currentLabel === LABEL_ZOOMIES ? "border-zoomies" : currentLabel === LABEL_YAWN ? "border-yawn" : currentLabel === LABEL_NORMAL ? "border-normal" : currentLabel === LABEL_GROOMING ? "border-grooming" : currentLabel === LABEL_STANDING ? "border-standing" : ""}`}
+              className="player-wrap"
+              style={
+                currentLabel && LABEL_META[currentLabel]
+                  ? { borderColor: `${LABEL_META[currentLabel].color}99` }
+                  : undefined
+              }
             >
               {current && (
                 <video
@@ -654,17 +614,14 @@ export default function LabelingStudio() {
               )}
               {currentLabel && (
                 <div
-                  className={`current-label-badge ${currentLabel === LABEL_ZOOMIES ? "badge-zoomies" : currentLabel === LABEL_YAWN ? "badge-yawn" : currentLabel === LABEL_GROOMING ? "badge-grooming" : currentLabel === LABEL_STANDING ? "badge-standing" : "badge-normal"}`}
+                  className="current-label-badge"
+                  style={{
+                    color: LABEL_META[currentLabel]?.color,
+                    borderColor: `${LABEL_META[currentLabel]?.color}66`,
+                  }}
                 >
-                  {currentLabel === LABEL_ZOOMIES
-                    ? "⚡ ZOOMIES"
-                    : currentLabel === LABEL_YAWN
-                      ? "🥱 YAWN"
-                      : currentLabel === LABEL_GROOMING
-                        ? "🐾 GROOMING"
-                        : currentLabel === LABEL_STANDING
-                          ? "🦘 STANDING"
-                          : "🚶 NORMAL"}
+                  {LABEL_META[currentLabel]?.icon}{" "}
+                  {LABEL_META[currentLabel]?.name.toUpperCase()}
                 </div>
               )}
             </div>
@@ -712,55 +669,27 @@ export default function LabelingStudio() {
 
             {/* Label buttons */}
             <div className="label-buttons">
-              <button
-                className={`label-btn btn-zoomies ${currentLabel === LABEL_ZOOMIES ? "selected" : ""}`}
-                onClick={() => applyLabel(LABEL_ZOOMIES)}
-                disabled={saving}
-              >
-                <span className="label-btn-icon">⚡</span>
-                <span className="label-btn-text">Zoomies</span>
-                <span className="label-btn-key">Z</span>
-              </button>
-
-              <button
-                className={`label-btn btn-yawn ${currentLabel === LABEL_YAWN ? "selected" : ""}`}
-                onClick={() => applyLabel(LABEL_YAWN)}
-                disabled={saving}
-              >
-                <span className="label-btn-icon">🥱</span>
-                <span className="label-btn-text">Yawn</span>
-                <span className="label-btn-key">Y</span>
-              </button>
-
-              <button
-                className={`label-btn btn-normal ${currentLabel === LABEL_NORMAL ? "selected" : ""}`}
-                onClick={() => applyLabel(LABEL_NORMAL)}
-                disabled={saving}
-              >
-                <span className="label-btn-icon">🚶</span>
-                <span className="label-btn-text">Normal</span>
-                <span className="label-btn-key">N</span>
-              </button>
-
-              <button
-                className={`label-btn btn-grooming ${currentLabel === LABEL_GROOMING ? "selected" : ""}`}
-                onClick={() => applyLabel(LABEL_GROOMING)}
-                disabled={saving}
-              >
-                <span className="label-btn-icon">🐾</span>
-                <span className="label-btn-text">Grooming</span>
-                <span className="label-btn-key">G</span>
-              </button>
-
-              <button
-                className={`label-btn btn-standing ${currentLabel === LABEL_STANDING ? "selected" : ""}`}
-                onClick={() => applyLabel(LABEL_STANDING)}
-                disabled={saving}
-              >
-                <span className="label-btn-icon">🦘</span>
-                <span className="label-btn-text">Standing</span>
-                <span className="label-btn-key">S</span>
-              </button>
+              {ALL_CODES.map((id) => (
+                <button
+                  key={id}
+                  className={`label-btn ${currentLabel === id ? "selected" : ""}`}
+                  style={{
+                    borderColor:
+                      currentLabel === id
+                        ? LABEL_META[id].color
+                        : `${LABEL_META[id].color}40`,
+                    color: LABEL_META[id].color,
+                    background:
+                      currentLabel === id ? `${LABEL_META[id].color}26` : undefined,
+                  }}
+                  onClick={() => applyLabel(id)}
+                  disabled={saving}
+                >
+                  <span className="label-btn-icon">{LABEL_META[id].icon}</span>
+                  <span className="label-btn-text">{LABEL_META[id].name}</span>
+                  <span className="label-btn-key">{LABEL_META[id].key}</span>
+                </button>
+              ))}
             </div>
 
             <div className="clip-actions">
@@ -779,8 +708,8 @@ export default function LabelingStudio() {
             </div>
 
             <div className="shortcut-hint">
-              Arrow keys to navigate · Z / Y / N / G / S to label · Delete to
-              clear
+              Arrow keys to navigate · 1-7 to label, 0 for out of view · Delete
+              to clear
             </div>
           </div>
 
@@ -792,8 +721,13 @@ export default function LabelingStudio() {
               return (
                 <div
                   key={r.filename}
-                  className={`strip-thumb ${i === index ? "strip-current" : ""} ${lbl === LABEL_ZOOMIES ? "strip-zoomies" : lbl === LABEL_YAWN ? "strip-yawn" : lbl === LABEL_NORMAL ? "strip-normal" : lbl === LABEL_GROOMING ? "strip-grooming" : lbl === LABEL_STANDING ? "strip-standing" : "strip-unlabeled"}`}
-                  title={`${r.filename} — ${lbl || "unlabeled"}`}
+                  className={`strip-thumb ${i === index ? "strip-current" : ""} ${lbl ? "" : "strip-unlabeled"}`}
+                  style={
+                    lbl && LABEL_META[lbl]
+                      ? { borderColor: `${LABEL_META[lbl].color}99` }
+                      : undefined
+                  }
+                  title={`${r.filename} — ${lbl ? LABEL_META[lbl].name : "unlabeled"}`}
                 >
                   {/* Thumbnail — clicking selects the clip */}
                   <StripThumb
@@ -804,17 +738,14 @@ export default function LabelingStudio() {
                   {/* Label badge */}
                   {lbl && (
                     <span
-                      className={`strip-badge ${lbl === LABEL_ZOOMIES ? "strip-badge-zoomies" : lbl === LABEL_YAWN ? "strip-badge-yawn" : lbl === LABEL_GROOMING ? "strip-badge-grooming" : lbl === LABEL_STANDING ? "strip-badge-standing" : "strip-badge-normal"}`}
+                      className="strip-badge"
+                      style={{
+                        color: LABEL_META[lbl]?.color,
+                        borderColor: `${LABEL_META[lbl]?.color}66`,
+                      }}
+                      title={LABEL_META[lbl]?.name}
                     >
-                      {lbl === LABEL_ZOOMIES
-                        ? "Z"
-                        : lbl === LABEL_YAWN
-                          ? "Y"
-                          : lbl === LABEL_GROOMING
-                            ? "G"
-                            : lbl === LABEL_STANDING
-                              ? "S"
-                              : "N"}
+                      {LABEL_META[lbl]?.icon}
                     </span>
                   )}
 
@@ -885,6 +816,9 @@ export default function LabelingStudio() {
           gap: 6px;
         }
 
+        /* Per-label colour is applied inline from LABEL_META (see labels.js).
+           v1 had one CSS class per label here; eight codes made that a
+           maintenance trap, and adding a ninth would mean editing five rules. */
         .stat-chip {
           font-size: 11px;
           padding: 3px 10px;
@@ -892,11 +826,6 @@ export default function LabelingStudio() {
           border: 1px solid transparent;
         }
 
-        .stat-zoomies     { background: rgba(125, 255, 125, 0.1); border-color: rgba(125, 255, 125, 0.3); color: #7dff7d; }
-        .stat-yawn      { background: rgba(255, 210, 100, 0.1); border-color: rgba(255, 210, 100, 0.3); color: #ffd264; }
-        .stat-normal    { background: rgba(100, 160, 255, 0.1); border-color: rgba(100, 160, 255, 0.3); color: #88aaff; }
-        .stat-grooming  { background: rgba(220, 130, 255, 0.1); border-color: rgba(220, 130, 255, 0.3); color: #dc82ff; }
-        .stat-standing  { background: rgba(255, 160,  60, 0.1); border-color: rgba(255, 160,  60, 0.3); color: #ff9f3c; }
         .stat-unlabeled { background: var(--bg-card); border-color: var(--border); color: var(--text-muted); }
 
         .export-btn {
@@ -926,11 +855,8 @@ export default function LabelingStudio() {
           display: flex;
         }
 
-        .progress-zoomies    { height: 100%; background: #7dff7d; transition: width 0.3s ease; }
-        .progress-yawn     { height: 100%; background: #ffd264; transition: width 0.3s ease; }
-        .progress-normal   { height: 100%; background: #88aaff; transition: width 0.3s ease; }
-        .progress-grooming { height: 100%; background: #dc82ff; transition: width 0.3s ease; }
-        .progress-standing { height: 100%; background: #ff9f3c; transition: width 0.3s ease; }
+
+        .progress-seg { height: 100%; transition: width 0.3s ease; }
 
         .progress-label {
           font-size: 11px;
@@ -1002,11 +928,6 @@ export default function LabelingStudio() {
           transition: border-color 0.2s ease;
         }
 
-        .border-zoomies    { border-color: rgba(125, 255, 125, 0.6); }
-        .border-yawn     { border-color: rgba(255, 210, 100, 0.6); }
-        .border-normal   { border-color: rgba(136, 170, 255, 0.6); }
-        .border-grooming { border-color: rgba(220, 130, 255, 0.6); }
-        .border-standing { border-color: rgba(255, 160,  60, 0.6); }
 
         .player-video {
           width: 100%;
@@ -1016,6 +937,8 @@ export default function LabelingStudio() {
         }
 
         .current-label-badge {
+          background: rgba(0, 0, 0, 0.7);
+          border: 1px solid transparent;
           position: absolute;
           top: 10px;
           right: 10px;
@@ -1027,11 +950,6 @@ export default function LabelingStudio() {
           font-weight: 600;
         }
 
-        .badge-zoomies    { background: rgba(0, 0, 0, 0.7); color: #7dff7d; border: 1px solid rgba(125,255,125,0.4); }
-        .badge-yawn     { background: rgba(0, 0, 0, 0.7); color: #ffd264; border: 1px solid rgba(255,210,100,0.4); }
-        .badge-normal   { background: rgba(0, 0, 0, 0.7); color: #88aaff; border: 1px solid rgba(136,170,255,0.4); }
-        .badge-grooming { background: rgba(0, 0, 0, 0.7); color: #dc82ff; border: 1px solid rgba(220,130,255,0.4); }
-        .badge-standing { background: rgba(0, 0, 0, 0.7); color: #ff9f3c; border: 1px solid rgba(255,160, 60,0.4); }
 
         /* Clip meta */
         .clip-meta {
@@ -1111,76 +1029,8 @@ export default function LabelingStudio() {
         }
 
         .label-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-
-        .btn-zoomies {
-          background: rgba(125, 255, 125, 0.08);
-          border-color: rgba(125, 255, 125, 0.25);
-          color: rgba(125, 255, 125, 0.8);
-        }
-
-        .btn-zoomies:hover:not(:disabled),
-        .btn-zoomies.selected {
-          background: rgba(125, 255, 125, 0.18);
-          border-color: rgba(125, 255, 125, 0.7);
-          color: #7dff7d;
-          box-shadow: 0 0 16px rgba(125, 255, 125, 0.15);
-        }
-
-        .btn-yawn {
-          background: rgba(255, 210, 100, 0.08);
-          border-color: rgba(255, 210, 100, 0.25);
-          color: rgba(255, 210, 100, 0.8);
-        }
-
-        .btn-yawn:hover:not(:disabled),
-        .btn-yawn.selected {
-          background: rgba(255, 210, 100, 0.18);
-          border-color: rgba(255, 210, 100, 0.7);
-          color: #ffd264;
-          box-shadow: 0 0 16px rgba(255, 210, 100, 0.15);
-        }
-
-        .btn-normal {
-          background: rgba(136, 170, 255, 0.08);
-          border-color: rgba(136, 170, 255, 0.25);
-          color: rgba(136, 170, 255, 0.8);
-        }
-
-        .btn-normal:hover:not(:disabled),
-        .btn-normal.selected {
-          background: rgba(136, 170, 255, 0.18);
-          border-color: rgba(136, 170, 255, 0.7);
-          color: #88aaff;
-          box-shadow: 0 0 16px rgba(136, 170, 255, 0.15);
-        }
-
-        .btn-grooming {
-          background: rgba(220, 130, 255, 0.08);
-          border-color: rgba(220, 130, 255, 0.25);
-          color: rgba(220, 130, 255, 0.8);
-        }
-
-        .btn-grooming:hover:not(:disabled),
-        .btn-grooming.selected {
-          background: rgba(220, 130, 255, 0.18);
-          border-color: rgba(220, 130, 255, 0.7);
-          color: #dc82ff;
-          box-shadow: 0 0 16px rgba(220, 130, 255, 0.15);
-        }
-
-        .btn-standing {
-          background: rgba(255, 160, 60, 0.08);
-          border-color: rgba(255, 160, 60, 0.25);
-          color: rgba(255, 160, 60, 0.8);
-        }
-
-        .btn-standing:hover:not(:disabled),
-        .btn-standing.selected {
-          background: rgba(255, 160, 60, 0.18);
-          border-color: rgba(255, 160, 60, 0.7);
-          color: #ff9f3c;
-          box-shadow: 0 0 16px rgba(255, 160, 60, 0.15);
-        }
+        .label-btn { background: rgba(255, 255, 255, 0.03); }
+        .label-btn:hover:not(:disabled) { filter: brightness(1.25); }
 
         .label-btn-icon { font-size: 20px; }
         .label-btn-text { flex: 1; text-align: left; }
@@ -1339,11 +1189,6 @@ export default function LabelingStudio() {
         .strip-menu-item:hover { background: var(--bg-card-hover); color: var(--text-primary); }
         .strip-menu-delete:hover { color: var(--red); }
         .strip-current            { border-color: var(--accent) !important; }
-        .strip-zoomies:not(.strip-current)    { border-color: rgba(125, 255, 125, 0.35); }
-        .strip-yawn:not(.strip-current)     { border-color: rgba(255, 210, 100, 0.35); }
-        .strip-normal:not(.strip-current)   { border-color: rgba(136, 170, 255, 0.35); }
-        .strip-grooming:not(.strip-current) { border-color: rgba(220, 130, 255, 0.35); }
-        .strip-standing:not(.strip-current) { border-color: rgba(255, 160,  60, 0.35); }
 
         .strip-video-holder {
           display: block;
@@ -1367,6 +1212,8 @@ export default function LabelingStudio() {
         }
 
         .strip-badge {
+          background: rgba(0, 0, 0, 0.75);
+          border: 1px solid transparent;
           position: absolute;
           bottom: 3px;
           right: 3px;
@@ -1377,11 +1224,6 @@ export default function LabelingStudio() {
           font-family: var(--font-mono);
         }
 
-        .strip-badge-zoomies    { background: rgba(0,0,0,0.75); color: #7dff7d; }
-        .strip-badge-yawn     { background: rgba(0,0,0,0.75); color: #ffd264; }
-        .strip-badge-normal   { background: rgba(0,0,0,0.75); color: #88aaff; }
-        .strip-badge-grooming { background: rgba(0,0,0,0.75); color: #dc82ff; }
-        .strip-badge-standing { background: rgba(0,0,0,0.75); color: #ff9f3c; }
 
         /* Import panel */
         .import-panel {

@@ -5,6 +5,7 @@ first, each annotated with its current demo-page visibility.
 """
 import asyncio
 
+from shared.labels import NON_HIGHLIGHT
 from app.config import RECORDINGS_DIR
 from app.lib.hidden_store import read_hidden
 from app.lib.iso_time import to_iso_millis
@@ -26,7 +27,7 @@ async def list_highlights(include_hidden: bool) -> list[dict]:
     items = []
     for filename in files:
         label = labels.get(filename)
-        if not label or label == "normal":
+        if not label or label in NON_HIGHLIGHT:
             continue
         if not include_hidden and filename in hidden:
             continue

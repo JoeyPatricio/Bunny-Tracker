@@ -1,7 +1,7 @@
 # 🐇 Bunny Tracker
 
 A self-hosted machine-learning pet monitor. A camera watches your rabbits, a
-classifier recognizes what they're doing, zoomies, yawning, grooming, standing,
+classifier recognizes what they're doing, zoomies, grooming, rearing, feeding,
 or resting, and you get an email with a clip when something noteworthy happens.
 
 Live demo: **https://bunny-tracker.app** (public demo view; the live stream is
@@ -36,11 +36,18 @@ private to the owner).
   separate public demo page shows highlights and a live behavior feed without
   exposing the camera.
 
-**Model accuracy note:** the currently deployed classifier is measurably weaker
-than the one it replaced (61.5% vs. 74.4% held-out accuracy) - the retrain
-didn't have enough labeled data yet to beat the original. The rest of the
-system (capture, motion detection, alerting, dashboard) was ported and verified
-independently of this; it's a known, accepted gap pending more labeled clips.
+**Model status:** there is currently no usable classifier. The behavior
+vocabulary moved to ethogram v2 (7 classes, see
+[docs/ethogram.md](docs/ethogram.md)) and the deployed head still predicts the
+5 v1 classes, so the agent refuses to load it and runs motion-only until a
+retrain lands. Clipping Mode is unaffected, which is the point: it never uses
+the model, so footage can still be harvested while the dataset is rebuilt.
+
+The two accuracy numbers this README used to quote (61.5% for the deployed
+model, 74.4% for the one it replaced) were validation-set numbers, and that
+same split also drove early stopping, checkpoint selection, and the window
+sweep. They were selection scores, not held-out estimates, and should not be
+cited as accuracy.
 
 ## Tech stack
 
@@ -60,13 +67,27 @@ independently of this; it's a known, accepted gap pending more labeled clips.
 
 ### 1. Install dependencies
 
+Two Python environments, on purpose: the runtime venv never contains torch
+because it is what ships to the Raspberry Pi. See
+[docs/pipeline.md](docs/pipeline.md) for the full rule.
+
 ```bash
 cd client && npm install && npm run build
 cd ../server_py
-python -m venv .venv && .venv/Scripts/pip install -r requirements.txt
-# Only if you're retraining the model:
-python -m venv .venv-train && .venv-train/Scripts/pip install -r requirements-train.txt
+
+# Runtime (server + agent). No torch.
+uv venv .venv
+uv pip install --python .venv/bin/python -r requirements.txt
+
+# Only if you're retraining the model. Pulls a CUDA build of torch.
+uv venv .venv-train --python 3.12
+uv pip install --python .venv-train/bin/python -r requirements-train.txt
 ```
+
+Both venvs here were created with `uv`, so **neither has `pip` inside it** and
+`.venv/bin/pip install ...` will not work. Use `uv pip install --python <venv>`
+as above. On Windows the interpreter is `.venv\Scripts\python.exe` rather than
+`.venv/bin/python`.
 
 ### 2. Configure the environment
 
@@ -89,7 +110,7 @@ AGENT_TOKEN="generate-your-own-random-token"
 # Camera agent, PC defaults shown; for a Raspberry Pi use v4l2 / /dev/video0
 CAMERA_FORMAT=dshow
 CAMERA_INPUT=video=Your Webcam Name
-AGENT_CONFIDENCE_THRESHOLD=70
+AGENT_INTEREST_THRESHOLD=60         # 0-100; how far from "resting" before it's worth an email
 AGENT_MOTION_FLOOR=4
 AGENT_ALERT_STREAK=3
 
@@ -121,8 +142,11 @@ the camera, labeling, and training tabs. Without login you see the public demo.
 
 ## Using it
 
-1. **Label**: import clips, then tag them in **Label Studio**
-   (`Z` zoomies, `Y` yawn, `N` normal, `G` grooming, `S` standing).
+1. **Label**: import clips, then tag them in **Label Studio**. Keys `1`-`7`
+   assign a behavior, `0` marks a clip with no rabbit in view. The vocabulary
+   is the ethogram in [docs/ethogram.md](docs/ethogram.md), not an ad-hoc list:
+   `feeding`, `grooming`, `locomotion`, `locomotion_rapid`, `rearing`,
+   `resting_lying`, `resting_sitting`, plus `out_of_view`.
 2. **Train**: run `server_py/training/train.py` (see that file's docstring for
    the full pipeline: extract -> split -> fit -> export to ONNX). The Training
    tab in the dashboard is now a read-only view of whatever model is deployed.
@@ -186,15 +210,29 @@ clip count gathered across several days is a far more useful dataset.
 Plain scripts, not pytest. Run them from `server_py/` with the runtime venv:
 
 ```bash
-.venv/Scripts/python.exe tests/test_motion_parity.py
-.venv/Scripts/python.exe tests/test_security_regressions.py
-.venv/Scripts/python.exe tests/test_server_robustness.py
-.venv/Scripts/python.exe tests/test_capture_loop.py
-.venv/Scripts/python.exe agent/test_capture_offline.py
+.venv/bin/python tests/test_motion_parity.py
+.venv/bin/python tests/test_security_regressions.py
+.venv/bin/python tests/test_server_robustness.py
+.venv/bin/python tests/test_capture_loop.py
+.venv/bin/python tests/test_clipping_mode.py
+.venv/bin/python agent/test_capture_offline.py
 ```
 
-`training/test_train_guards.py` needs torch, so run that one with
-`.venv-train/Scripts/python.exe`.
+The two training tests need torch, so they run from the training venv:
+
+```bash
+.venv-train/bin/python training/test_train_guards.py
+.venv-train/bin/python training/test_export_guards.py
+```
+
+There is no aggregate runner yet, so a failure in one script does not stop the
+others and you have to read all of them. One is added in Phase 1 of
+[docs/upgrade-plan.md](docs/upgrade-plan.md).
+
+`tests/test_server_robustness.py` has a timing-sensitive check that fails
+spuriously on fast machines (it asserts a deliberately-blocking control really
+does stall the event loop, and on fast hardware the control finishes too
+quickly to measure). Re-run before investigating; Phase 1 fixes it properly.
 
 `tests/test_clipping_mode.py` covers Clipping Mode end to end (model-free
 decision loop, segment selection, budget) and needs no camera or model.
@@ -279,8 +317,10 @@ the full plan):
 - **Room environment**: a BME280 on the same Pi tracks temperature and
   humidity, with heat-stress alerts (rabbits overheat above ~28C).
 
-**Retrain once more labeled data exists** - the current classifier is a known
-regression from the one it replaced; see the model accuracy note above.
+**Relabel, then retrain.** All 112 clips were unlabeled during the v2 ethogram
+migration and need recoding against the new definitions; v1 labels are archived
+in `server/labels.v1.json` so the v1-to-v2 recoding can still be reported. The
+classifier cannot run until a 7-class head is trained and exported.
 
 ---
 
@@ -293,3 +333,95 @@ regression from the one it replaced; see the model accuracy note above.
 - Labels are written atomically and serialized, with `.bak` plus daily backups,
   so concurrent edits can't corrupt or wipe them.
 - No third-party ML service, inference runs locally via ONNX Runtime.
+---
+
+## References
+
+The behaviour vocabulary this project is moving toward is defined in
+[docs/ethogram.md](docs/ethogram.md). Everything below is either a source for
+those definitions, directly comparable prior work, or a tool the project uses
+or should be measured against.
+
+### Ethogram and behavioural definitions
+
+- NC3Rs / IAT / RSPCA. **Laboratory rabbit ethogram**, from *Refining rabbit
+  care: A resource for those working with rabbits in research*, UFAW/RSPCA
+  Rabbit Behaviour and Welfare Group (2008).
+  https://nc3rs.org.uk/sites/default/files/2022-01/Laboratory%20rabbit%20ethogram.pdf
+  Primary source for the v2 state and event definitions. It is itself a
+  compilation of the three papers below.
+- Morton DB et al. (2003). Refinements in rabbit husbandry: Second report of
+  the BVAAWF/FRAME/RSPCA/UFAW joint working group on refinement.
+  *Laboratory Animals* 27: 301-329 (Appendix 1, pp. 325-7).
+- Held SDE, Turner RJ, Wootton RJ (2001). The behavioural repertoire of
+  non-breeding group-housed female laboratory rabbits (*Oryctolagus
+  cuniculus*). *Animal Welfare* 10(4): 437-443.
+- Gunn D, Morton DB (1995). Inventory of the behaviour of New Zealand White
+  rabbits in laboratory cages. *Applied Animal Behaviour Science* 45(3-4):
+  277-292. doi:10.1016/0168-1591(95)00627-5
+
+### Prior work on automated rabbit behaviour classification
+
+- Adedeji OJ, Abayomi-Alli A, Arogundade O'T, Abayomi-Alli O, Omoyiola BO
+  (2023). **Deep Transfer Learning for Classification of Rabbit Behaviour
+  Using Publicly Available Datasets.** *First International Conference on the
+  Advancements of Artificial Intelligence in African Context (AAIAC)*, IEEE.
+  doi:10.1109/AAIAC60008.2023.10465471
+
+  The closest published work to this project and the natural baseline to
+  compare against. YOLOv8 + ByteTrack for rabbit detection and tracking
+  (mAP50 0.96), and a fine-tuned ViT-B/16 for behaviour classification over
+  seven classes (digging, humping and mating, eating, periscoping, jumping and
+  binkying, laying, flopping and loafing), reaching 86% accuracy against 80%
+  for EfficientNet and 76% for ResNet18, on roughly 1100 images.
+
+  Differences that matter for this project: their classifier operates on
+  **single still images** scraped from YouTube, Roboflow, GitHub and Google
+  Images, not on video, so temporal behaviours are inferred from one frame.
+  The split is 70:30 train/validation with no test set and, as far as the paper
+  describes it, no grouping by source video, so frames from the same clip can
+  appear on both sides. Their class list is vernacular and carries no
+  operational definitions or inter-observer reliability statistics, and the
+  paper reports confusion between the visually similar classes (laying and
+  periscoping). The paper is candid that its dataset is "not robust enough to
+  cover the numerous ranges of behavioural variations" and that comparative
+  benchmarks in this domain barely exist.
+
+### Computational ethology tools
+
+Established tooling in this field. Cited here because any paper coming out of
+this project will be expected to position itself against them.
+
+- Friard O, Gamba M (2016). BORIS: a free, versatile open-source event-logging
+  software for video/audio coding and live observations. *Methods in Ecology
+  and Evolution* 7(11): 1325-1330. https://www.boris.unito.it/
+  The standard tool for interval-coded ethogram annotation.
+- Bohnslav JP et al. (2021). DeepEthogram, a machine learning pipeline for
+  supervised behavior classification from raw pixels. *eLife* 10:e63377.
+  doi:10.7554/eLife.63377
+  Closest prior art methodologically: supervised behaviour classification
+  directly from video, which is what the classifier here does.
+- Mathis A et al. (2018). DeepLabCut: markerless pose estimation of
+  user-defined body parts with deep learning. *Nature Neuroscience* 21:
+  1281-1289.
+- Pereira TD et al. (2022). SLEAP: A deep learning system for multi-animal
+  pose tracking. *Nature Methods* 19: 486-495.
+- Goodwin NL, Nilsson SRO et al. (2024). Simple Behavioral Analysis (SimBA) as
+  a platform for explainable machine learning in behavioral neuroscience.
+  *Nature Neuroscience* 27: 1411-1424. doi:10.1038/s41593-024-01649-9
+- Hsu AI, Yttri EA (2021). B-SOiD, an open-source unsupervised algorithm for
+  identification and fast prediction of behaviors. *Nature Communications*
+  12: 5188. doi:10.1038/s41467-021-25420-x
+
+### Models and runtime used here
+
+- Qin D et al. (2024). MobileNetV4: Universal Models for the Mobile Ecosystem.
+  *European Conference on Computer Vision (ECCV)*. The deployed backbone is
+  `mobilenetv4_conv_small`.
+- Wightman R (2019). **PyTorch Image Models** (`timm`).
+  https://github.com/huggingface/pytorch-image-models
+  Source of the frozen backbone and its pretrained weights.
+- **ONNX Runtime.** https://onnxruntime.ai/ Inference for the exported
+  backbone and temporal head, including the int8 quantized backbone.
+- **FFmpeg.** https://ffmpeg.org/ All video capture, segmenting, and frame
+  decode, via `imageio-ffmpeg`.

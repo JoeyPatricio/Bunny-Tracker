@@ -1,6 +1,6 @@
 """Ring buffer of last N embeddings -> softmax. The runtime classify()
 replacement: embed each incoming frame once (expensive), classify the window
-each step (cheap). See python-port-plan.md section 3.1.
+each step (cheap). See docs/provenance.md, python-port-plan.md section 3.1.
 """
 from collections import deque
 

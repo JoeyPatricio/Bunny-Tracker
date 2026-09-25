@@ -1,7 +1,7 @@
 """Build a motion-parity fixture: an ordered sequence of raw 224x224x3 frames
 sampled at 1.5s spacing (matching capture.mjs's AGENT_FRAME_SECONDS default)
 from real recordings, covering idle/resting, a real motion burst, and a
-synthesized lighting-style scene change. See notes/python-port-plan.md
+synthesized lighting-style scene change. See docs/provenance.md, python-port-plan.md,
 Phase 3 step 1 for why this reads from server/recordings/ instead of tapping
 the live camera (read-only access to server/, never touches capture.mjs or
 any pm2 process).

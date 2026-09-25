@@ -1,4 +1,4 @@
-"""Regression gate for notes/fixes.md installment 3.
+"""Regression gate for docs/provenance.md, fixes.md, installment 3.
 
 3.1 is about the event loop staying responsive, which a plain unit assertion
 cannot show. The test instead measures event-loop lag while the recordings work
@@ -69,7 +69,7 @@ async def measure_lag(work) -> float:
 
 
 async def test_listing_does_not_block_the_loop() -> None:
-    """fixes.md 3.1: the directory walk must not run on the event loop."""
+    """docs/provenance.md, fixes.md 3.1: the directory walk must not run on the event loop."""
     count = len(rec._scan_recordings())
     print(f"  (scanning {count} real recordings, read-only)")
     if count < 20:
@@ -157,7 +157,7 @@ async def test_upload_and_grab_in_a_temp_dir() -> None:
 
 
 async def test_config_survives_a_bad_env_value() -> None:
-    """fixes.md 3.2: a typo used to raise at import and take the server down."""
+    """docs/provenance.md, fixes.md 3.2: a typo used to raise at import and take the server down."""
     cases = [
         ("not-a-number", "unparseable"),
         ("", "empty"),

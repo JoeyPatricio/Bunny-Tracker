@@ -1,4 +1,4 @@
-"""Regression gate for the security fixes in notes/fixes.md installment 1.
+"""Regression gate for the security fixes in docs/provenance.md, fixes.md, installment 1.
 
 Each check below reproduces a bug that was live on 2026-07-24 and asserts the
 fixed behavior. Same shape as test_motion_parity.py: no pytest, plain main(),
@@ -35,7 +35,7 @@ def check(name: str, ok: bool, detail: str = "") -> None:
 
 
 def test_spa_traversal(client: TestClient) -> None:
-    """fixes.md 1.1: the SPA fallback served any file on disk."""
+    """docs/provenance.md, fixes.md 1.1: the SPA fallback served any file on disk."""
     # A known non-secret file two levels up from client/dist, used so the test
     # asserts on content it can name without touching server/.env.
     canary = SERVER_DIR.parent / "server_py" / "requirements.txt"
@@ -62,7 +62,7 @@ def test_spa_traversal(client: TestClient) -> None:
 
 
 def test_non_ascii_secrets(client: TestClient) -> None:
-    """fixes.md 1.2: compare_digest raised TypeError on non-ASCII str."""
+    """docs/provenance.md, fixes.md 1.2: compare_digest raised TypeError on non-ASCII str."""
     res = client.post("/api/auth/login", json={"password": "pässwörd"})
     # 429 would mean an earlier run tripped the limiter; still not a 500.
     check("1.2 non-ASCII password is 401 not 500", res.status_code in (401, 429), f"got {res.status_code}")
@@ -75,7 +75,7 @@ def test_non_ascii_secrets(client: TestClient) -> None:
 
 
 def test_model_backups(client: TestClient) -> None:
-    """fixes.md 1.3: startswith('backups') was bypassable via normalization."""
+    """docs/provenance.md, fixes.md 1.3: startswith('backups') was bypassable via normalization."""
     backup = next((f.name for f in MODEL_BACKUP_DIR.iterdir()), None) if MODEL_BACKUP_DIR.exists() else None
     if not backup:
         check("1.3 model backups", False, "no backup file on disk to test against")
@@ -94,7 +94,7 @@ def test_model_backups(client: TestClient) -> None:
 
 
 def test_security_headers(client: TestClient) -> None:
-    """fixes.md 1.4: AdminGuard's 401 short-circuited past the header middleware."""
+    """docs/provenance.md, fixes.md 1.4: AdminGuard's 401 short-circuited past the header middleware."""
     res = client.get("/api/labels")
     check("1.4 guarded route is 401", res.status_code == 401, f"got {res.status_code}")
     check("1.4 CSP present on 401", res.headers.get("content-security-policy") == CSP)
@@ -116,7 +116,7 @@ def test_security_headers(client: TestClient) -> None:
 
 
 def test_stream_frame_limits(client: TestClient) -> None:
-    """fixes.md 1.5: bare request.body() with no cap and no type check."""
+    """docs/provenance.md, fixes.md 1.5: bare request.body() with no cap and no type check."""
     if not AGENT_TOKEN:
         check("1.5 stream frame limits", False, "AGENT_TOKEN not set, cannot exercise the route")
         return

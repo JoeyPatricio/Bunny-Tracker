@@ -1,0 +1,43 @@
+# Tooling configuration only. Dependencies live in the requirements*.txt files
+# beside this one, NOT here.
+#
+# Why not a [project] table with dependency-groups and a uv.lock: this project
+# deliberately runs two venvs on two different Python versions. .venv (runtime,
+# 3.14) must never contain torch, because it is what ships to the Raspberry Pi;
+# .venv-train (3.12) carries torch and timm and is dev-box only. A single
+# pyproject has one `requires-python`, so folding both into one project would
+# either force them onto one interpreter or produce a lock that is wrong for
+# one of them. Exact pins in the requirements files buy the reproducibility a
+# lock would, without breaking the two-venv separation.
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+extend-exclude = [".venv", ".venv-train", "client", "server_py/models"]
+
+[tool.ruff.lint]
+# Deliberately narrow to start. A broad rule set on an existing codebase
+# produces a wall of findings nobody reads. Widen once this is clean.
+select = ["E", "F", "I", "UP", "B"]
+ignore = [
+    "E501",  # line length: the comment style here runs long on purpose
+    "E402",  # module import not at top: every script does sys.path.insert first
+]
+
+[tool.ruff.format]
+# Not enabled in CI yet. Running the formatter over this codebase would rewrite
+# the hand-aligned comment blocks that carry most of its documentation, in one
+# unreviewable diff. If it is ever turned on, land it as its own commit with no
+# logic changes.
+quote-style = "preserve"
+
+[tool.pytest.ini_options]
+# Points at ci/ ONLY. server_py/tests/ holds plain check-scripts with
+# module-level `async def test_*` functions; if pytest collected those without
+# an async plugin it would report them as skips that read like passes, which is
+# worse than not collecting them at all. ci/test_scripts.py runs them as
+# subprocesses instead. See Phase 1 of docs/upgrade-plan.md.
+testpaths = ["ci"]
+markers = [
+    "local_data: needs real recordings or a trained model on disk; not run in CI",
+]

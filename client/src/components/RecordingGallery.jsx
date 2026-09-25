@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
-import { LABEL_COLOR as BASE_COLOR } from '../labels.js'
+import { ALL_CODES, LABEL_META, LABEL_COLOR as BASE_COLOR } from '../labels'
 
 const labelColor = (lbl) => {
   if (!lbl) return 'var(--text-muted)'
@@ -8,17 +8,17 @@ const labelColor = (lbl) => {
 
 const labelDisplay = (lbl) => {
   if (!lbl) return 'Unlabeled'
-  return lbl.charAt(0).toUpperCase() + lbl.slice(1)
+  // v2 ids are snake_case ('resting_lying'), so capitalizing the raw id is no
+  // longer a readable name. LABEL_META carries the display wording.
+  return LABEL_META[lbl]?.name || lbl
 }
 
+// Generated from the ethogram (labels.js) rather than hand-listed, so the
+// gallery filters cannot drift out of sync with what the studio can assign.
 const FILTER_OPTIONS = [
-  { value: 'all',          label: 'All' },
-  { value: 'zoomies',      label: 'Zoomies' },
-  { value: 'yawn',         label: 'Yawn' },
-  { value: 'grooming',     label: 'Grooming' },
-  { value: 'standing',     label: 'Standing' },
-  { value: 'normal',       label: 'Normal' },
-  { value: 'unlabeled',    label: 'Unlabeled' },
+  { value: 'all', label: 'All' },
+  ...ALL_CODES.map((id) => ({ value: id, label: LABEL_META[id].short })),
+  { value: 'unlabeled', label: 'Unlabeled' },
 ]
 
 export default function RecordingGallery({ refreshTrigger }) {

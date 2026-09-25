@@ -1,17 +1,27 @@
 """Two-stage model: frozen timm backbone (per-frame embedder) + a small
-learned temporal head (window classifier). See python-port-plan.md section 3.1.
+learned temporal head (window classifier). See docs/provenance.md, python-port-plan.md section 3.1.
 
 Two separate nn.Modules, not one end-to-end graph, so they can be exported as
 two ONNX graphs and the agent can embed each frame once and run the cheap head
 per step (section 3.1's "why two graphs" note).
 """
+import sys
+from pathlib import Path
+
 import torch
 import torch.nn as nn
 import timm
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from shared.labels import LABELS
+
 BACKBONE_NAME = "mobilenetv4_conv_small"
 EMBEDDING_DIM = 1280
-NUM_CLASSES = 5
+# Derived, never hardcoded: this was a literal 5 while the ethogram declared 5
+# classes, which is fine right up until the ethogram changes and the head
+# silently keeps the old width.
+NUM_CLASSES = len(LABELS)
 
 
 def build_backbone(pretrained: bool = True) -> nn.Module:
@@ -26,7 +36,7 @@ def build_backbone(pretrained: bool = True) -> nn.Module:
 
 
 class TemporalHead(nn.Module):
-    """1-layer GRU over a window of frame embeddings -> 5-class logits.
+    """1-layer GRU over a window of frame embeddings -> per-class logits.
 
     Input [B, N, EMBEDDING_DIM], output [B, NUM_CLASSES]. Cheap: this is the
     part that runs every step in the agent's hot path, unlike the backbone.
@@ -56,7 +66,14 @@ class TemporalHead(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = (x - self.emb_mean) / self.emb_std
         x = self.proj_dropout(torch.relu(self.proj(x)))
-        _, h_n = self.gru(x)          # h_n: [1, B, hidden_dim]
-        h = h_n.squeeze(0)            # [B, hidden_dim]
+        _, h_n = self.gru(x)          # h_n: [num_layers, B, hidden_dim]
+        # h_n[-1], not h_n.squeeze(0). squeeze(0) happens to be equivalent
+        # today (num_layers == 1) and is NOT what caused the deployed
+        # head.onnx to export with a static batch axis - that was the ONNX
+        # exporter, see export_onnx.py's dynamo note. This is a plain
+        # correctness fix: squeeze(0) drops whatever size-1 axis is in front,
+        # so it silently starts taking the wrong slice the moment num_layers
+        # goes above 1, while h_n[-1] always means "the last layer's state".
+        h = h_n[-1]                   # [B, hidden_dim]
         h = self.dropout(h)
         return self.fc(h)             # [B, num_classes]

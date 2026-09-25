@@ -1,0 +1,21 @@
+# CI variant of requirements-train.txt: identical versions, CPU-only torch.
+#
+# Install with the CPU index so a GPU-less runner does not download the CUDA
+# build and its ~15 nvidia_* packages:
+#
+#   uv pip install --index-url https://download.pytorch.org/whl/cpu \
+#       -r requirements-train-cpu.txt
+#
+# Only training/test_train_guards.py and training/test_export_guards.py run in
+# CI from this venv; neither needs a GPU.
+--index-url https://download.pytorch.org/whl/cpu
+--extra-index-url https://pypi.org/simple
+torch==2.14.0
+torchvision==0.29.0
+timm==1.0.29
+onnx==1.22.0
+onnxscript==0.7.2
+onnxruntime==1.29.0
+numpy==2.5.3
+scikit-learn==1.9.0
+imageio-ffmpeg==0.6.0

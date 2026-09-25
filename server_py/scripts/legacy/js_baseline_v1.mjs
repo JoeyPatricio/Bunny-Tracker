@@ -1,12 +1,22 @@
 /**
- * Runs the CURRENT live tfjs model (server/model/) over the same held-out
- * clips used for the Python retrain, to get a real (not assumed) baseline
- * per-class accuracy and confusion matrix. See python-port-plan.md section 3.5.
+ * LEGACY. Reproduces the ethogram-v1 tfjs baseline number (74.4%) and nothing
+ * else. It is NOT part of the current pipeline and nothing in training/ reads
+ * its output any more.
  *
- * Reads server/model/ and server/recordings/ (read-only) and the manifest
- * written by training/extract_frames.py. Writes only under server_py/models/.
+ * Why it was retired: the tfjs model in server/model/ predicts the five v1
+ * classes and physically cannot predict ethogram v2's seven, so comparing a v2
+ * retrain against it is meaningless. training/evaluate.py's accuracy gate used
+ * to do exactly that. See docs/upgrade-plan.md for what replaced it (a
+ * `static_logreg` arm on the same frozen embeddings, retrained per fold).
  *
- * Usage: node scripts/js_baseline.mjs   (run from server_py/scripts/)
+ * Reads server/model/ and server/recordings/ read-only, plus a v1-schema
+ * manifest. Writes only models/js_baseline.v1.json.
+ *
+ * Usage (from server_py/scripts/legacy/):
+ *   node js_baseline_v1.mjs
+ *   node js_baseline_v1.mjs --manifest &lt;path&gt; --labels a,b,c --out &lt;path&gt;
+ *
+ * ffmpeg is resolved from $FFMPEG, then @ffmpeg-installer/ffmpeg, then PATH.
  */
 import { execFileSync } from 'child_process'
 import fs from 'fs'
@@ -19,14 +29,41 @@ const tf = await import('@tensorflow/tfjs')
 const mobilenetModule = await import('@tensorflow-models/mobilenet')
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const ROOT = path.resolve(__dirname, '..', '..')          // BunnyTracker/
+const ROOT = path.resolve(__dirname, '..', '..', '..')    // BunnyTracker/ (now two levels deeper)
+
+// Minimal --flag value parser; no dependency needed for four options.
+const argv = process.argv.slice(2)
+const arg = (name, fallback) => {
+  const i = argv.indexOf(`--${name}`)
+  return i !== -1 && argv[i + 1] ? argv[i + 1] : fallback
+}
 const SERVER_MODEL_DIR = path.join(ROOT, 'server', 'model')
 const RECORDINGS_DIR = path.join(ROOT, 'server', 'recordings')
-const MANIFEST_PATH = path.join(ROOT, 'server_py', 'models', 'cache', 'manifest.json')
-const OUT_PATH = path.join(ROOT, 'server_py', 'models', 'js_baseline.json')
-const FFMPEG = path.join(ROOT, 'server', 'node_modules', '@ffmpeg-installer', 'win32-x64', 'ffmpeg.exe')
+// Defaults point at the archived v1 cache, since the live models/cache/ is
+// regenerated under v2 and its manifest has neither the v1 labels nor the
+// schema-1 `val` key this script reads.
+const MANIFEST_PATH = arg('manifest',
+  path.join(ROOT, 'server_py', 'models', 'archive', 'v1-ethogram', 'cache', 'manifest.json'))
+// Renamed from js_baseline.json so no v2 code can pick it up by accident.
+const OUT_PATH = arg('out', path.join(ROOT, 'server_py', 'models', 'js_baseline.v1.json'))
 
-const LABELS = ['grooming', 'normal', 'standing', 'yawn', 'zoomies']
+// Was hardcoded to @ffmpeg-installer/win32-x64/ffmpeg.exe, which does not
+// exist off Windows. Resolve in order and fail with an actionable message.
+function resolveFfmpeg() {
+  if (process.env.FFMPEG) return process.env.FFMPEG
+  const installed = path.join(ROOT, 'server', 'node_modules', '@ffmpeg-installer', 'ffmpeg', 'index.js')
+  if (fs.existsSync(installed)) {
+    try { return JSON.parse(execFileSync('node', ['-p', `JSON.stringify(require('${installed}').path)`], { encoding: 'utf8' })) }
+    catch { /* fall through */ }
+  }
+  return 'ffmpeg' // rely on PATH
+}
+const FFMPEG = resolveFfmpeg()
+
+// The v1 vocabulary, in v1 order. Overridable so the script stays honest about
+// which ethogram it is scoring rather than hardcoding a list that silently
+// disagrees with shared/labels.py.
+const LABELS = arg('labels', 'grooming,normal,standing,yawn,zoomies').split(',')
 const FRAMES_PER_CLIP = 8
 const FRAME_SIZE = 224
 
@@ -157,7 +194,11 @@ async function main() {
   }
 
   fs.mkdirSync(path.dirname(OUT_PATH), { recursive: true })
-  fs.writeFileSync(OUT_PATH, JSON.stringify({ accuracy: acc, confusion_matrix: cm, per_class: perClass, labels: LABELS }, null, 2))
+  fs.writeFileSync(OUT_PATH, JSON.stringify({
+    ethogram_version: '1.0',
+    note: 'Legacy v1 tfjs baseline. Single split, single seed; a selection score, not a held-out estimate.',
+    accuracy: acc, confusion_matrix: cm, per_class: perClass, labels: LABELS,
+  }, null, 2))
   console.log(`\nWrote ${OUT_PATH}`)
 
   srv.close()

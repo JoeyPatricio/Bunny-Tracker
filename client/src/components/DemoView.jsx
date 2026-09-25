@@ -78,7 +78,8 @@ export default function DemoView({ onLogin }) {
         <h1 className="demo-title">🐇 BunnyCam</h1>
         <p className="demo-tagline">
           A machine-learning pet monitor that watches rabbits and recognizes what
-          they're doing (zoomies, yawning, grooming, standing) in real time.
+          they're doing (zoomies, grooming, rearing, feeding, resting) in real
+          time.
         </p>
         <div className="demo-status">
           <span className={`status-dot ${isLive ? 'live' : ''}`} />

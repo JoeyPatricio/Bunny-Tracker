@@ -78,8 +78,8 @@ export default function HighlightsManager() {
           <span style={{ fontSize: 36 }}>🎬</span>
           <p>No highlight clips yet.</p>
           <p className="hl-empty-sub">
-            Label some clips as zoomies, grooming, standing, or yawn in Label
-            Studio and they'll appear here, ready to feature.
+            Label some clips as anything other than resting in Label Studio
+            and they'll appear here, ready to feature.
           </p>
         </div>
       )}

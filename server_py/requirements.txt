@@ -1,8 +1,23 @@
-fastapi
-uvicorn[standard]
-python-multipart
-slowapi
-python-dotenv
-httpx
-onnxruntime
-imageio-ffmpeg
+# Runtime dependencies: the server and the capture agent. NO torch.
+#
+# Pinned exactly. An unpinned set makes training/train.py's seeding
+# meaningless, because a seeded run on a different dependency set is not a
+# reproducible run.
+#
+# Resolved against Python 3.14 on the dev box. numpy arrives transitively via
+# onnxruntime but is imported directly by shared/motion.py, shared/frames.py
+# and the tests, so it is declared here rather than relied on by accident.
+#
+# Raspberry Pi note: do not assume these exact versions resolve on aarch64.
+# Pi OS Bookworm ships Python 3.11, and onnxruntime's aarch64 wheels are
+# published per-cpXX. Re-resolve on the device and record the result as a
+# separate requirements-pi.txt rather than editing this file.
+fastapi==0.141.1
+uvicorn[standard]==0.52.4
+python-multipart==0.0.32
+slowapi==0.1.10
+python-dotenv==1.2.3
+httpx==0.28.1
+onnxruntime==1.29.0
+imageio-ffmpeg==0.6.0
+numpy==2.5.2

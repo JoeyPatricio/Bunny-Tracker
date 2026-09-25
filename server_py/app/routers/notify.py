@@ -11,21 +11,25 @@ from pydantic import BaseModel
 
 from app.config import EMAIL_PASS, EMAIL_USER, NOTIFY_COOLDOWN_MINUTES, NOTIFY_TO, RECORDINGS_DIR
 from app.lib.recording_name import is_recording_filename
-from app.lib.valid_labels import VALID_LABELS
+from shared.labels import LABELS, RESTING_LABELS
 from app.routers.monitor import read_monitor_state
 
 router = APIRouter()
 
-# Every behavior except the resting baseline is worth an alert.
-ALERT_LABELS = {l for l in VALID_LABELS if l != "normal"}
+# Every model class except the resting baselines is worth an alert. v1 excluded
+# the single `normal` class; v2 splits rest into lying and sitting, so this
+# subtracts the whole resting set. `out_of_view` is not in LABELS at all, so it
+# can never reach here.
+ALERT_LABELS = {l for l in LABELS if l not in RESTING_LABELS}
 
 # notify.js's OWN label phrase map (for email subject/body text) — distinct
 # from shared/labels.py's LABEL_PHRASE, which is the client UI's wording.
 LABEL_PHRASE = {
-    "zoomies": "doing zoomies \U0001F407\U0001F4A8",
-    "yawn": "yawning \U0001F62A",
+    "locomotion_rapid": "doing zoomies \U0001F407\U0001F4A8",
+    "locomotion": "hopping about \U0001F43E",
     "grooming": "grooming \U0001F43E",
-    "standing": "standing up \U0001F998",
+    "rearing": "rearing up \U0001F998",
+    "feeding": "eating \U0001F96C",
 }
 
 # Per-label cooldown map, plus a global floor (half the cooldown) between any

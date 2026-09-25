@@ -110,7 +110,7 @@ def _secret_equals(supplied: str, expected: str) -> bool:
 
 def is_agent_authed(request: Request) -> bool:
     """Service-token path for the camera agent (plan Phase 5, the actual fix
-    for fixes.md item 4.3): entirely separate from the human cookie/session
+    for docs/provenance.md, fixes.md 4.3): entirely separate from the human cookie/session
     store and the login rate limiter, so a bad token or a reconnect burst can
     never lock out the human admin. Only active when AGENT_TOKEN is set."""
     if not AGENT_TOKEN:

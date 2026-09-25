@@ -16,13 +16,13 @@ auto-restart on exit. Two deliberate differences from the JS version:
 2. The raw-frame stdout scanner uses a bytearray with an in-place delete
    (`del pending[:n]`) rather than repeated `bytes` concatenation, avoiding
    the same quadratic-reassembly shape flagged for the MJPEG parser in
-   fixes.md 4.5b (there is no MJPEG pipe parser to port here anymore, since
+   docs/provenance.md, fixes.md 4.5b (there is no MJPEG pipe parser to port here anymore, since
    the live-view frame is now file-based, but the raw-frame buffer has the
    identical risk and is fixed the same way).
 3. Reading stdout and running inference are two separate tasks joined by a
    single-slot handoff, rather than one loop that awaits the frame handler
    inline. See _read_frames for why awaiting inline stalls ffmpeg outright
-   (fixes.md 2.1).
+   (docs/provenance.md, fixes.md 2.1).
 """
 import asyncio
 import os
@@ -152,7 +152,7 @@ class FfmpegCapture:
         # the loops. _watch_exit rebinds self.proc on restart, and a reader that
         # re-read it each iteration would start consuming the NEW process's
         # stdout while the new reader did too, splitting the byte stream between
-        # them and handing inference misaligned garbage (fixes.md 2.2).
+        # them and handing inference misaligned garbage (docs/provenance.md, fixes.md 2.2).
         self._readers = asyncio.gather(
             self._read_frames(proc.stdout),
             self._read_stderr(proc.stderr),
@@ -173,7 +173,7 @@ class FfmpegCapture:
         the OS pipe buffer, ffmpeg blocks on its write to pipe:1, and recording
         and the dashboard stream stall along with classification. The JS
         original dropped frames for the same reason; the port awaited the
-        handler inline, which made its `busy` flag unreachable (fixes.md 2.1).
+        handler inline, which made its `busy` flag unreachable (docs/provenance.md, fixes.md 2.1).
         """
         pending = bytearray()
         try:

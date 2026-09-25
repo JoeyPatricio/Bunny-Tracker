@@ -165,7 +165,7 @@ async def test_mode_transition_resets_state() -> None:
     """Flipping the mode must report a restart and clear stale streaks."""
     loop = AgentDecisionLoop(None, None)
     loop.motion_streak = 3
-    loop.last_label = "zoomies"
+    loop.last_label = "locomotion_rapid"
 
     check("turning clipping on reports a restart is needed",
           loop.apply_clipping_config(clipping=True) is True)
@@ -451,7 +451,7 @@ async def test_budget_stops_clipping_but_never_other_uploads() -> None:
         # The cap counts the whole unlabeled backlog, manual clips included:
         # three clips are now on disk and none are labeled, so labeling just one
         # still leaves the queue at the cap.
-        labeled[first["filename"]] = "normal"
+        labeled[first["filename"]] = "resting_lying"
         blocked_still = await upload(source="clipping")
         check("labeling one of three still leaves the backlog at the cap",
               getattr(blocked_still, "status_code", None) == 507, str(blocked_still))
@@ -459,7 +459,7 @@ async def test_budget_stops_clipping_but_never_other_uploads() -> None:
         # Labeling a second one drops the backlog below the cap and harvesting
         # can resume — the point of counting unlabeled clips rather than all of
         # them: working the queue in Label Studio is what buys more room.
-        labeled[manual["filename"]] = "normal"
+        labeled[manual["filename"]] = "resting_lying"
         fourth = await upload(source="clipping")
         check("working the labeling queue frees room to harvest again",
               isinstance(fourth, dict) and "filename" in fourth, str(fourth))

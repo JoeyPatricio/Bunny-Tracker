@@ -1,9 +1,27 @@
-torch
-torchvision
-timm
-onnx
-onnxruntime
-onnxscript
-numpy
-scikit-learn
-imageio-ffmpeg
+# Training dependencies: the offline PyTorch CLI under training/. Dev box only,
+# never installed on the Pi (see docs/pipeline.md's two-venv rule).
+#
+# Pinned exactly, same reasoning as requirements.txt.
+#
+# Resolved against Python 3.12 on the dev box. This venv is a DIFFERENT Python
+# from the runtime venv (3.14) and that is deliberate: torch's wheel coverage
+# lags, and the runtime venv has to stay on whatever the deployment target
+# supports.
+#
+# CUDA: bare `torch` pulls the default CUDA build, which on Linux means ~15
+# nvidia_* packages and several GB. That is correct for this box (RTX 3060) and
+# wrong for CI. Use requirements-train-cpu.txt there.
+#
+# onnxscript is REQUIRED, not optional: torch 2.14's exporter imports it even
+# on the legacy dynamo=False path that training/export_onnx.py pins. It was
+# declared but not installed for some time, which made export_onnx.py fail with
+# a bare ModuleNotFoundError.
+torch==2.14.0
+torchvision==0.29.0
+timm==1.0.29
+onnx==1.22.0
+onnxscript==0.7.2
+onnxruntime==1.29.0
+numpy==2.5.3
+scikit-learn==1.9.0
+imageio-ffmpeg==0.6.0

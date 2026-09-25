@@ -6,6 +6,8 @@ Usage (from server_py/, using the training venv):
 import argparse
 import json
 import math
+import os
+import random
 import sys
 from pathlib import Path
 
@@ -28,6 +30,42 @@ EPOCHS = 100
 PATIENCE = 10
 BATCH_SIZE = 16
 LEARNING_RATE = 0.0003
+SEED = 0
+
+
+def seed_everything(seed: int) -> torch.Generator:
+    """Make a run reproducible, and return the generator to hand to DataLoader.
+
+    Without this, two runs of train.py on identical cached embeddings give
+    different numbers: head weight init, dropout, and DataLoader shuffling all
+    draw from unseeded global RNGs. That makes "the retrain is 2 points worse"
+    unreadable, because a 2-point gap is inside the run-to-run spread and there
+    was no way to tell the two apart.
+
+    PYTHONHASHSEED is set for completeness; it only binds in a subprocess, so
+    it matters for the DataLoader workers rather than this process.
+    """
+    os.environ["PYTHONHASHSEED"] = str(seed)
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    # cuDNN picks convolution algorithms by benchmarking unless told not to,
+    # and the winner can differ between runs on the same hardware. No-op on
+    # CPU, which is where this currently trains.
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    generator = torch.Generator()
+    generator.manual_seed(seed)
+    return generator
+
+
+def seed_worker(worker_id: int) -> None:
+    """DataLoader workers are forked with their own RNG state; seed them from
+    torch's per-worker seed so num_workers > 0 stays reproducible too."""
+    worker_seed = torch.initial_seed() % 2**32
+    np.random.seed(worker_seed)
+    random.seed(worker_seed)
 
 
 def load_entries(manifest: dict, split: str) -> list[dict]:
@@ -95,7 +133,8 @@ def evaluate_head(head: nn.Module, val_entries: list[dict]):
     return acc, cm
 
 
-def train_one(window: int, unfreeze_note: str = "") -> dict:
+def train_one(window: int, unfreeze_note: str = "", seed: int = SEED) -> dict:
+    generator = seed_everything(seed)
     manifest = json.loads(MANIFEST_PATH.read_text())
     train_entries_full = load_entries(manifest, "train")
     val_entries_full = load_entries(manifest, "val")
@@ -126,7 +165,13 @@ def train_one(window: int, unfreeze_note: str = "") -> dict:
         )
 
     train_ds = WindowDataset(train_entries)
-    train_loader = DataLoader(train_ds, batch_size=BATCH_SIZE, shuffle=True)
+    train_loader = DataLoader(
+        train_ds,
+        batch_size=BATCH_SIZE,
+        shuffle=True,
+        generator=generator,
+        worker_init_fn=seed_worker,
+    )
 
     weights = class_weights(train_entries_full)
     print(f"Class weights: {dict(zip(LABELS, weights.tolist()))}")
@@ -211,6 +256,7 @@ def train_one(window: int, unfreeze_note: str = "") -> dict:
 
     return {
         "window": window,
+        "seed": seed,
         "unfreeze_note": unfreeze_note,
         "head": head,
         "val_acc": val_acc,
@@ -224,10 +270,12 @@ def train_one(window: int, unfreeze_note: str = "") -> dict:
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--window", type=int, default=8)
+    parser.add_argument("--seed", type=int, default=SEED,
+                        help="RNG seed for weight init, dropout, and batch order")
     args = parser.parse_args()
 
-    result = train_one(args.window)
-    print(f"\nVal accuracy (window={result['window']}): {result['val_acc']*100:.1f}%")
+    result = train_one(args.window, seed=args.seed)
+    print(f"\nVal accuracy (window={result['window']}, seed={result['seed']}): {result['val_acc']*100:.1f}%")
     print("Per-class precision/recall:")
     for label, r in result["per_class"].items():
         print(f"  {label:10s} precision={r['precision']*100:5.1f}%  recall={r['recall']*100:5.1f}%  support={r['support']}")
@@ -239,7 +287,7 @@ def main():
     MODELS_DIR.mkdir(exist_ok=True)
     torch.save(result["head"].state_dict(), MODELS_DIR / "head_state.pt")
     (MODELS_DIR / "train_result.json").write_text(json.dumps({
-        "window": result["window"], "val_acc": result["val_acc"],
+        "window": result["window"], "seed": result["seed"], "val_acc": result["val_acc"],
         "confusion_matrix": result["confusion_matrix"], "per_class": result["per_class"],
     }, indent=2))
     print(f"\nSaved head weights to {MODELS_DIR / 'head_state.pt'}")

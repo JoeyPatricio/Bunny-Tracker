@@ -6,7 +6,7 @@ bought, no sensors ordered, no code written. This is a plan.
 Rewritten 2026-07-24 for the Python backend. The previous version assumed the
 Node/Express server and the browser-trained TensorFlow.js MobileNetV2
 classifier, both of which were deleted in the Node-to-Python port (see
-`notes/architecture.md`). Every assumption about runtimes, dependencies, and
+`docs/provenance.md, architecture.md`). Every assumption about runtimes, dependencies, and
 inference speed below has been re-derived against the code that exists now.
 
 ## Goal
@@ -39,7 +39,7 @@ start any time, though it gets a better latency section after Phase A.
 
 - **No classifier improvement work.** The deployed model is currently less
   accurate than the tfjs one it replaced (61.5% vs 74.4% held out,
-  `notes/architecture.md` debt item 1). That is a data-volume problem waiting
+  `docs/provenance.md, architecture.md` debt item 1). That is a data-volume problem waiting
   on more labeled clips, it is tracked there, and it does not block or change
   anything in this plan. The Pi runs whatever ONNX artifacts exist at
   migration time. Phase C runs *measurement* experiments (repeated splits,
@@ -84,7 +84,7 @@ start any time, though it gets a better latency section after Phase A.
   optional: onnxruntime ships aarch64 wheels and no armhf ones, so a 32-bit
   install means building it from source. Bookworm's default Python is 3.11.2,
   which matches onnxruntime's cp311 wheel exactly (researched in
-  `notes/environment.md`, not yet confirmed on hardware).
+  `docs/pipeline.md`, not yet confirmed on hardware).
 - **Inference is ONNX Runtime on the CPU execution provider**, running
   `server_py/models/backbone_int8.onnx` and `head.onnx`. No torch on the Pi,
   ever: `requirements.txt` is the runtime list and deliberately excludes it.
@@ -103,7 +103,7 @@ start any time, though it gets a better latency section after Phase A.
   Node runtime to supervise two Python processes and cloudflared. systemd is
   already running on Bookworm, handles restart-on-failure and boot ordering
   natively, and drops pm2's documented footgun where `pm2 stop` is treated as
-  a crash and relaunches the process (`notes/environment.md`). Cost: unit
+  a crash and relaunches the process (`docs/pipeline.md`). Cost: unit
   files instead of `ecosystem.config.cjs`, and `journalctl -u` instead of
   `pm2 logs`. If n8n stays and Node is on the box anyway, `pm2` remains a
   defensible fallback, but do not install Node solely to keep it.
@@ -215,7 +215,7 @@ tfjs deps" item are both already resolved: `FFMPEG_PATH` is honored in
   agent unit needs `TimeoutStopSec` long enough for its graceful ffmpeg
   shutdown (10s is plenty) so systemd does not SIGKILL it and orphan ffmpeg,
   which is the Linux version of the camera-lock problem documented in
-  `notes/environment.md`.
+  `docs/pipeline.md`.
 
 **Verify:** on Windows, `pm2 restart all`, dashboard loads, agent log shows
 normal frame lines with unchanged motion values. Nothing regressed.
@@ -313,7 +313,7 @@ credentials from the PC's n8n UI, and copy the `encryptionKey` from the PC's
 `~/.n8n/config` (without it, imported credentials cannot decrypt). Run it
 under systemd with the same env block the ecosystem file uses, and fix
 `N8N_RESTRICT_FILE_ACCESS_TO`, which still points at the pre-rename
-`Desktop\PetCam\server\recordings` path (`notes/architecture.md` debt item 4)
+`Desktop\PetCam\server\recordings` path (`docs/provenance.md, architecture.md` debt item 4)
 and would be wrong on the Pi regardless.
 
 **Verify:** force a motion event; either n8n's execution log shows a run, or
@@ -412,7 +412,7 @@ n8n webhook with a `type: "water"` field if it survived step 7, otherwise the
 Put the cooldown logic in one gate function that every water alert consults,
 the way `notify.py`'s `alert_gate()` already does for behavior alerts. Two
 parallel paths with their own cooldown copies is the exact bug the behavior
-alerts had (`notes/fixes.md` 4.2, fixed during the port).
+alerts had (`docs/provenance.md, fixes.md` 4.2, fixed during the port).
 
 **Verify:** temporarily set `LOW_LEVEL_G` above the current level and
 `TEMP_WARN_C` below room temperature; exactly one email arrives for each, and
@@ -555,8 +555,8 @@ Structure, with the sections that actually matter for this paper called out:
   single end-to-end graph over a sliding window would re-run the backbone N
   times per step for embeddings it computed a moment ago. The classical motion
   gate in front of the network, and why a hand-built detector still earns its
-  place next to a CNN. This section writes itself out of `notes/learning.md`
-  and `notes/architecture.md`.
+  place next to a CNN. This section writes itself out of `docs/provenance.md`
+  and `docs/provenance.md, architecture.md`.
 - **Dataset.** 184 clips, 5 behaviors, one camera, one room, two rabbits,
   clip-level labels, class imbalance dominated by "normal". State the
   collection process honestly, including that high-motion low-confidence clips
@@ -608,7 +608,7 @@ recordings, run the documented command, and get the paper's headline numbers.
 ## Risks
 
 1. **onnxruntime does not install cleanly on the Pi.** The aarch64 wheel story
-   is desk research, not a device test (`notes/environment.md`). Step 2 checks
+   is desk research, not a device test (`docs/pipeline.md`). Step 2 checks
    it before anything is migrated, and it is a five-minute check. If the wheel
    is missing for the installed Python version, the escape hatch is a
    different Python minor version via pyenv or deadsnakes, not a source build.

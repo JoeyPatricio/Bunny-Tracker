@@ -3,7 +3,7 @@
 Every filesystem call here goes through asyncio.to_thread. Uvicorn runs one
 event loop, so a synchronous copy or a directory walk on it blocks the MJPEG
 generator in routers/stream.py and every other in-flight request for its whole
-duration (fixes.md 3.1).
+duration (docs/provenance.md, fixes.md 3.1).
 """
 import asyncio
 import os

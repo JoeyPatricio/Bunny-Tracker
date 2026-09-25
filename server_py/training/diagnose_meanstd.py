@@ -39,7 +39,11 @@ def mean_std_features(embeddings: np.ndarray) -> np.ndarray:
 
 
 class MeanStdClassifier(nn.Module):
-    def __init__(self, input_dim=2560, num_classes=5):
+    # num_classes is derived from the ethogram, never a literal: a hardcoded 5
+    # here survived the v2 migration and would have built a 5-wide output
+    # against 7-class targets, which CrossEntropyLoss reports as an opaque
+    # index error rather than as "your class count is stale".
+    def __init__(self, input_dim=2560, num_classes=len(LABELS)):
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(input_dim, 256), nn.ReLU(), nn.Dropout(0.4),

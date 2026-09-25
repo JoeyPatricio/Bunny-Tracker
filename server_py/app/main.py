@@ -9,6 +9,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from slowapi.errors import RateLimitExceeded
 
 from app import auth
+from shared.labels import NON_HIGHLIGHT
 from app.config import (
     ALLOWED_ORIGINS,
     CLIENT_DIST_DIR,
@@ -85,7 +86,7 @@ async def get_recording(filename: str, request: Request):
         label = labels_map.get(filename)
         # A hidden clip must not be reachable by guessing its URL, or "hide
         # from the demo" would only hide it from the listing.
-        if not label or label == "normal" or filename in hidden:
+        if not label or label in NON_HIGHLIGHT or filename in hidden:
             return JSONResponse(status_code=403, content={"error": "Private. Log in to view this clip."})
     target = RECORDINGS_DIR / filename
     if not target.is_file():
@@ -146,8 +147,23 @@ async def spa_fallback(full_path: str):
         root = CLIENT_DIST_DIR.resolve()
         candidate = (CLIENT_DIST_DIR / full_path).resolve()
         if (candidate == root or root in candidate.parents) and candidate.is_file():
-            return FileResponse(candidate)
-    return FileResponse(CLIENT_DIST_DIR / "index.html")
+            # Vite content-hashes everything under assets/, so those filenames
+            # only change when the bytes do and can be cached hard.
+            if full_path.startswith("assets/"):
+                return FileResponse(
+                    candidate,
+                    headers={"Cache-Control": "public, max-age=31536000, immutable"},
+                )
+            return FileResponse(candidate, headers={"Cache-Control": "no-cache"})
+    # index.html names the hashed bundle, so a stale copy pins the browser to
+    # an old build. FileResponse sends no Cache-Control of its own, which lets
+    # the browser cache heuristically off Last-Modified and serve a stale page
+    # without revalidating — a rebuilt client then never reaches an open tab.
+    # no-cache still allows the ETag revalidation, it just forbids blind reuse.
+    return FileResponse(
+        CLIENT_DIST_DIR / "index.html",
+        headers={"Cache-Control": "no-cache, must-revalidate"},
+    )
 
 
 _backup_task = None

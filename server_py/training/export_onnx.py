@@ -1,6 +1,6 @@
 """Export the frozen backbone + trained head to ONNX, then int8-quantize the
 backbone (the expensive half) with a calibration set of real frames.
-Section 3.4 of python-port-plan.md.
+Section 3.4 of docs/provenance.md, python-port-plan.md.
 
 Usage (from server_py/, training venv):
     .venv-train/Scripts/python.exe -m training.export_onnx
@@ -17,6 +17,7 @@ from onnxruntime.quantization import CalibrationDataReader, QuantType, quantize_
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from shared.frames import extract_frames, normalize
+from shared.labels import LABELS
 from training.model import EMBEDDING_DIM, TemporalHead, build_backbone
 
 ROOT = Path(__file__).resolve().parent.parent.parent  # BunnyTracker/
@@ -40,27 +41,52 @@ def export_backbone(window: int) -> None:
         input_names=["pixel_values"], output_names=["embedding"],
         dynamic_axes={"pixel_values": {0: "batch"}, "embedding": {0: "batch"}},
         opset_version=17,
+        dynamo=False,  # see export_head() for why this is pinned
     )
     print(f"Exported {BACKBONE_FP32}")
 
 
 def export_head(window: int) -> None:
     head = TemporalHead()
+    # Deliberately strict. After an ethogram change the checkpoint on disk has
+    # the old class count and this raises a size mismatch naming both shapes.
+    # strict=False would "succeed" by silently leaving the final layer at its
+    # random init, exporting a model that predicts noise with full confidence.
+    # Failing here is the correct outcome until a retrain lands.
     head.load_state_dict(torch.load(HEAD_STATE_PATH, weights_only=True))
     head.eval()
     dummy = torch.randn(1, window, EMBEDDING_DIM)
+    # dynamo=False pins the legacy TorchScript exporter. torch 2.14 defaults
+    # to dynamo=True, which on this model does two unwanted things: it rejects
+    # a dynamic `window` axis outright ("tracing inferred a static shape of 8"),
+    # and with a batch-1 example input it specializes the batch axis to a
+    # literal 1. That is where the deployed head.onnx's static [1, 5] output
+    # came from, and a statically-batched head cannot be evaluated in batches.
+    # Verified: legacy gives embeddings ['batch','window',1280] -> logits
+    # ['batch', len(LABELS)]. tests/test_export_guards.py asserts it.
     torch.onnx.export(
         head, dummy, str(HEAD_ONNX),
         input_names=["embeddings"], output_names=["logits"],
         dynamic_axes={"embeddings": {0: "batch", 1: "window"}, "logits": {0: "batch"}},
         opset_version=17,
+        dynamo=False,
     )
     print(f"Exported {HEAD_ONNX}")
 
 
 def pick_calibration_frames(seed: int = 0) -> list[np.ndarray]:
     labels = json.loads(LABELS_JSON.read_text())
-    filenames = list(labels.keys())
+    # Filter on LABELS, the way extract_frames.py and calibrate_gate.py both
+    # do. `out_of_view` is a valid label but not a model class, and calibrating
+    # int8 activation ranges on footage with no rabbit in it means the quantized
+    # backbone's dynamic range is partly set by frames the model will never be
+    # asked to classify.
+    filenames = [fn for fn, label in labels.items() if label in LABELS]
+    if not filenames:
+        raise SystemExit(
+            f"No clips with a model-class label in {LABELS_JSON}. int8 "
+            f"calibration needs real footage; label some clips first."
+        )
     random.Random(seed).shuffle(filenames)
     frames = []
     for fn in filenames[:CALIBRATION_CLIPS]:
@@ -102,7 +128,6 @@ def quantize_backbone() -> None:
 
 
 def main():
-    manifest = json.loads((MODELS_DIR / "cache" / "manifest.json").read_text())
     train_result = json.loads((MODELS_DIR / "train_result.json").read_text())
     window = train_result["window"]
 

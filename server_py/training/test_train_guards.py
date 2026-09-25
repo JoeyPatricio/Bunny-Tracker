@@ -1,7 +1,7 @@
-"""Regression gate for notes/fixes.md installment 5.
+"""Regression gate for docs/provenance.md, fixes.md, installment 5.
 
 Lives here rather than under tests/ because it needs torch, which only exists
-in .venv-train (see environment.md's two-environments note). Everything under
+in .venv-train (see docs/pipeline.md docs/pipeline.md's two-environments note). Everything under
 tests/ must stay runnable on the runtime venv.
 
 Each check drives train.py's guards with deliberately degenerate inputs and
@@ -62,7 +62,7 @@ def fake_entry(frames: int = 8, dim: int = 1280, label: str | None = None) -> di
 
 
 def test_empty_val_split() -> None:
-    """fixes.md 5.1: an empty val split used to be a ZeroDivisionError."""
+    """docs/provenance.md, fixes.md 5.1: an empty val split used to be a ZeroDivisionError."""
     manifest = {"window": 8, "train": [], "val": []}
 
     def run():
@@ -98,7 +98,7 @@ def test_evaluate_head_rejects_empty() -> None:
 
 
 def test_nan_val_loss_fails_fast() -> None:
-    """fixes.md 5.1: NaN every epoch left best_state None -> TypeError at the end."""
+    """docs/provenance.md, fixes.md 5.1: NaN every epoch left best_state None -> TypeError at the end."""
     manifest = {"window": 8, "train": [], "val": []}
     entries = [fake_entry(label=lbl) for lbl in LABELS]
 
