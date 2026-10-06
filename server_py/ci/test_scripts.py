@@ -50,6 +50,7 @@ SCRIPTS = [
     ("tests/test_server_robustness.py", "runtime"),
     ("training/test_export_guards.py", "train"),
     ("training/test_train_guards.py", "train"),
+    ("training/test_splits_metrics.py", "train"),
 ]
 
 

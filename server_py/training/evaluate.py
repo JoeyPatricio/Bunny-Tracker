@@ -23,6 +23,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from shared.frames import extract_frames, normalize
 from shared.labels import LABELS
+from training.metrics import confusion_matrix, per_class_report
 
 ROOT = Path(__file__).resolve().parent.parent.parent  # BunnyTracker/
 RECORDINGS_DIR = ROOT / "server" / "recordings"
@@ -32,27 +33,6 @@ MODELS_DIR = Path(__file__).resolve().parent.parent / "models"
 # depthwise-convolution collapse export_onnx.py's per_channel=True guards
 # against.
 INT8_TOLERANCE = 0.03
-
-
-def confusion_matrix(true_ids, pred_ids) -> np.ndarray:
-    cm = np.zeros((len(LABELS), len(LABELS)), dtype=int)
-    for t, p in zip(true_ids, pred_ids, strict=True):
-        cm[t, p] += 1
-    return cm
-
-
-def per_class_report(cm: np.ndarray) -> dict:
-    report = {}
-    for k, label in enumerate(LABELS):
-        tp = cm[k, k]
-        support = cm[k].sum()
-        pred_total = cm[:, k].sum()
-        report[label] = {
-            "precision": tp / pred_total if pred_total else 0.0,
-            "recall": tp / support if support else 0.0,
-            "support": int(support),
-        }
-    return report
 
 
 def run_onnx_pipeline(val_clips: list[dict], backbone_path: Path, head_path: Path,

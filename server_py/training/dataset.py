@@ -4,13 +4,13 @@ Ported from client/src/components/TrainingStudio.jsx's groupKey/splitByGroup
 (section 3.3: "reproduce the good parts... fix its known problems").
 """
 import random
-import re
 
 import numpy as np
 import torch
 from torch.utils.data import Dataset
 
 from shared.labels import LABELS
+from training.splits import group_key
 
 WINDOW = 8          # frames per training/eval window (matches the current model's FRAMES_PER_CLIP)
 TRAIN_FRAMES = 16    # frames extracted per training clip, to allow sliding windows
@@ -18,26 +18,12 @@ TRAIN_WINDOW_STARTS = [0, 4, 8]  # sliding-window starts over TRAIN_FRAMES=16, w
 AUG_COPIES = 2       # matches the JS trainer: original + mirror + (AUG_COPIES - 1) jittered
 
 
-def group_key(filename: str) -> str:
-    """Source-group key for a clip — line-for-line port of groupKey() in
-    TrainingStudio.jsx. Clips cut from the same source video/session share
-    scene, lighting, and rabbit; letting them straddle train/val would measure
-    "have I seen this video" instead of generalization.
-    """
-    m = re.search(r"(\d{4}-\d{2}-\d{2}T\d{2})", filename)
-    if m:
-        return m.group(1)
-    m = re.match(r"^recording-([a-z]+)-src(\d+)", filename, re.IGNORECASE)
-    if m:
-        return f"{m.group(1)}-src{m.group(2)}"
-    m = re.match(r"^recording-([a-z]+)-([a-z]+)", filename, re.IGNORECASE)
-    if m:
-        return f"{m.group(1)}-{m.group(2)}"
-    return filename
-
-
 def split_by_group(clips: list[tuple[str, str]], val_fraction: float = 0.2, seed: int = 0):
-    """Group-aware stratified split at the clip level. Port of splitByGroup()."""
+    """Group-aware stratified split at the clip level. Port of splitByGroup().
+
+    Legacy: the single train/val split that every pre-Phase-3 number came from.
+    training/splits.py's nested grouped CV replaces it as the evaluation design.
+    """
     targets = [LABELS.index(label) for _, label in clips]
     class_total = [0] * len(LABELS)
     for t in targets:

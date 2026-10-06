@@ -20,6 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from shared.labels import LABELS
 from training.dataset import WindowDataset, class_weights
+from training.metrics import confusion_matrix, per_class_report
 from training.model import TemporalHead
 
 CACHE_DIR = Path(__file__).resolve().parent.parent / "models" / "cache"
@@ -89,25 +90,6 @@ def restrict_window(entries: list[dict], window: int) -> list[dict]:
             windows = [(s, s + window) for s in starts]
         out.append({**e, "windows": windows})
     return out
-
-
-def confusion_matrix(true_ids: list[int], pred_ids: list[int]) -> np.ndarray:
-    cm = np.zeros((len(LABELS), len(LABELS)), dtype=int)
-    for t, p in zip(true_ids, pred_ids, strict=True):
-        cm[t, p] += 1
-    return cm
-
-
-def per_class_report(cm: np.ndarray) -> dict:
-    report = {}
-    for k, label in enumerate(LABELS):
-        tp = cm[k, k]
-        support = cm[k].sum()
-        pred_total = cm[:, k].sum()
-        precision = tp / pred_total if pred_total else 0.0
-        recall = tp / support if support else 0.0
-        report[label] = {"precision": precision, "recall": recall, "support": int(support)}
-    return report
 
 
 @torch.no_grad()
