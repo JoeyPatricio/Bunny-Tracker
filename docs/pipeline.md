@@ -132,10 +132,30 @@ loads is touched.
 $TRAIN -m training.export_onnx
 ```
 
-**5. Evaluate (being rewritten: deployment gates G1-G7).** Today it reports
-fp32 and int8 accuracy on the legacy split's val clips and writes
-`models/quant_result.json`; the rewrite evaluates `models/candidate/` and
-writes `models/candidate/gate_result.json`, which promote requires.
+**5. Evaluate the candidate: the deployment gate.** Reads
+`models/candidate/`, `head_state.pt`, `train_result.json`, `cv_result.json`,
+`promoted.json` (if any) and the cache's eval frames. Writes
+`models/candidate/gate_result.json`, which promote requires, plus
+`candidate/quant_result.json`. Refuses to run on a candidate whose files no
+longer match its manifest, and exits 1 if any gate fails.
+
+| Gate | Fails when |
+|---|---|
+| G1 | `head.onnx`'s output width is not `len(LABELS)` |
+| G2 | the head at batch 3, or either backbone at batch 2, does not return one row per input equal to running that input alone (1e-5) |
+| G3 | the ONNX head's logits differ from the torch head's (`head_state.pt`) by more than 1e-4 on any cached eval embedding |
+| G4 | the int8 pipeline's macro-F1 is more than 0.03 below the fp32 pipeline's |
+| G5 | the int8 pipeline predicts one class for every clip |
+| G6 | `gru` does not strictly beat `static_logreg` on pooled OOF macro-F1 in `cv_result.json`, or that file was computed on different labels or a different CV run than the head |
+| G7 | the candidate's OOF macro-F1 is below the deployed model's by more than one sd of its per-fold macro-F1 |
+
+G4 and G5 run every cached clip's eval sample through the pipeline. The
+`--all-clips` model trained on all of them, so those macro-F1s are in-sample
+and are not results; only the fp32-to-int8 difference is the gate. G6 reports
+the corrected paired p-value but does not require significance. G7 passes with
+"no deployed baseline" on a first promote, and does not compare across
+ethogram versions. `training/evaluate.py`'s docstring has the reasoning for
+each choice.
 
 ```bash
 $TRAIN -m training.evaluate
@@ -153,8 +173,10 @@ model at startup.
 $RUN -m training.promote [--force "reason"]
 ```
 
-**7. Verify runtime parity.** Confirms `inference/predictor.py`'s ring-buffer
-path reproduces the export's fp32 number exactly.
+**7. Verify runtime parity.** Against the promoted `models/`, runs every
+cached eval sample through the int8 backbone and head two ways, batched and
+through `inference/predictor.py`'s ring buffer one frame at a time as the
+agent does, and requires per-clip probabilities to match within 1e-5.
 
 ```bash
 $TRAIN -m training.verify_predictor_parity

@@ -1,15 +1,26 @@
-"""Confirms inference/predictor.py reproduces evaluate.py's numbers on the
-same held-out clips (Phase 1 step 4: the training-eval-path vs
-runtime-inference-path parity check).
+"""Confirms inference/predictor.py reproduces the batched ONNX pipeline (the
+training-eval-path vs runtime-inference-path parity check).
 
-Runs the exact same ONNX float32 pipeline evaluate.py's run_onnx_pipeline()
-uses (backbone_fp32.onnx over freshly-extracted frames, then head.onnx), but
-through inference/predictor.py's ring-buffer abstraction instead of a flat
-loop, and checks the result matches evaluate.py's onnx_fp32_acc exactly.
+Runs after promote, against what is actually deployed in models/. For every
+cached clip's eval sample (frames/<clip>.eval<W>.npy, the frames crossval.py
+and evaluate.py's G4 use), it computes class probabilities two ways:
 
-Usage (from server_py/, training venv, after evaluate.py has run):
-    .venv-train/Scripts/python.exe -m training.verify_predictor_parity
+  flat      the int8 backbone over all W frames in one batch, then head.onnx
+  runtime   inference/predictor.py's ring buffer, fed one frame at a time,
+            exactly as the agent does
+
+and requires every clip's probabilities to match within 1e-5 and the argmax
+to agree. This used to compare one accuracy against evaluate.py's
+quant_result.json; two pipelines can reach the same accuracy while predicting
+different clips, so per-clip probabilities are the stronger check, and it no
+longer depends on a file from another step.
+
+Needs a schema-2 cache with an eval sample for the deployed window.
+
+Usage (from server_py/, training venv, after promote):
+    .venv-train/bin/python -m training.verify_predictor_parity [--models-dir DIR] [--cache-dir DIR]
 """
+import argparse
 import json
 import sys
 from pathlib import Path
@@ -21,52 +32,64 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from inference.backbone import Backbone
 from inference.predictor import Predictor
 from inference.temporal_head import TemporalHead
-from shared.frames import extract_frames, normalize
+from shared.frames import normalize
 from shared.labels import LABELS
-from training.cache import legacy_split_indices, load_manifest
+from training.cache import DEFAULT_CACHE_DIR, load_manifest
 
-ROOT = Path(__file__).resolve().parent.parent.parent  # BunnyTracker/
-RECORDINGS_DIR = ROOT / "server" / "recordings"
 MODELS_DIR = Path(__file__).resolve().parent.parent / "models"
+TOLERANCE = 1e-5
+
+
+def _softmax(logits: np.ndarray) -> np.ndarray:
+    z = logits - logits.max()
+    e = np.exp(z)
+    return e / e.sum()
 
 
 def main():
-    manifest = load_manifest()
-    # Schema 2 has no stored val list. Rebuild the legacy split's val clips,
-    # which is exactly the set evaluate.py measured onnx_fp32_acc on, so the
-    # two numbers are over the same clips. When evaluate.py moves to folds,
-    # this has to follow it to the same clip set.
-    val_entries = [manifest["clips"][i] for i in legacy_split_indices(manifest)[1]]
-    window = manifest["window"]
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--models-dir", type=Path, default=MODELS_DIR)
+    parser.add_argument("--cache-dir", type=Path, default=DEFAULT_CACHE_DIR)
+    args = parser.parse_args()
 
-    backbone = Backbone(str(MODELS_DIR / "backbone_fp32.onnx"))
-    head = TemporalHead(str(MODELS_DIR / "head.onnx"))
+    manifest = load_manifest(args.cache_dir)
+    promoted = args.models_dir / "promoted.json"
+    window = None
+    if promoted.is_file():
+        window = (json.loads(promoted.read_text()).get("manifest") or {}).get("window")
+    window = int(window or manifest["window"])
 
-    true_ids, pred_ids = [], []
-    for e in val_entries:
-        path = RECORDINGS_DIR / e["filename"]
-        frames = extract_frames(str(path), n=window)
+    backbone = Backbone(str(args.models_dir / "backbone_int8.onnx"))
+    head = TemporalHead(str(args.models_dir / "head.onnx"))
+
+    worst, disagree, n = 0.0, [], 0
+    for clip in manifest["clips"]:
+        if clip["label"] not in LABELS:
+            continue
+        frames = np.load(args.cache_dir / "frames" / clip["eval"][str(window)])
+        pixels = np.stack([normalize(f) for f in frames]).astype(np.float32)
+        flat_logits = head.session.run(None, {"embeddings": backbone.embed(pixels)[np.newaxis]})[0][0]
+        flat = _softmax(flat_logits)
+
         predictor = Predictor(backbone=backbone, head=head, window=window)
-        probs = None
-        for f in frames:
-            probs = predictor.push_frame(normalize(f))
-        pred = int(np.argmax(probs))
-        true_ids.append(LABELS.index(e["label"]))
-        pred_ids.append(pred)
+        runtime = None
+        for p in pixels:
+            runtime = predictor.push_frame(p)
+        runtime = np.asarray(runtime)
 
-    acc = sum(t == p for t, p in zip(true_ids, pred_ids, strict=True)) / len(true_ids)
+        worst = max(worst, float(np.abs(flat - runtime).max()))
+        if int(flat.argmax()) != int(runtime.argmax()):
+            disagree.append(clip["filename"])
+        n += 1
 
-    # evaluate.py writes quant_result.json. gate_result.json is the retired
-    # JS-baseline gate's file and is no longer produced.
-    quant_result = json.loads((MODELS_DIR / "quant_result.json").read_text())
-    onnx_fp32_acc = quant_result["onnx_fp32_acc"]
-    match = np.isclose(acc, onnx_fp32_acc, atol=1e-9)
-
-    print(f"predictor.py (ring buffer) accuracy on val set: {acc*100:.1f}%")
-    print(f"evaluate.py ONNX float32 accuracy (same backbone.onnx + head.onnx): {onnx_fp32_acc*100:.1f}%")
-    print(f"{'MATCH' if match else 'MISMATCH'} — predictor.py {'reproduces' if match else 'does NOT reproduce'} evaluate.py's numbers")
-
-    if not match:
+    ok = worst <= TOLERANCE and not disagree
+    print(f"{n} clips, window {window}: max |flat - predictor| probability {worst:.2e} "
+          f"(tolerance {TOLERANCE:g}), argmax disagreements {len(disagree)}")
+    for fn in disagree[:10]:
+        print(f"  disagree: {fn}")
+    print("MATCH: predictor.py reproduces the batched pipeline" if ok
+          else "MISMATCH: predictor.py does NOT reproduce the batched pipeline")
+    if not ok:
         sys.exit(1)
 
 
