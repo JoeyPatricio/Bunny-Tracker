@@ -1,5 +1,5 @@
 """Confirms inference/predictor.py reproduces evaluate.py's numbers on the
-same held-out windows (Phase 1 step 4: the training-eval-path vs
+same held-out clips (Phase 1 step 4: the training-eval-path vs
 runtime-inference-path parity check).
 
 Runs the exact same ONNX float32 pipeline evaluate.py's run_onnx_pipeline()
@@ -23,6 +23,7 @@ from inference.predictor import Predictor
 from inference.temporal_head import TemporalHead
 from shared.frames import extract_frames, normalize
 from shared.labels import LABELS
+from training.cache import legacy_split_indices, load_manifest
 
 ROOT = Path(__file__).resolve().parent.parent.parent  # BunnyTracker/
 RECORDINGS_DIR = ROOT / "server" / "recordings"
@@ -30,8 +31,12 @@ MODELS_DIR = Path(__file__).resolve().parent.parent / "models"
 
 
 def main():
-    manifest = json.loads((MODELS_DIR / "cache" / "manifest.json").read_text())
-    val_entries = manifest["val"]
+    manifest = load_manifest()
+    # Schema 2 has no stored val list. Rebuild the legacy split's val clips,
+    # which is exactly the set evaluate.py measured onnx_fp32_acc on, so the
+    # two numbers are over the same clips. When evaluate.py moves to folds,
+    # this has to follow it to the same clip set.
+    val_entries = [manifest["clips"][i] for i in legacy_split_indices(manifest)[1]]
     window = manifest["window"]
 
     backbone = Backbone(str(MODELS_DIR / "backbone_fp32.onnx"))
@@ -51,8 +56,10 @@ def main():
 
     acc = sum(t == p for t, p in zip(true_ids, pred_ids, strict=True)) / len(true_ids)
 
-    gate_result = json.loads((MODELS_DIR / "gate_result.json").read_text())
-    onnx_fp32_acc = gate_result["onnx_fp32_acc"]
+    # evaluate.py writes quant_result.json. gate_result.json is the retired
+    # JS-baseline gate's file and is no longer produced.
+    quant_result = json.loads((MODELS_DIR / "quant_result.json").read_text())
+    onnx_fp32_acc = quant_result["onnx_fp32_acc"]
     match = np.isclose(acc, onnx_fp32_acc, atol=1e-9)
 
     print(f"predictor.py (ring buffer) accuracy on val set: {acc*100:.1f}%")

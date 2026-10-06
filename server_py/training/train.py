@@ -19,11 +19,12 @@ from torch.utils.data import DataLoader
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from shared.labels import LABELS
+from training.cache import DEFAULT_CACHE_DIR, legacy_split_indices, split_entries
 from training.dataset import WindowDataset, class_weights
 from training.metrics import confusion_matrix, per_class_report
 from training.model import TemporalHead
 
-CACHE_DIR = Path(__file__).resolve().parent.parent / "models" / "cache"
+CACHE_DIR = DEFAULT_CACHE_DIR
 MANIFEST_PATH = CACHE_DIR / "manifest.json"
 MODELS_DIR = Path(__file__).resolve().parent.parent / "models"
 
@@ -70,11 +71,19 @@ def seed_worker(worker_id: int) -> None:
 
 
 def load_entries(manifest: dict, split: str) -> list[dict]:
-    entries = []
-    for e in manifest[split]:
-        emb = np.load(CACHE_DIR / e["embeddings"])
-        entries.append({"embeddings": emb, "label": e["label"], "windows": [tuple(w) for w in e["windows"]]})
-    return entries
+    """Entries for "train" or "val" (or "val<W>" for another window length) of
+    the legacy single split, from the schema-2 cache.
+
+    Legacy: this is the one train/val split every pre-Phase-3 number came from,
+    rebuilt deterministically from manifest["clips"] with split_by_group. Its
+    val accuracy is a selection score. crossval.py replaces it as the source
+    of reported numbers.
+    """
+    train_idx, val_idx = legacy_split_indices(manifest)
+    window = int(split[3:]) if split.startswith("val") and split[3:] else None
+    train_entries, val_entries = split_entries(manifest, train_idx, val_idx, window=window,
+                                               cache_dir=CACHE_DIR)
+    return train_entries if split == "train" else val_entries
 
 
 def restrict_window(entries: list[dict], window: int) -> list[dict]:
@@ -122,12 +131,10 @@ def train_one(window: int, unfreeze_note: str = "", seed: int = SEED) -> dict:
     val_entries_full = load_entries(manifest, "val")
 
     train_entries = restrict_window(train_entries_full, window)
-    if window == manifest["window"]:
-        val_entries = val_entries_full
-    elif f"val{window}" in manifest:
-        val_entries = load_entries(manifest, f"val{window}")
-    else:
-        val_entries = restrict_window(val_entries_full, window)
+    # Eval clips at another window length come from that length's own eval
+    # sample (extract_frames.py --eval-windows), never a slice of this one:
+    # slicing would change which moments of the clip are evaluated.
+    val_entries = val_entries_full if window == manifest["window"] else load_entries(manifest, f"val{window}")
 
     # Check the splits before spending anything on them. An empty val split
     # otherwise surfaces as a ZeroDivisionError on the val_loss average at the

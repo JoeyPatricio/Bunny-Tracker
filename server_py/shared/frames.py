@@ -49,8 +49,13 @@ def sample_timestamps(duration: float, n: int, frac: float = 0.95) -> list[float
     return [(i / denom) * duration * frac for i in range(n)]
 
 
-def read_frame(path: str, timestamp: float, size: int = FRAME_SIZE) -> np.ndarray:
-    """Decode a single frame at `timestamp`, resized to size x size RGB, uint8 HWC."""
+def read_frame_single(path: str, timestamp: float, size: int = FRAME_SIZE) -> np.ndarray:
+    """Decode a single frame at `timestamp`, resized to size x size RGB, uint8 HWC.
+
+    One ffmpeg process per frame. This was the only decode path until Phase 3;
+    it stays as the reference that read_frames() is checked against
+    (training/check_decode_parity.py, training/test_cache_v2.py).
+    """
     cmd = [
         FFMPEG,
         "-ss", f"{timestamp:.3f}",
@@ -72,11 +77,82 @@ def read_frame(path: str, timestamp: float, size: int = FRAME_SIZE) -> np.ndarra
     return np.frombuffer(raw, dtype=np.uint8).reshape(size, size, 3)
 
 
-def extract_frames(path: str, n: int, size: int = FRAME_SIZE, frac: float = 0.95) -> list[np.ndarray]:
-    """n evenly-spaced frames from a clip, each uint8 HWC RGB at size x size."""
+def _ms(t: float) -> str:
+    # read_frame_single passes the seek target as "%.3f", so ffmpeg sees it
+    # rounded to the millisecond. Selecting on the identical string is what
+    # keeps the two paths picking the same frame.
+    return f"{t:.3f}"
+
+
+_SHOWINFO_RE = re.compile(r"\bn:\s*\d+\s+pts:\s*-?\d+\s+pts_time:(-?[0-9.e+-]+)")
+
+
+def read_frames(path: str, timestamps: list[float], size: int = FRAME_SIZE) -> list[np.ndarray]:
+    """Decode the frames at every timestamp in ONE ffmpeg process.
+
+    Byte-identical to [read_frame_single(path, t) for t in timestamps], about
+    8x faster. read_frame_single's accurate input seek (-ss before -i) returns
+    the first frame whose time is at or after the target. The select filter
+    below keeps exactly those frames: for each target T, the frame with
+    t >= T whose predecessor was < T (or which has no predecessor). Selection
+    happens before scale, the scale filter and pix_fmt are unchanged, and
+    swscale works per frame with no temporal state, so each selected frame
+    goes through the identical conversion. Two targets that land on the same
+    frame are both served by it, as the per-frame path would.
+
+    -fps_mode passthrough stops ffmpeg duplicating or dropping frames to hit a
+    constant output rate, and showinfo reports each selected frame's time so
+    targets can be mapped back to frames.
+    """
+    targets = [_ms(t) for t in timestamps]
+    terms = [f"gte(t\\,{t})*(isnan(prev_t)+lt(prev_t\\,{t}))" for t in sorted(set(targets), key=float)]
+    cmd = [
+        FFMPEG,
+        "-i", path,
+        "-vf", f"select='{'+'.join(terms)}',scale={size}:{size},showinfo",
+        "-fps_mode", "passthrough",
+        "-f", "rawvideo",
+        "-pix_fmt", "rgb24",
+        "-loglevel", "info",
+        "-nostats",
+        "pipe:1",
+    ]
+    proc = subprocess.run(cmd, capture_output=True)
+    frame_bytes = size * size * 3
+    times = [float(m.group(1)) for m in _SHOWINFO_RE.finditer(proc.stderr.decode(errors="replace"))]
+    raw = proc.stdout
+    if proc.returncode != 0 or len(raw) != len(times) * frame_bytes or not times:
+        raise ValueError(
+            f"decoding {path}: ffmpeg exit {proc.returncode}, {len(raw)} bytes for "
+            f"{len(times)} selected frame(s)"
+        )
+    frames = np.frombuffer(raw, dtype=np.uint8).reshape(len(times), size, size, 3)
+    out = []
+    for t in targets:
+        # Tolerance only for showinfo printing pts_time with limited digits.
+        idx = next((i for i, ft in enumerate(times) if ft >= float(t) - 1e-6), None)
+        if idx is None:
+            raise ValueError(f"no frame at or after {t}s in {path}")
+        out.append(frames[idx])
+    return out
+
+
+def extract_frames_single(path: str, n: int, size: int = FRAME_SIZE, frac: float = 0.95) -> list[np.ndarray]:
+    """The pre-Phase-3 extract_frames: one ffmpeg process per frame. Parity reference only."""
     duration = get_duration(path)
     timestamps = sample_timestamps(duration, n, frac)
-    return [read_frame(path, t, size) for t in timestamps]
+    return [read_frame_single(path, t, size) for t in timestamps]
+
+
+def extract_frames(path: str, n: int, size: int = FRAME_SIZE, frac: float = 0.95) -> list[np.ndarray]:
+    """n evenly-spaced frames from a clip, each uint8 HWC RGB at size x size.
+
+    Two ffmpeg processes per clip (duration probe, then read_frames), down from
+    n + 1. Byte-identical to extract_frames_single.
+    """
+    duration = get_duration(path)
+    timestamps = sample_timestamps(duration, n, frac)
+    return read_frames(path, timestamps, size)
 
 
 def normalize(frame: np.ndarray) -> np.ndarray:
