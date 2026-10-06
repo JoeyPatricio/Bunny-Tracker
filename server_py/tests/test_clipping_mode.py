@@ -17,6 +17,7 @@ import shutil
 import sys
 import tempfile
 import time
+from itertools import pairwise
 from pathlib import Path
 
 import numpy as np
@@ -27,19 +28,9 @@ from agent.capture import Agent, AgentDecisionLoop
 from app.lib import clip_budget
 from app.routers import monitor as mon
 from app.routers import recordings as rec
+from tests.checks import check, finish
 
 FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
-
-failures: list[str] = []
-
-
-def check(name: str, ok: bool, detail: str = "") -> None:
-    if ok:
-        print(f"  PASS  {name}")
-    else:
-        print(f"  FAIL  {name}{': ' + detail if detail else ''}")
-        failures.append(name)
-
 
 def fixture_frames() -> np.ndarray:
     return np.load(FIXTURES_DIR / "motion_fixture_frames.npy")
@@ -137,7 +128,7 @@ async def test_cooldown_is_respected() -> None:
 
     times = [i * 0.5 for i, d in enumerate(replay(loop, fixture_frames(), step=0.5))
              if d["action"] == "clip"]
-    gaps = [b - a for a, b in zip(times, times[1:])]
+    gaps = [b - a for a, b in pairwise(times)]
     check("clips are captured at all", len(times) >= 2, f"only {len(times)}")
     check("no clip lands inside the cooldown", all(g >= cooldown for g in gaps),
           f"gaps {gaps}")
@@ -542,7 +533,7 @@ async def test_sensitivity_maps_to_a_threshold() -> None:
     check("sensitivity 10 is the most sensitive",
           mon.threshold_for_sensitivity(10) == mon.SENSITIVITY_THRESHOLDS[-1])
     check("higher sensitivity always means a lower threshold",
-          all(a > b for a, b in zip(mon.SENSITIVITY_THRESHOLDS, mon.SENSITIVITY_THRESHOLDS[1:])))
+          all(a > b for a, b in pairwise(mon.SENSITIVITY_THRESHOLDS)))
     check("out-of-range values clamp rather than raise",
           mon.threshold_for_sensitivity(0) == mon.SENSITIVITY_THRESHOLDS[0]
           and mon.threshold_for_sensitivity(99) == mon.SENSITIVITY_THRESHOLDS[-1])
@@ -603,10 +594,7 @@ async def main_async() -> None:
 
 def main() -> None:
     asyncio.run(main_async())
-    if failures:
-        print(f"\nFAIL: {len(failures)} check(s) failed")
-        sys.exit(1)
-    print("\nPASS: all clipping mode checks passed")
+    finish("clipping mode")
 
 
 if __name__ == "__main__":

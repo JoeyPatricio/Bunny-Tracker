@@ -207,32 +207,33 @@ clip count gathered across several days is a far more useful dataset.
 
 ## Tests
 
-Plain scripts, not pytest. Run them from `server_py/` with the runtime venv:
+Plain check-scripts, with pytest as a runner over them rather than a rewrite.
+From `server_py/`:
+
+```bash
+uvx --from pytest==9.1.1 pytest                       # every script
+uvx --from pytest==9.1.1 pytest -m "not local_data"   # what CI runs
+uvx ruff check .
+```
+
+Each script also runs on its own, which is quicker when one is red. The
+runtime ones use `.venv`, the two training ones need torch and use
+`.venv-train`:
 
 ```bash
 .venv/bin/python tests/test_motion_parity.py
-.venv/bin/python tests/test_security_regressions.py
+.venv/bin/python tests/test_security_regressions.py   # needs client/dist/ built
 .venv/bin/python tests/test_server_robustness.py
 .venv/bin/python tests/test_capture_loop.py
 .venv/bin/python tests/test_clipping_mode.py
-.venv/bin/python agent/test_capture_offline.py
-```
-
-The two training tests need torch, so they run from the training venv:
-
-```bash
 .venv-train/bin/python training/test_train_guards.py
 .venv-train/bin/python training/test_export_guards.py
 ```
 
-There is no aggregate runner yet, so a failure in one script does not stop the
-others and you have to read all of them. One is added in Phase 1 of
-[docs/upgrade-plan.md](docs/upgrade-plan.md).
-
-`tests/test_server_robustness.py` has a timing-sensitive check that fails
-spuriously on fast machines (it asserts a deliberately-blocking control really
-does stall the event loop, and on fast hardware the control finishes too
-quickly to measure). Re-run before investigating; Phase 1 fixes it properly.
+`.venv/bin/python agent/test_capture_offline.py` is a smoke harness for the
+decision loop against the ONNX pair on disk. It asserts nothing beyond not
+crashing, so it is not in the runner. [docs/pipeline.md](docs/pipeline.md#tests)
+has the runner details, the `SKIP` outcome, and what CI does.
 
 `tests/test_clipping_mode.py` covers Clipping Mode end to end (model-free
 decision loop, segment selection, budget) and needs no camera or model.
