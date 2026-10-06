@@ -35,6 +35,7 @@ from inference.predictor import Predictor
 from inference.temporal_head import TemporalHead
 from shared.frames import extract_frames, normalize
 from shared.labels import LABELS, RESTING_INDICES
+from training.metrics import check_degenerate
 
 ROOT = Path(__file__).resolve().parent.parent.parent  # BunnyTracker/
 RECORDINGS_DIR = ROOT / "server" / "recordings"
@@ -79,30 +80,6 @@ def compute_probs(window: int) -> tuple[np.ndarray, np.ndarray]:
     CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
     np.savez(CACHE_PATH, P=P, y=y)
     return P, y
-
-
-def check_degenerate(P: np.ndarray, y: np.ndarray) -> bool:
-    """A model that names one class for everything makes every threshold moot.
-
-    This is the check that was missing when a July model kept being served
-    against September footage: nothing errored, train_result.json still
-    reported 61.5%, and the classifier had quietly become a constant.
-    """
-    classes = sorted(set(P.argmax(axis=1).tolist()))
-    base_rate = max(np.bincount(y, minlength=len(LABELS))) / len(y)
-    accuracy = (P.argmax(axis=1) == y).mean()
-    print(f"Deployed model: argmax accuracy {accuracy * 100:.1f}%  "
-          f"(base rate {base_rate * 100:.1f}%)  "
-          f"distinct predicted classes: {[LABELS[c] for c in classes]}")
-    if len(classes) == 1:
-        print(f"\n  ⚠ DEGENERATE: every clip is predicted '{LABELS[classes[0]]}'. The model carries no\n"
-              f"    signal on this footage, so no threshold can separate anything below. Retrain\n"
-              f"    against the current clips before reading the tables.\n")
-        return True
-    if accuracy <= base_rate:
-        print("\n  ⚠ At or below base rate — the model is no better than always guessing the\n"
-              "    most common class. Treat the tables below as untrustworthy.\n")
-    return False
 
 
 def report(name: str, score: np.ndarray, interesting: np.ndarray, resting: np.ndarray) -> None:

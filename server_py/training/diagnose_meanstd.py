@@ -23,13 +23,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from shared.labels import LABELS
 from training.dataset import class_weights
+from training.metrics import confusion_matrix, per_class_report
 from training.model import NUM_CLASSES
-from training.train import (
-    MANIFEST_PATH,
-    confusion_matrix,
-    load_entries,
-    per_class_report,
-)
+from training.train import MANIFEST_PATH, load_entries
 
 EPOCHS = 100
 PATIENCE = 10
