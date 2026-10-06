@@ -15,6 +15,11 @@ learn from them, so they are excluded from the output space and the training
 loaders drop them by filtering on LABELS.
 """
 
+# The docs/ethogram.md version these codes implement. Stamped into every
+# labels.meta.json entry so a label can always be traced to the definitions it
+# was coded under. Bump it together with the document, never on its own.
+ETHOGRAM_VERSION = "2.0"
+
 LABELS = [
     "feeding",
     "grooming",

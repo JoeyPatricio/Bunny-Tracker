@@ -21,6 +21,9 @@ server/agent/segments/
 # Data stores, plus their temp and backup copies
 server/labels.json*
 server/autolabels.json*
+server/labels.meta.json*
+server/labels.reliability.json*
+server/labels.reliability_sample.json*
 server/backups/
 server/activity-log.json*
 server/monitor.json*
