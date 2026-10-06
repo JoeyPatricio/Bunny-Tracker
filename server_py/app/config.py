@@ -83,6 +83,12 @@ CLIPPING_MAX_UNLABELED = _numberish(
     name="CLIPPING_MAX_UNLABELED",
     default=500,
 )
+# Prospective temporal holdout cut (app/lib/holdout.py, docs/ethogram.md).
+# Unset is the placeholder state: no cut yet, every label goes to labels.json.
+# Kept as the raw string here; app/lib/holdout.py parses it, so a typo is
+# reported there and never takes the server down.
+HOLDOUT_CUTOFF_RAW = os.environ.get("HOLDOUT_CUTOFF")
+
 CLIPPING_MIN_FREE_GB = _numberish(
     os.environ.get("CLIPPING_MIN_FREE_GB", "10"),
     name="CLIPPING_MIN_FREE_GB",

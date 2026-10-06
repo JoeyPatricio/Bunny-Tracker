@@ -24,6 +24,7 @@ server/autolabels.json*
 server/labels.meta.json*
 server/labels.reliability.json*
 server/labels.reliability_sample.json*
+server/labels.holdout.json*
 server/backups/
 server/activity-log.json*
 server/monitor.json*

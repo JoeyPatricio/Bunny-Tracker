@@ -49,6 +49,7 @@ SCRIPTS = [
     ("tests/test_security_regressions.py", "runtime"),
     ("tests/test_server_robustness.py", "runtime"),
     ("tests/test_labeling_sidecars.py", "runtime"),
+    ("tests/test_holdout.py", "runtime"),
     ("training/test_export_guards.py", "train"),
     ("training/test_train_guards.py", "train"),
     ("training/test_splits_metrics.py", "train"),

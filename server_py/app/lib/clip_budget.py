@@ -22,7 +22,7 @@ import os
 import shutil
 from pathlib import Path
 
-from app.lib.label_store import read_labels
+from app.lib.label_store import read_holdout_labels, read_labels
 
 GB = 1024 ** 3
 
@@ -77,7 +77,10 @@ async def recordings_usage(*, recordings_dir: Path, max_unlabeled: int,
     labels_readable = True
     if labeled is None:
         try:
-            labeled = set(await read_labels())
+            # A coded holdout clip is coded: it lives in labels.holdout.json
+            # only so training cannot see it, and must not count against the
+            # backlog, or every post-cut harvest would fill the cap for good.
+            labeled = set(await read_labels()) | set(await read_holdout_labels())
         except Exception as err:
             print(f"clip_budget: cannot read labels ({err}) — backlog cap not enforced this check")
             labeled = set()

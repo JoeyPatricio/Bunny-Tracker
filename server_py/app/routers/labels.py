@@ -15,13 +15,16 @@ from pydantic import BaseModel
 
 from app.auth import is_authed
 from app.config import RECORDINGS_DIR
+from app.lib import holdout
 from app.lib.label_store import (
     read_auto_labels,
+    read_holdout_labels,
     read_label_meta,
     read_labels,
     read_reliability,
     read_reliability_sample,
     update_auto_labels,
+    update_holdout_labels,
     update_label_meta,
     update_labels,
     update_reliability,
@@ -66,6 +69,17 @@ def _list_recordings() -> list[str]:
     return [p.name for p in RECORDINGS_DIR.iterdir() if is_recording_filename(p.name)]
 
 
+def _is_holdout(filename: str) -> bool:
+    return holdout.is_holdout(filename, holdout.HOLDOUT_CUTOFF, RECORDINGS_DIR)
+
+
+def _list_pool_recordings() -> list[str]:
+    """Recordings in the CV pool, i.e. not past the holdout cut. The reliability
+    re-code is a property of the pool's coding; post-cut clips keep arriving
+    for as long as the camera runs, so they must never block its draw."""
+    return [fn for fn in _list_recordings() if not _is_holdout(fn)]
+
+
 @router.get("/valid")
 async def get_valid_labels():
     return {"labels": VALID_LABELS}
@@ -76,14 +90,24 @@ async def get_valid_labels():
 async def get_labels(request: Request):
     """PRIVATE: full map requires login. `labels` holds human-confirmed labels
     only (the training set); `suggestions` holds agent-predicted labels
-    awaiting review in Label Studio."""
+    awaiting review in Label Studio; `holdout` holds labels for clips past the
+    holdout cut, kept apart so the studio can mark them and nothing can mix
+    them into the training map."""
     if not is_authed(request):
         return JSONResponse(status_code=401, content={"error": "Login required"})
     try:
         labels = await read_labels()
         suggestions = await read_auto_labels()
         meta = await read_label_meta()
-        return {"labels": labels, "suggestions": suggestions, "meta": meta}
+        held = await read_holdout_labels()
+        cutoff = holdout.HOLDOUT_CUTOFF
+        return {
+            "labels": labels,
+            "suggestions": suggestions,
+            "meta": meta,
+            "holdout": held,
+            "holdoutCutoff": cutoff.isoformat() if cutoff else None,
+        }
     except Exception as err:
         return JSONResponse(status_code=500, content={"error": "Failed to read labels", "detail": str(err)})
 
@@ -122,7 +146,7 @@ async def get_reliability():
         sample = await read_reliability_sample()
         recodes = await read_reliability()
         labels = await read_labels()
-        recordings = await asyncio.to_thread(_list_recordings)
+        recordings = await asyncio.to_thread(_list_pool_recordings)
     except Exception as err:
         return JSONResponse(status_code=500, content={"error": "Failed to read reliability state", "detail": str(err)})
     unlabeled = sum(1 for fn in recordings if fn not in labels)
@@ -148,7 +172,7 @@ async def draw_reliability_sample(body: LabelBody | None = None):
         if existing:
             return JSONResponse(status_code=409, content={"error": "Sample already drawn; it is never redrawn", "sample": existing})
         labels = await read_labels()
-        recordings = await asyncio.to_thread(_list_recordings)
+        recordings = await asyncio.to_thread(_list_pool_recordings)
     except Exception as err:
         return JSONResponse(status_code=500, content={"error": "Failed to read labels", "detail": str(err)})
     unlabeled = [fn for fn in recordings if fn not in labels]
@@ -243,13 +267,32 @@ async def suggest_label(filename: str, body: LabelBody):
 
 @router.post("/{filename:path}")
 async def set_label(filename: str, body: LabelBody):
-    """Set label for a clip."""
+    """Set label for a clip.
+
+    A clip past the holdout cut is written to labels.holdout.json instead of
+    labels.json. Each file drops the clip when the other gains it, so an
+    explicit re-label never leaves the clip in both. That only touches the clip
+    being labeled: nothing is ever moved in bulk.
+    """
     if not is_recording_filename(filename):
         return JSONResponse(status_code=400, content={"error": "Invalid filename"})
     if body.label not in VALID_LABELS:
         return JSONResponse(status_code=400, content={"error": f"Invalid label: {body.label}"})
+    is_held = await asyncio.to_thread(_is_holdout, filename)
     try:
-        await update_labels(lambda labels: {**labels, filename: body.label})
+        def drop(m):
+            return {k: v for k, v in m.items() if k != filename}
+
+        if is_held:
+            await update_holdout_labels(lambda held: {**held, filename: body.label})
+            labels_now = await read_labels()
+            if filename in labels_now:
+                await update_labels(drop)
+        else:
+            await update_labels(lambda labels: {**labels, filename: body.label})
+            held_now = await read_holdout_labels()
+            if filename in held_now:
+                await update_holdout_labels(drop)
         # The human has reviewed this clip — the agent's suggestion is resolved.
         try:
             await update_auto_labels(lambda auto: {k: v for k, v in auto.items() if k != filename})
@@ -267,6 +310,7 @@ async def set_label(filename: str, body: LabelBody):
             entry["coder"] = coder
             entry["coded_at"] = _now_iso()
             entry.setdefault("uncertain", False)
+            entry["holdout"] = is_held
             return {**meta, filename: entry}
 
         try:
@@ -275,7 +319,7 @@ async def set_label(filename: str, body: LabelBody):
         except Exception as err:
             log.warning("labels.meta.json not updated for %s: %s", filename, err)
             meta_saved = False
-        return {"filename": filename, "label": body.label, "metaSaved": meta_saved}
+        return {"filename": filename, "label": body.label, "metaSaved": meta_saved, "holdout": is_held}
     except Exception as err:
         return JSONResponse(status_code=500, content={"error": "Failed to save label", "detail": str(err)})
 
@@ -287,6 +331,9 @@ async def delete_label(filename: str):
         return JSONResponse(status_code=400, content={"error": "Invalid filename"})
     try:
         await update_labels(lambda labels: {k: v for k, v in labels.items() if k != filename})
+        held = await read_holdout_labels()
+        if filename in held:
+            await update_holdout_labels(lambda h: {k: v for k, v in h.items() if k != filename})
         try:
             await update_auto_labels(lambda auto: {k: v for k, v in auto.items() if k != filename})
         except Exception:

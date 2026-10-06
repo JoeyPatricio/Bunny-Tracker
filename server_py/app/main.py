@@ -18,6 +18,7 @@ from app.config import (
     RECORDINGS_DIR,
     SEGMENTS_DIR,
 )
+from app.lib import holdout
 from app.lib.backup_labels import start_label_backups
 from app.lib.hidden_store import read_hidden
 from app.lib.label_store import read_labels
@@ -182,4 +183,5 @@ async def on_startup():
         except OSError as err:
             print(f"startup: could not create {directory}: {err}")
     print(f"BunnyCam Python server running at http://localhost:{PORT}")
+    print(holdout.describe_cutoff())
     _backup_task = start_label_backups()

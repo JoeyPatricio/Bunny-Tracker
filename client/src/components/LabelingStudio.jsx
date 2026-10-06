@@ -356,6 +356,10 @@ export default function LabelingStudio() {
   const [labels, setLabels] = useState({}); // { filename: <one of ALL_CODES> }
   const [suggestions, setSuggestions] = useState({}); // agent-predicted labels awaiting review (not training data)
   const [meta, setMeta] = useState({}); // labels.meta.json: { filename: { coder, coded_at, uncertain, ethogram_version } }
+  // Clips past the holdout cut whose labels live in labels.holdout.json, not
+  // labels.json. Shown as coded, badged, and left out of the per-class counts,
+  // which exist to surface thin classes in the CV pool.
+  const [holdoutClips, setHoldoutClips] = useState({});
   const [index, setIndex] = useState(0);
   const [filter, setFilter] = useState("all"); // 'all' | 'unlabeled' | 'uncertain' | <one of ALL_CODES>
   const [saving, setSaving] = useState(false);
@@ -382,7 +386,8 @@ export default function LabelingStudio() {
     const recData = await recRes.json();
     const labData = await labRes.json();
     setRecordings(recData.recordings || []);
-    setLabels(labData.labels || {});
+    setLabels({ ...(labData.labels || {}), ...(labData.holdout || {}) });
+    setHoldoutClips(labData.holdout || {});
     setSuggestions(labData.suggestions || {});
     setMeta(labData.meta || {});
   }, []);
@@ -534,6 +539,12 @@ export default function LabelingStudio() {
           }));
         } else {
           setLabels((prev) => ({ ...prev, [current.filename]: label }));
+          setHoldoutClips((prev) => {
+            const next = { ...prev };
+            if (data.holdout) next[current.filename] = label;
+            else delete next[current.filename];
+            return next;
+          });
           // Labeling resolves the agent's suggestion (server clears it too)
           setSuggestions((prev) => {
             const next = { ...prev };
@@ -582,6 +593,11 @@ export default function LabelingStudio() {
         });
       } else {
         setLabels((prev) => {
+          const next = { ...prev };
+          delete next[current.filename];
+          return next;
+        });
+        setHoldoutClips((prev) => {
           const next = { ...prev };
           delete next[current.filename];
           return next;
@@ -735,11 +751,14 @@ export default function LabelingStudio() {
   const counts = ALL_CODES.reduce((acc, id) => ({ ...acc, [id]: 0 }), {});
   const countedClips = reliabilityMode
     ? filtered.map((r) => activeLabels[r.filename])
-    : Object.values(activeLabels);
+    : Object.entries(activeLabels)
+        .filter(([fn]) => !(fn in holdoutClips))
+        .map(([, l]) => l);
   for (const l of countedClips) {
     if (l in counts) counts[l] += 1;
   }
-  const labeledCount = ALL_CODES.reduce((n, id) => n + counts[id], 0);
+  const holdoutCount = reliabilityMode ? 0 : Object.keys(holdoutClips).length;
+  const labeledCount = ALL_CODES.reduce((n, id) => n + counts[id], 0) + holdoutCount;
   const uncertainCount = Object.values(meta).filter((m) => m?.uncertain).length;
   const pctDone =
     totalCount > 0 ? Math.round((labeledCount / totalCount) * 100) : 0;
@@ -961,6 +980,11 @@ export default function LabelingStudio() {
                 </div>
               )}
               {currentUncertain && <div className="uncertain-badge">? UNCERTAIN</div>}
+              {!reliabilityMode && current.filename in holdoutClips && (
+                <div className="holdout-badge" title="Past the holdout cut: saved to labels.holdout.json, never used for training">
+                  HOLDOUT
+                </div>
+              )}
             </div>
 
             {/* Playback: locomotion vs locomotion_rapid is a speed judgement
@@ -1561,6 +1585,22 @@ export default function LabelingStudio() {
           background: rgba(0, 0, 0, 0.7);
           color: var(--accent);
           border: 1px solid var(--accent-soft);
+        }
+
+        /* Below the uncertain badge, which holds the top-left corner. */
+        .holdout-badge {
+          position: absolute;
+          top: 40px;
+          left: 10px;
+          font-size: 11px;
+          font-family: var(--font-mono);
+          letter-spacing: 0.1em;
+          padding: 3px 10px;
+          border-radius: 4px;
+          font-weight: 600;
+          background: rgba(0, 0, 0, 0.7);
+          color: var(--text-muted);
+          border: 1px solid var(--border);
         }
 
         .uncertain-btn {

@@ -18,6 +18,7 @@ BACKED_UP = (
     "labels.meta.json",
     "labels.reliability.json",
     "labels.reliability_sample.json",
+    "labels.holdout.json",
 )
 
 
