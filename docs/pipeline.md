@@ -43,14 +43,37 @@ RUN=.venv/bin/python
 ```
 
 **1. Extract and embed.** Reads `server/labels.json` and `server/recordings/`,
-writes `models/cache/*.npy` and `models/cache/manifest.json`.
+writes the schema-2 cache under `models/cache/`:
+
+| Path | Contents |
+|---|---|
+| `frames/<clip>.npy` | raw uint8 `[16,224,224,3]`, the training sample |
+| `frames/<clip>.eval<W>.npy` | raw uint8 `[W,224,224,3]`, the eval sample |
+| `emb/<clip>.v<k>.npy` | `[16,1280]` embeddings of variant k (k=0 is the original) |
+| `emb/<clip>.eval<W>.npy` | `[W,1280]` embeddings of the eval sample |
+| `manifest.json` | `schema: 2`, one entry per clip, plus `labels_sha256`, `ethogram_version`, `backbone`, `aug_policy` |
+
+The cache is split-agnostic: every labeled clip gets every variant and an eval
+sample, and the train/eval choice is made per fold at training time
+(`training/cache.py`). The frames tier is reused on a re-run, so changing the
+augmentation or the backbone re-runs only the embed pass. Each clip is decoded
+with one ffmpeg process per sample (`shared/frames.read_frames`), byte-identical
+to the old one-process-per-frame decode; `training/check_decode_parity.py`
+checks that over every recording. A schema-1 cache is refused rather than
+overwritten: archive it first (see "After an ethogram change").
 
 ```bash
-$TRAIN -m training.extract_frames [--seed N] [--val-fraction F]
+$TRAIN -m training.extract_frames [--seed N] [--eval-windows 8 12] [--cache-dir DIR]
 ```
 
+`--eval-windows` lists every window length step 2 may be asked to evaluate at.
+An eval sample is W frames spread across the whole clip, the protocol schema 1
+used, so a window sweep needs one per length.
+
 **2. Fit the temporal head.** Reads the cache, writes `models/head_state.pt`
-and `models/train_result.json`.
+and `models/train_result.json`. Until `crossval.py` lands this still trains on
+the legacy single train/val split, rebuilt deterministically from the manifest
+by `dataset.split_by_group`. Its val accuracy is a selection score.
 
 ```bash
 $TRAIN -m training.train [--window N] [--seed N]

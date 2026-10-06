@@ -16,7 +16,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from shared.frames import get_duration, read_frame
+from shared.frames import get_duration, read_frame_single
 
 ROOT = Path(__file__).resolve().parent.parent.parent  # BunnyTracker/
 RECORDINGS_DIR = ROOT / "server" / "recordings"
@@ -42,7 +42,7 @@ def sample_clip_at_interval(filename: str) -> list[np.ndarray]:
     duration = get_duration(str(path))
     n = max(2, int(duration // FRAME_INTERVAL))
     timestamps = [i * FRAME_INTERVAL for i in range(n) if i * FRAME_INTERVAL < duration]
-    return [read_frame(str(path), t) for t in timestamps]
+    return [read_frame_single(str(path), t) for t in timestamps]
 
 
 def main():

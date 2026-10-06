@@ -40,8 +40,8 @@ PYTHONS = {
 # (script, venv). All hermetic today: each one seeds its own temp dirs or uses
 # tests/fixtures/. test_security_regressions.py does need client/dist/, which a
 # clean clone does not have, so build the client first (CI does). A script that
-# genuinely needs real recordings or a trained model gets
-# marks=pytest.mark.local_data so CI's `-m "not local_data"` leaves it out.
+# genuinely needs real recordings or a trained model goes in LOCAL_DATA_SCRIPTS
+# below, which marks it local_data so CI's `-m "not local_data"` leaves it out.
 SCRIPTS = [
     ("tests/test_capture_loop.py", "runtime"),
     ("tests/test_clipping_mode.py", "runtime"),
@@ -53,12 +53,19 @@ SCRIPTS = [
     ("training/test_train_guards.py", "train"),
     ("training/test_splits_metrics.py", "train"),
     ("training/test_promote_reports.py", "runtime"),
+    ("training/test_cache_v2.py", "train"),
+]
+
+# Scripts that need real recordings or a trained model on disk.
+LOCAL_DATA_SCRIPTS = [
+    ("training/check_decode_parity.py", "train"),  # every .webm in server/recordings/
 ]
 
 
 @pytest.mark.parametrize(
     ("script", "venv"),
-    [pytest.param(s, v, id=Path(s).stem) for s, v in SCRIPTS],
+    [pytest.param(s, v, id=Path(s).stem) for s, v in SCRIPTS]
+    + [pytest.param(s, v, id=Path(s).stem, marks=pytest.mark.local_data) for s, v in LOCAL_DATA_SCRIPTS],
 )
 def test_script(script: str, venv: str) -> None:
     python = PYTHONS[venv]

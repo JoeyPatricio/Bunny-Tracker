@@ -23,6 +23,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from shared.frames import extract_frames, normalize
 from shared.labels import LABELS
+from training.cache import legacy_split_indices, load_manifest
 from training.metrics import confusion_matrix, per_class_report
 
 ROOT = Path(__file__).resolve().parent.parent.parent  # BunnyTracker/
@@ -68,8 +69,9 @@ def print_report(name: str, acc: float, cm: np.ndarray):
 
 
 def main():
-    manifest = json.loads((MODELS_DIR / "cache" / "manifest.json").read_text())
-    val_clips = manifest["val"]
+    manifest = load_manifest()
+    # The legacy split's val clips: the same clips train.py validated on.
+    val_clips = [manifest["clips"][i] for i in legacy_split_indices(manifest)[1]]
     n_frames = manifest["window"]
 
     train_result = json.loads((MODELS_DIR / "train_result.json").read_text())
