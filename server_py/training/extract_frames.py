@@ -19,7 +19,8 @@ import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from shared.frames import extract_frames as ffmpeg_extract_frames, normalize
+from shared.frames import extract_frames as ffmpeg_extract_frames
+from shared.frames import normalize
 from shared.labels import LABELS
 from training.dataset import (
     TRAIN_FRAMES,

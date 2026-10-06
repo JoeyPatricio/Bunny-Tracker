@@ -845,7 +845,7 @@ class Agent:
         if proc:
             try:
                 await asyncio.wait_for(proc.wait(), timeout=5.0)
-            except (asyncio.TimeoutError, Exception):
+            except (TimeoutError, Exception):
                 pass
         # proc.wait() returning is NOT enough. _watch_exit awaits the same
         # future in its own task and only then tears the readers down, so
@@ -857,7 +857,7 @@ class Agent:
         if supervisor is not None:
             try:
                 await asyncio.wait_for(asyncio.shield(supervisor), timeout=5.0)
-            except (asyncio.TimeoutError, asyncio.CancelledError, Exception):
+            except (TimeoutError, asyncio.CancelledError, Exception):
                 pass
 
     def _reset_decision_state(self) -> None:
@@ -996,7 +996,7 @@ async def main():
         if agent.ffmpeg and agent.ffmpeg.proc:
             try:
                 await asyncio.wait_for(agent.ffmpeg.proc.wait(), timeout=5.0)
-            except (asyncio.TimeoutError, Exception):
+            except (TimeoutError, Exception):
                 pass
 
 

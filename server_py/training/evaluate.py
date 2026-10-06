@@ -36,7 +36,7 @@ INT8_TOLERANCE = 0.03
 
 def confusion_matrix(true_ids, pred_ids) -> np.ndarray:
     cm = np.zeros((len(LABELS), len(LABELS)), dtype=int)
-    for t, p in zip(true_ids, pred_ids):
+    for t, p in zip(true_ids, pred_ids, strict=True):
         cm[t, p] += 1
     return cm
 
@@ -76,7 +76,7 @@ def run_onnx_pipeline(val_clips: list[dict], backbone_path: Path, head_path: Pat
         true_ids.append(LABELS.index(entry["label"]))
         pred_ids.append(pred)
     cm = confusion_matrix(true_ids, pred_ids)
-    acc = sum(t == p for t, p in zip(true_ids, pred_ids)) / len(true_ids)
+    acc = sum(t == p for t, p in zip(true_ids, pred_ids, strict=True)) / len(true_ids)
     return acc, cm
 
 

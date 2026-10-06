@@ -26,7 +26,6 @@ auto-restart on exit. Two deliberate differences from the JS version:
 """
 import asyncio
 import os
-import time
 from pathlib import Path
 
 FRAME_SIZE = 224 * 224 * 3

@@ -23,7 +23,7 @@ async def main():
     run_task = asyncio.ensure_future(agent.run())
     try:
         await asyncio.wait_for(asyncio.shield(run_task), timeout=duration)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         log(f"Test window ({duration:.0f}s) elapsed — stopping cleanly")
 
     if agent.ffmpeg:
@@ -40,7 +40,7 @@ async def main():
         try:
             await asyncio.wait_for(agent.ffmpeg.proc.wait(), timeout=5.0)
             log("ffmpeg child exited cleanly")
-        except asyncio.TimeoutError:
+        except TimeoutError:
             log("ffmpeg child did not exit within 5s — killing it directly")
             agent.ffmpeg.proc.kill()
             await agent.ffmpeg.proc.wait()

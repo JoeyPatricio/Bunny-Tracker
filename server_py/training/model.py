@@ -8,9 +8,9 @@ per step (section 3.1's "why two graphs" note).
 import sys
 from pathlib import Path
 
+import timm
 import torch
 import torch.nn as nn
-import timm
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 

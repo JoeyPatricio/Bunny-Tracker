@@ -52,10 +52,10 @@ def main():
         import json
         window = json.loads(manifest_path.read_text())["window"]
 
-    print(f"DEV-BOX benchmark only — NOT the Raspberry Pi 5 gate (no hardware owned yet).")
+    print("DEV-BOX benchmark only — NOT the Raspberry Pi 5 gate (no hardware owned yet).")
     print(f"CPU execution provider, window={window}\n")
 
-    backbone_fp32_times = bench_session(
+    bench_session(
         "backbone fp32", MODELS_DIR / "backbone_fp32.onnx",
         lambda: np.random.randn(1, 3, 224, 224).astype(np.float32),
     )
@@ -71,7 +71,7 @@ def main():
     if backbone_int8_times is not None and head_times is not None:
         per_step = np.median(backbone_int8_times) + np.median(head_times)
         print(f"\nEstimated per-frame step (int8 backbone + head): {per_step:.2f}ms")
-        print(f"Current agent frame budget: 1500ms (AGENT_FRAME_SECONDS, per docs/pipeline.md docs/pipeline.md,)")
+        print("Current agent frame budget: 1500ms (AGENT_FRAME_SECONDS, per docs/pipeline.md docs/pipeline.md,)")
         print(f"Dev-box headroom: {1500/per_step:.1f}x budget (Pi CPU will be slower than this dev box — re-benchmark on real hardware before relying on this number)")
 
 

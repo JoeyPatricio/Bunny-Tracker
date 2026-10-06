@@ -9,7 +9,6 @@ from fastapi.responses import FileResponse, JSONResponse
 from slowapi.errors import RateLimitExceeded
 
 from app import auth
-from shared.labels import NON_HIGHLIGHT
 from app.config import (
     ALLOWED_ORIGINS,
     CLIENT_DIST_DIR,
@@ -38,6 +37,7 @@ from app.routers import (
     stream,
 )
 from app.security import SecurityHeadersMiddleware
+from shared.labels import NON_HIGHLIGHT
 
 _start_time = _time.time()
 

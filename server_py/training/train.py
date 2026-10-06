@@ -93,7 +93,7 @@ def restrict_window(entries: list[dict], window: int) -> list[dict]:
 
 def confusion_matrix(true_ids: list[int], pred_ids: list[int]) -> np.ndarray:
     cm = np.zeros((len(LABELS), len(LABELS)), dtype=int)
-    for t, p in zip(true_ids, pred_ids):
+    for t, p in zip(true_ids, pred_ids, strict=True):
         cm[t, p] += 1
     return cm
 
@@ -129,7 +129,7 @@ def evaluate_head(head: nn.Module, val_entries: list[dict]):
         true_ids.append(target)
         pred_ids.append(pred)
     cm = confusion_matrix(true_ids, pred_ids)
-    acc = sum(t == p for t, p in zip(true_ids, pred_ids)) / len(true_ids)
+    acc = sum(t == p for t, p in zip(true_ids, pred_ids, strict=True)) / len(true_ids)
     return acc, cm
 
 
@@ -174,7 +174,7 @@ def train_one(window: int, unfreeze_note: str = "", seed: int = SEED) -> dict:
     )
 
     weights = class_weights(train_entries_full)
-    print(f"Class weights: {dict(zip(LABELS, weights.tolist()))}")
+    print(f"Class weights: {dict(zip(LABELS, weights.tolist(), strict=True))}")
 
     # Standardize embeddings using train-set stats, baked into the head (see
     # TemporalHead's emb_mean/emb_std buffers) so it exports straight into ONNX.
@@ -280,7 +280,7 @@ def main():
     for label, r in result["per_class"].items():
         print(f"  {label:10s} precision={r['precision']*100:5.1f}%  recall={r['recall']*100:5.1f}%  support={r['support']}")
     print("Confusion matrix (rows=true, cols=pred):")
-    print("  " + "  ".join(f"{l[:4]:>6s}" for l in LABELS))
+    print("  " + "  ".join(f"{label[:4]:>6s}" for label in LABELS))
     for i, row in enumerate(result["confusion_matrix"]):
         print(f"  {LABELS[i][:4]:4s} " + "  ".join(f"{v:6d}" for v in row))
 

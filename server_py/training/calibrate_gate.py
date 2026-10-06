@@ -31,7 +31,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from agent.capture import interest_score
 from inference.backbone import Backbone
-from inference.predictor import Predictor, softmax
+from inference.predictor import Predictor
 from inference.temporal_head import TemporalHead
 from shared.frames import extract_frames, normalize
 from shared.labels import LABELS, RESTING_INDICES
@@ -100,8 +100,8 @@ def check_degenerate(P: np.ndarray, y: np.ndarray) -> bool:
               f"    against the current clips before reading the tables.\n")
         return True
     if accuracy <= base_rate:
-        print(f"\n  ⚠ At or below base rate — the model is no better than always guessing the\n"
-              f"    most common class. Treat the tables below as untrustworthy.\n")
+        print("\n  ⚠ At or below base rate — the model is no better than always guessing the\n"
+              "    most common class. Treat the tables below as untrustworthy.\n")
     return False
 
 
@@ -145,7 +145,7 @@ def main() -> None:
 
     # The gate this replaced, for reference: argmax non-normal at >= 70%.
     old = (~np.isin(P.argmax(axis=1), RESTING_IDX)) & (P.max(axis=1) * 100 >= 70)
-    print(f"BASELINE  pre-interest gate (argmax not resting AND confidence >= 70)")
+    print("BASELINE  pre-interest gate (argmax not resting AND confidence >= 70)")
     print(f"  caught {int(old[interesting].sum())}/{int(interesting.sum())} interesting  "
           f"({old[interesting].mean() * 100:.0f}% recall)   "
           f"false alarms {int(old[resting].sum())}/{int(resting.sum())}\n")
