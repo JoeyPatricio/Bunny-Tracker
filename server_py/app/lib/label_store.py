@@ -41,6 +41,14 @@ _reliability_sample_store = create_store(SERVER_DIR, "labels.reliability_sample.
 read_reliability_sample = _reliability_sample_store.read
 update_reliability_sample = _reliability_sample_store.update
 
+# Labels for clips captured on or after HOLDOUT_CUTOFF (app/lib/holdout.py).
+# Same flat {filename: label} schema as labels.json, deliberately a different
+# file: nothing that trains, selects or calibrates reads it, so a post-cut clip
+# cannot reach the CV pool. Opened once, at paper freeze.
+_holdout_store = create_store(SERVER_DIR, "labels.holdout.json", {}, guard_wipe=True)
+read_holdout_labels = _holdout_store.read
+update_holdout_labels = _holdout_store.update
+
 # Every store above, for tests that need to repoint them all at a temp dir.
 ALL_STORES = (
     _label_store,
@@ -48,4 +56,5 @@ ALL_STORES = (
     _meta_store,
     _reliability_store,
     _reliability_sample_store,
+    _holdout_store,
 )

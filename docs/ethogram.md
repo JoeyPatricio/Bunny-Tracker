@@ -325,6 +325,37 @@ Required for publication and impossible to retrofit.
    ambiguous and needs rewriting, which means going back to step 1.
 5. Report event agreement separately, as agreement on counts per clip.
 
+## Prospective temporal holdout
+
+**Cut date: TBD (placeholder).** Set `HOLDOUT_CUTOFF` in `server/.env` to a
+date (`YYYY-MM-DD`, midnight UTC) or a full ISO-8601 timestamp, then restart
+the server. Until it is set, every label goes to `labels.json` exactly as
+before, and the server says so once at startup.
+
+The rule, once set:
+
+- Clips captured **before** the cut form the cross-validation pool. Their labels
+  go to `server/labels.json`, as today.
+- Clips captured **on or after** the cut are the holdout. They can be coded in
+  the studio, which badges them HOLDOUT, but their labels go to
+  `server/labels.holdout.json` (same flat `{filename: label}` schema) and never
+  to `labels.json`. Nothing that trains, selects hyperparameters or calibrates
+  the alert threshold reads that file.
+- The boundary is inclusive: a clip captured exactly at the cut is holdout.
+- Capture time is the UTC timestamp in the filename. A name without one falls
+  back to the file's mtime. A clip with neither is treated as holdout, because
+  losing one training clip is cheaper than contaminating the only test of drift.
+- Setting the cut moves nothing. Labels already in `labels.json` stay there. An
+  explicit re-label of a post-cut clip moves that one clip to the holdout file.
+- Holdout clips do not count toward the reliability re-code pool or the
+  clipping backlog cap.
+- The holdout file is opened once, at paper freeze, to measure how a model
+  selected on the pool holds up on footage captured later in a room that
+  changes. It is backed up daily with the other label files.
+
+Implementation: `server_py/app/lib/holdout.py`; regression gate:
+`server_py/tests/test_holdout.py`.
+
 ## Migrating the 112 existing clips
 
 Current v1 distribution: `normal` 45, `zoomies` 26, `grooming` 25,
