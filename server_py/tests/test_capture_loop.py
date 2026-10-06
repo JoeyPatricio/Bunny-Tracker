@@ -16,16 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from agent import ffmpeg_io
 from agent.ffmpeg_io import FRAME_SIZE, FfmpegCapture
-
-failures: list[str] = []
-
-
-def check(name: str, ok: bool, detail: str = "") -> None:
-    if ok:
-        print(f"  PASS  {name}")
-    else:
-        print(f"  FAIL  {name}{': ' + detail if detail else ''}")
-        failures.append(name)
+from tests.checks import check, finish
 
 
 def make_capture(on_frame) -> FfmpegCapture:
@@ -224,10 +215,7 @@ async def main_async() -> None:
 
 def main() -> None:
     asyncio.run(main_async())
-    if failures:
-        print(f"\nFAIL: {len(failures)} check(s) failed")
-        sys.exit(1)
-    print("\nPASS: all capture loop checks passed")
+    finish("capture loop")
 
 
 if __name__ == "__main__":

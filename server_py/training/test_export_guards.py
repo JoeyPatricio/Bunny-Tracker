@@ -36,18 +36,9 @@ import onnx
 import torch
 
 from shared.labels import ALL_CODES, CODING_ONLY, LABELS
+from tests.checks import check, finish
 from training import export_onnx
 from training.model import EMBEDDING_DIM, NUM_CLASSES, TemporalHead
-
-failures: list[str] = []
-
-
-def check(name: str, ok: bool, detail: str = "") -> None:
-    if ok:
-        print(f"  PASS  {name}")
-    else:
-        print(f"  FAIL  {name}{': ' + detail if detail else ''}")
-        failures.append(name)
 
 
 def _onnx_shape(value_info) -> list:
@@ -184,10 +175,7 @@ def main() -> None:
         print(f"\n{fn.__doc__.splitlines()[0]}")
         fn()
 
-    if failures:
-        print(f"\nFAIL: {len(failures)} check(s) failed")
-        sys.exit(1)
-    print("\nPASS: all export guard checks passed")
+    finish("export guard")
 
 
 if __name__ == "__main__":

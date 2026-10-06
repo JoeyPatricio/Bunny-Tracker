@@ -121,26 +121,49 @@ column as optimistic.
   `models/archive/v1-ethogram/`.
 - `scripts/bench_pi.py` measures inference latency on the target hardware.
 
-## Runtime tests
+## Tests
 
-Run from `server_py/` with the runtime venv:
+Every check-script runs through one pytest runner, from `server_py/`:
+
+```bash
+uvx --from pytest==9.1.1 pytest                       # all of them
+uvx --from pytest==9.1.1 pytest -m "not local_data"   # what CI runs
+```
+
+`ci/test_scripts.py` runs each script as a subprocess under the venv it belongs
+to (runtime for `tests/`, training for `training/test_*.py`) and asserts exit 0,
+attaching the script's output on failure. pytest never collects the scripts
+themselves; see that file's docstring for why. The scripts stay runnable on
+their own, which is the faster loop when one is red:
 
 ```bash
 .venv/bin/python tests/test_motion_parity.py
-.venv/bin/python tests/test_security_regressions.py
-.venv/bin/python tests/test_server_robustness.py     # needs >=20 real clips
+.venv/bin/python tests/test_security_regressions.py   # needs client/dist/ built
+.venv/bin/python tests/test_server_robustness.py
 .venv/bin/python tests/test_capture_loop.py
 .venv/bin/python tests/test_clipping_mode.py
-.venv/bin/python agent/test_capture_offline.py       # needs the ONNX pair on disk
+.venv-train/bin/python training/test_export_guards.py
+.venv-train/bin/python training/test_train_guards.py
 ```
 
-There is no aggregate runner yet; Phase 1 of `upgrade-plan.md` adds one. Until
-then each script exits non-zero on its own failures and you have to read all
-six.
+Each prints `PASS`, `FAIL` or `SKIP` per check through the shared helper in
+`tests/checks.py`. A `SKIP` is a measurement this machine cannot make, not a
+regression: `test_server_robustness.py`'s timing check skips if even its capped
+batch cannot stall the event loop past the measured timer floor. Its
+structural check, that the listing scan never runs on the event-loop thread,
+always runs.
 
-`tests/test_server_robustness.py` has a timing-sensitive check that fails
-spuriously on fast machines. Phase 1 fixes it properly. If it fails on
-`the blocking control really does stall the loop`, re-run before investigating.
+`test_security_regressions.py` reads `ADMIN_PASSWORD` and `AGENT_TOKEN` from
+`server/.env`. Without them it fails two checks (login returns 503; the
+stream-frame route cannot be reached). CI sets placeholder values.
+
+`agent/test_capture_offline.py` is not in the runner. It is a smoke harness
+that replays fixture frames through `AgentDecisionLoop` with the ONNX pair on
+disk and asserts nothing beyond not crashing.
+
+CI (`.github/workflows/ci.yml`) runs the `not local_data` set on a fresh
+runner, building both venvs from the pinned requirements files (CPU torch) and
+the client, plus `ruff check` as a separate job.
 
 ## After an ethogram change
 

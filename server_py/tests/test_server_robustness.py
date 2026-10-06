@@ -1,49 +1,68 @@
 """Regression gate for docs/provenance.md, fixes.md, installment 3.
 
-3.1 is about the event loop staying responsive, which a plain unit assertion
-cannot show. The test instead measures event-loop lag while the recordings work
-runs, against a deliberately-blocking control doing the identical work inline.
-The control calibrates the threshold on whatever machine this runs on rather
-than hardcoding a timing guess.
+3.1 is checked two ways. The structural check calls the real listing handler
+and asserts the scan ran on a worker thread, never the event-loop thread; that
+is the actual claim and it cannot be flaky. The timing check then measures
+event-loop lag while the scan runs, against a deliberately-blocking control
+doing the identical work inline. Its timer floor and batch size are measured on
+whatever machine this runs on, and if even the capped batch cannot stall the
+loop it skips rather than fails: a measurement that cannot be made is not a
+regression.
 
-Writes are isolated: the router's RECORDINGS_DIR/SEGMENTS_DIR globals are
-repointed at a temp directory for the upload and grab checks, so nothing under
-server/ is created, modified or deleted.
+Nothing reads or writes under server/: every check repoints the router's
+RECORDINGS_DIR/SEGMENTS_DIR globals at a temp directory seeded with synthetic
+files, so this runs on a fresh clone with no footage.
 
 Usage (from server_py/, runtime venv):
     .venv/Scripts/python.exe -m tests.test_server_robustness
 """
 import asyncio
 import io
+import math
 import shutil
+import statistics
 import sys
 import tempfile
+import threading
 import time
+from contextlib import contextmanager
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app import config
 from app.routers import recordings as rec
+from tests.checks import check, finish, skip
 
-failures: list[str] = []
+# Synthetic recordings, not the real archive. scandir's cost is per directory
+# entry, not per byte, so zero-byte files measure the same as real clips; and a
+# temp dir means this runs on a fresh clone or a CI box with no footage at all.
+SYNTHETIC_RECORDINGS = 500
+
+# How long the blocking control has to stall the loop, as a multiple of this
+# machine's own timer floor, before the comparison means anything. And a cap on
+# how many scans the control may run, so a very fast disk turns into a skip
+# rather than a test that spins for a minute.
+STALL_FLOORS = 8
+MAX_SCAN_BATCH = 5000
 
 
-def check(name: str, ok: bool, detail: str = "") -> None:
-    if ok:
-        print(f"  PASS  {name}")
-    else:
-        print(f"  FAIL  {name}{': ' + detail if detail else ''}")
-        failures.append(name)
-
-
-# Windows' default timer resolution is ~15.6ms, so an asyncio.sleep() heartbeat
-# cannot tick faster than that no matter what is asked for. Any blocking this
-# test wants to detect has to be substantially longer than that floor or the
-# measurement is just reporting timer granularity. Hence a batch big enough to
-# block for a few hundred ms rather than a single ~1ms scan.
-TIMER_FLOOR_SEC = 0.0156
-SCAN_BATCH = 60
+@contextmanager
+def seeded_recordings(count: int):
+    """Point the router at a temp dir holding `count` empty .webm files plus
+    one non-webm decoy, restoring the real path afterwards."""
+    tmp = Path(tempfile.mkdtemp(prefix="bunnyscan-"))
+    saved = rec.RECORDINGS_DIR
+    try:
+        for i in range(count):
+            (tmp / f"recording-2026-01-01T00-{i // 60:02d}-{i % 60:02d}-{i:03d}Z.webm").touch()
+        (tmp / "notes.txt").touch()
+        rec.RECORDINGS_DIR = tmp
+        yield tmp
+    finally:
+        rec.RECORDINGS_DIR = saved
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 async def measure_lag(work) -> float:
@@ -68,35 +87,82 @@ async def measure_lag(work) -> float:
     return max(gaps) if gaps else 0.0
 
 
+async def timer_floor() -> float:
+    """The heartbeat's own max gap with nothing else running. Windows' default
+    timer resolution puts this near 15.6ms; Linux is nearer the 5ms sleep. Any
+    stall this test wants to detect has to clear it by a wide margin or the
+    measurement is just reporting timer granularity."""
+    async def idle():
+        await asyncio.sleep(0.2)
+    return await measure_lag(idle)
+
+
+async def test_listing_runs_off_the_loop_thread() -> None:
+    """docs/provenance.md, fixes.md 3.1: the directory walk must not run on the event-loop thread."""
+    # The structural form of 3.1, and the one that cannot be flaky: call the
+    # real handler and record which thread the scan ran on.
+    loop_thread = threading.get_ident()
+    seen: list[int] = []
+    real_scan = rec._scan_recordings
+
+    def spy():
+        seen.append(threading.get_ident())
+        return real_scan()
+
+    with seeded_recordings(3), patch.object(rec, "_scan_recordings", spy), \
+            patch.object(rec, "is_authed", lambda _req: True):
+        result = await rec.list_recordings(request=None)
+
+    check("3.1 handler scanned the recordings dir", len(seen) == 1, f"{len(seen)} scan call(s)")
+    check("3.1 scan ran off the event-loop thread", loop_thread not in seen)
+    check("3.1 handler returned the listing", isinstance(result, dict) and len(result.get("recordings", [])) == 3, str(result)[:200])
+
+
 async def test_listing_does_not_block_the_loop() -> None:
-    """docs/provenance.md, fixes.md 3.1: the directory walk must not run on the event loop."""
-    count = len(rec._scan_recordings())
-    print(f"  (scanning {count} real recordings, read-only)")
-    if count < 20:
-        check("3.1 enough recordings on disk to measure", False, f"only {count}")
-        return
+    """docs/provenance.md, fixes.md 3.1: and the loop stays responsive while it runs."""
+    floor = await timer_floor()
+    target = floor * STALL_FLOORS
 
-    def batch():
-        for _ in range(SCAN_BATCH):
+    with seeded_recordings(SYNTHETIC_RECORDINGS):
+        rec._scan_recordings()  # warm the dentry cache before timing anything
+        samples = []
+        for _ in range(5):
+            t0 = time.perf_counter()
             rec._scan_recordings()
+            samples.append(time.perf_counter() - t0)
+        per_scan = statistics.median(samples)
+        batch_size = min(MAX_SCAN_BATCH, max(1, math.ceil(target / per_scan)))
+        print(
+            f"  (timer floor {floor * 1000:.1f}ms, one scan of {SYNTHETIC_RECORDINGS} "
+            f"files {per_scan * 1000:.2f}ms, batch {batch_size})"
+        )
 
-    async def blocking():
-        batch()  # the pre-fix shape: straight on the loop
+        def batch():
+            for _ in range(batch_size):
+                rec._scan_recordings()
 
-    async def off_thread():
-        await asyncio.to_thread(batch)
+        async def blocking():
+            batch()  # the pre-fix shape: straight on the loop
 
-    blocking_lag = await measure_lag(blocking)
-    async_lag = await measure_lag(off_thread)
+        async def off_thread():
+            await asyncio.to_thread(batch)
+
+        blocking_lag = await measure_lag(blocking)
+        async_lag = await measure_lag(off_thread)
+
     print(f"  blocking lag {blocking_lag * 1000:.1f}ms vs off-thread lag {async_lag * 1000:.1f}ms")
 
     # Guard against a false pass: if the control did not actually stall the
-    # loop well past the timer floor, the comparison below proves nothing.
-    check(
-        "3.1 the blocking control really does stall the loop",
-        blocking_lag > TIMER_FLOOR_SEC * 4,
-        f"only {blocking_lag * 1000:.1f}ms, too close to the ~15.6ms timer floor to be meaningful",
-    )
+    # loop well past the timer floor, the comparison below proves nothing. That
+    # is a measurement this machine cannot make, not a regression, so it skips.
+    # The structural check above still covers 3.1 either way.
+    if blocking_lag < floor * 4:
+        skip(
+            "3.1 off-thread listing keeps the loop responsive",
+            f"blocking control only reached {blocking_lag * 1000:.1f}ms against a "
+            f"{floor * 1000:.1f}ms timer floor, even at {batch_size} scans",
+        )
+        return
     check(
         "3.1 off-thread listing keeps the loop responsive",
         async_lag < blocking_lag / 3,
@@ -106,8 +172,9 @@ async def test_listing_does_not_block_the_loop() -> None:
 
 async def test_scan_recordings_shape() -> None:
     """The rewritten scandir helper must return what the old iterdir did."""
-    items = await asyncio.to_thread(rec._scan_recordings)
-    check("3.1 listing is non-empty", bool(items))
+    with seeded_recordings(5):
+        items = await asyncio.to_thread(rec._scan_recordings)
+    check("3.1 every seeded clip listed", len(items) == 5, f"got {len(items)}")
     if not items:
         return
     first = items[0]
@@ -182,6 +249,7 @@ async def test_config_survives_a_bad_env_value() -> None:
 
 async def main_async() -> None:
     for fn in (
+        test_listing_runs_off_the_loop_thread,
         test_listing_does_not_block_the_loop,
         test_scan_recordings_shape,
         test_upload_and_grab_in_a_temp_dir,
@@ -193,10 +261,7 @@ async def main_async() -> None:
 
 def main() -> None:
     asyncio.run(main_async())
-    if failures:
-        print(f"\nFAIL: {len(failures)} check(s) failed")
-        sys.exit(1)
-    print("\nPASS: all server robustness checks passed")
+    finish("server robustness")
 
 
 if __name__ == "__main__":

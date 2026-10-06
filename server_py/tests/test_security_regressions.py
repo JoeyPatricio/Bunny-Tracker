@@ -22,16 +22,7 @@ from fastapi.testclient import TestClient
 from app.config import AGENT_TOKEN, MODEL_BACKUP_DIR, SERVER_DIR
 from app.main import app
 from app.security import CSP
-
-failures: list[str] = []
-
-
-def check(name: str, ok: bool, detail: str = "") -> None:
-    if ok:
-        print(f"  PASS  {name}")
-    else:
-        print(f"  FAIL  {name}{': ' + detail if detail else ''}")
-        failures.append(name)
+from tests.checks import check, finish
 
 
 def test_spa_traversal(client: TestClient) -> None:
@@ -148,10 +139,7 @@ def main() -> None:
         print(f"\n{fn.__doc__.splitlines()[0]}")
         fn(client)
 
-    if failures:
-        print(f"\nFAIL: {len(failures)} check(s) failed")
-        sys.exit(1)
-    print("\nPASS: all security regression checks passed")
+    finish("security regression")
 
 
 if __name__ == "__main__":
