@@ -74,9 +74,9 @@ def main():
     val_clips = [manifest["clips"][i] for i in legacy_split_indices(manifest)[1]]
     n_frames = manifest["window"]
 
-    train_result = json.loads((MODELS_DIR / "train_result.json").read_text())
-
-    print_report("Python retrain, float32 (torch head eval, train.py)", train_result["val_acc"], np.array(train_result["confusion_matrix"]))
+    # train_result.json no longer records an accuracy (train.py docstring):
+    # the torch-head line this used to print is gone with it. Its successor is
+    # the G3 torch-vs-ONNX logit check in the deployment-gate rewrite.
 
     fp32_acc, fp32_cm = run_onnx_pipeline(val_clips, MODELS_DIR / "backbone_fp32.onnx", MODELS_DIR / "head.onnx", n_frames)
     print_report("Python retrain, ONNX float32 (backbone.onnx fp32 + head.onnx)", fp32_acc, fp32_cm)
@@ -97,7 +97,6 @@ def main():
     # previous gate came to report failure while the model shipped anyway.
     delta = fp32_acc - int8_acc
     quant_result = {
-        "torch_fp32_acc": train_result["val_acc"],
         "onnx_fp32_acc": fp32_acc,
         "onnx_int8_acc": int8_acc,
         "int8_delta": delta,

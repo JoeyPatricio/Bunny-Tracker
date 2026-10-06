@@ -54,6 +54,7 @@ SCRIPTS = [
     ("training/test_splits_metrics.py", "train"),
     ("training/test_promote_reports.py", "runtime"),
     ("training/test_cache_v2.py", "train"),
+    ("training/test_crossval_guards.py", "train"),
 ]
 
 # Scripts that need real recordings or a trained model on disk.

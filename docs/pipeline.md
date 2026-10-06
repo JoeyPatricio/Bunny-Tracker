@@ -33,9 +33,16 @@ uv pip install --python server_py/.venv-train/bin/python -r server_py/requiremen
 
 ## The order
 
-Run from `server_py/`. Steps 1 through 6 use the training venv; step 7 uses the
-runtime venv, deliberately, because it exercises the same stack the agent does
-including int8 quantization.
+Run from `server_py/`.
+
+```
+extract_frames -> crossval -> train --all-clips -> export_onnx -> evaluate
+               -> promote -> verify_predictor_parity -> calibrate_gate
+```
+
+Steps 1 to 5 and 7 use the training venv. Promote and calibrate_gate use the
+runtime venv: neither needs torch, and promote is what runs on the box that
+serves the model.
 
 ```bash
 TRAIN=.venv-train/bin/python
@@ -70,73 +77,117 @@ $TRAIN -m training.extract_frames [--seed N] [--eval-windows 8 12] [--cache-dir 
 An eval sample is W frames spread across the whole clip, the protocol schema 1
 used, so a window sweep needs one per length.
 
-**2. Fit the temporal head.** Reads the cache, writes `models/head_state.pt`
-and `models/train_result.json`. Until `crossval.py` lands this still trains on
-the legacy single train/val split, rebuilt deterministically from the manifest
-by `dataset.split_by_group`. Its val accuracy is a selection score.
+**2. Cross-validate.** Reads the cache, writes `models/cv_result.json`,
+`models/cv_oof.npz` and appends to `models/runs/index.jsonl`. **This is the
+only step whose numbers are results.**
 
 ```bash
-$TRAIN -m training.train [--window N] [--seed N]
+$TRAIN -m training.crossval [--repeats 5] [--n-splits 5] [--n-inner 4] [--seed N]
 ```
 
-**3. Export to ONNX.** Reads `head_state.pt` and `train_result.json`, writes
-`models/backbone_fp32.onnx`, `models/head.onnx`, `models/backbone_int8.onnx`
-(plus `.data` sidecars for the two large graphs).
+Repeated, nested, grouped CV (`training/splits.py`) over four arms on
+identical folds: `majority`, `static_logreg`, `static_meanstd_mlp` and `gru`
+(the shipping head). Inner folds choose each arm's window (from the cache's
+`--eval-windows`), learning rate or C, and epoch count; the arm is then
+refitted on the outer-train clips and scored once on the outer eval clips,
+which are never used for stopping or selection. Standardization buffers and
+class weights are computed per fit from that fit's training clips only.
+
+`cv_result.json` holds, per arm, the pooled out-of-fold macro-F1, balanced
+accuracy and kappa (mean and sd over repeats), per-class recall with Wilson
+intervals, the per-outer-fold selections (folds disagreeing on the window is a
+result), and per-fold scores. `paired` compares `gru` against `static_logreg`
+fold by fold with the Nadeau-Bengio corrected resampled t-test, plus an
+uncorrected Wilcoxon for reference. `--quick` (one config per arm, 15-epoch
+cap) is for smoke runs only.
+
+It refuses to run if any class has fewer clips or source groups than
+`--n-splits`, naming the class and the remedy.
+
+**3. Fit the deployable head.** Reads the cache and `cv_result.json`, writes
+`models/head_state.pt` and `models/train_result.json`.
+
+```bash
+$TRAIN -m training.train --all-clips [--seed N]
+```
+
+Trains on every labeled clip with the CV-selected config: the most common
+window and learning rate across outer folds, and the median epoch count.
+There is no held-out data in this mode, so `train_result.json` records the
+config and a pointer to `cv_result.json` and no accuracy at all. It refuses a
+`cv_result.json` computed on different labels than the cache.
+
+`--fold R:K` fits one outer fold with its CV-selected config and prints that
+fold's report, for debugging. With no flag, `train.py` still fits the legacy
+single train/val split; its val accuracy is printed as a selection score and
+not written anywhere.
+
+**4. Export the candidate.** Reads `head_state.pt` and `train_result.json`,
+writes `models/candidate/` (`backbone_fp32.onnx`, `backbone_int8.onnx`,
+`head.onnx`, their `.data` sidecars, and `manifest.json` with each artifact's
+sha256, the git SHA, labels, ethogram version and window). Nothing the agent
+loads is touched.
 
 ```bash
 $TRAIN -m training.export_onnx
 ```
 
-**There is no separate deploy step: this one writes in place and IS the
-deploy.** `agent/capture.py` and `app/routers/model.py` read
-`models/backbone_int8.onnx` and `models/head.onnx` directly. That is why
-`models/gate_result.json` could read `"gate_passed": false` while the model was
-live. A `models/candidate/` staging directory and a `promote.py` that enforces
-the gate land in Phase 3 of `upgrade-plan.md`.
-
-**4. Check the export.** Accuracy and confusion matrix for the fp32 and int8
-pair, plus the int8-versus-fp32 quantization check. Writes
-`models/quant_result.json`.
+**5. Evaluate (being rewritten: deployment gates G1-G7).** Today it reports
+fp32 and int8 accuracy on the legacy split's val clips and writes
+`models/quant_result.json`; the rewrite evaluates `models/candidate/` and
+writes `models/candidate/gate_result.json`, which promote requires.
 
 ```bash
 $TRAIN -m training.evaluate
 ```
 
-These are **selection-split numbers, not held-out accuracy.** The same split
-drove early stopping and checkpoint selection. Do not report them as accuracy.
+**6. Promote.** Refuses unless `candidate/gate_result.json` says
+`gate_passed: true` and every artifact's sha256 matches the candidate
+manifest. Archives the deployed `models/*.onnx` to
+`models/archive/<timestamp>/`, installs the candidate, and writes
+`models/promoted.json`. `--force "<reason>"` overrides the gate (never the hash
+check) and records the reason. Restart the agent afterwards: it loads the
+model at startup.
 
-**5. Verify runtime parity.** Confirms `inference/predictor.py`'s ring-buffer
-path reproduces step 4's fp32 number exactly.
+```bash
+$RUN -m training.promote [--force "reason"]
+```
+
+**7. Verify runtime parity.** Confirms `inference/predictor.py`'s ring-buffer
+path reproduces the export's fp32 number exactly.
 
 ```bash
 $TRAIN -m training.verify_predictor_parity
 ```
 
-**6. Guard regressions.** Neither needs a model or a camera.
+**8. Calibrate the alert threshold.** Reads the `gru` arm's out-of-fold
+probabilities from `models/cv_oof.npz` and reports what each
+`AGENT_INTEREST_THRESHOLD` would have caught and woken you for. Every
+probability comes from a fold that never trained on that clip, so the
+threshold is not fitted in-sample. It loads no ONNX model.
 
 ```bash
-$TRAIN -m training.test_train_guards
-$TRAIN -m training.test_export_guards
+$RUN -m training.calibrate_gate [--oof models/cv_oof.npz]
 ```
 
-**7. Calibrate the alert threshold.** Runs the deployed int8 pair over every
-labeled clip and reports what each `AGENT_INTEREST_THRESHOLD` would have caught.
+## Dataset reports
 
-```bash
-$RUN -m training.calibrate_gate [--refresh] [--window N]
-```
+Both run on the runtime venv and write to `models/`.
 
-**Known limitation:** this currently calibrates on every labeled clip,
-including the ones the model trained on, so the threshold is fitted in-sample.
-Phase 3 moves it to out-of-fold probabilities. Until then, read its recall
-column as optimistic.
+- `training/recoding_report.py` cross-tabulates the v1 labels
+  (`server/labels.v1.json`) against the v2 recode into
+  `models/recoding_report.json`: what each v1 class became.
+- `training/reliability.py` computes Cohen's kappa, overall and one-vs-rest per
+  class, between the first pass (`server/labels.json`) and the blind 25%
+  re-code (`server/labels.reliability.json`) into `models/reliability.json`.
+  It refuses until the re-code is complete. This kappa is the ceiling any
+  classifier can be compared against.
 
 ## Off the path
 
-- `training/diagnose_meanstd.py` is a diagnostic, not a pipeline step. It trains
-  the old JS system's mean/std-pooling head on the current embeddings to
-  separate "is the new backbone better" from "is the GRU head data-starved".
-  Phase 3 folds it in as a proper cross-validated arm.
+- `training/diagnose_meanstd.py` is the old single-split diagnostic. Its
+  architecture now runs as crossval's `static_meanstd_mlp` arm, which is the
+  number to use; the script itself still reports on the legacy split.
 - `scripts/legacy/js_baseline_v1.mjs` reproduces the ethogram-v1 tfjs number
   (74.4%) and nothing else. It is retired from the pipeline: the tfjs model
   predicts five v1 classes and cannot predict v2's seven, so comparing a v2
@@ -165,8 +216,14 @@ their own, which is the faster loop when one is red:
 .venv/bin/python tests/test_server_robustness.py
 .venv/bin/python tests/test_capture_loop.py
 .venv/bin/python tests/test_clipping_mode.py
+.venv/bin/python tests/test_labeling_sidecars.py
+.venv/bin/python training/test_promote_reports.py
 .venv-train/bin/python training/test_export_guards.py
 .venv-train/bin/python training/test_train_guards.py
+.venv-train/bin/python training/test_splits_metrics.py
+.venv-train/bin/python training/test_cache_v2.py
+.venv-train/bin/python training/test_crossval_guards.py      # also runs calibrate_gate under .venv
+.venv-train/bin/python training/check_decode_parity.py       # local_data: needs server/recordings/
 ```
 
 Each prints `PASS`, `FAIL` or `SKIP` per check through the shared helper in

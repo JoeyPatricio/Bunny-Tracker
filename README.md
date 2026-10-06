@@ -147,9 +147,12 @@ the camera, labeling, and training tabs. Without login you see the public demo.
    is the ethogram in [docs/ethogram.md](docs/ethogram.md), not an ad-hoc list:
    `feeding`, `grooming`, `locomotion`, `locomotion_rapid`, `rearing`,
    `resting_lying`, `resting_sitting`, plus `out_of_view`.
-2. **Train**: run `server_py/training/train.py` (see that file's docstring for
-   the full pipeline: extract -> split -> fit -> export to ONNX). The Training
-   tab in the dashboard is now a read-only view of whatever model is deployed.
+2. **Train**: an offline CLI pipeline, extract -> cross-validate -> fit ->
+   export a candidate -> evaluate -> promote; see
+   [docs/pipeline.md](docs/pipeline.md#the-order). Export writes to
+   `server_py/models/candidate/`, and only `training/promote.py`, which refuses
+   a candidate that failed its gate, replaces the model the agent loads. The
+   Training tab in the dashboard is a read-only view of whatever is deployed.
 3. **Monitor**: the agent loads the exported ONNX model and runs live. Toggle
    **Monitoring** and **Email** from the dashboard header.
 
