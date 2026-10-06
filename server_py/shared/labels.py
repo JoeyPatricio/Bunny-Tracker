@@ -36,7 +36,7 @@ ALL_CODES = LABELS + CODING_ONLY
 # catch-all `normal`, so every consumer that used to compare against a single
 # index now has to compare against this set.
 RESTING_LABELS = ["resting_lying", "resting_sitting"]
-RESTING_INDICES = frozenset(LABELS.index(l) for l in RESTING_LABELS)
+RESTING_INDICES = frozenset(LABELS.index(label) for label in RESTING_LABELS)
 
 # Codes that must never surface on the public demo page. v1 excluded the single
 # `normal` label; a rabbit sitting still is no more of a highlight than one

@@ -23,7 +23,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from shared.labels import LABELS
 from training.dataset import class_weights
-from training.train import CACHE_DIR, MANIFEST_PATH, confusion_matrix, load_entries, per_class_report
+from training.model import NUM_CLASSES
+from training.train import (
+    MANIFEST_PATH,
+    confusion_matrix,
+    load_entries,
+    per_class_report,
+)
 
 EPOCHS = 100
 PATIENCE = 10
@@ -43,7 +49,7 @@ class MeanStdClassifier(nn.Module):
     # here survived the v2 migration and would have built a 5-wide output
     # against 7-class targets, which CrossEntropyLoss reports as an opaque
     # index error rather than as "your class count is stale".
-    def __init__(self, input_dim=2560, num_classes=len(LABELS)):
+    def __init__(self, input_dim=2560, num_classes=NUM_CLASSES):
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(input_dim, 256), nn.ReLU(), nn.Dropout(0.4),
@@ -119,7 +125,7 @@ def main():
     with torch.no_grad():
         pred_ids = model(x_val_t).argmax(dim=1).tolist()
     true_ids = y_val.tolist()
-    acc = sum(t == p for t, p in zip(true_ids, pred_ids)) / len(true_ids)
+    acc = sum(t == p for t, p in zip(true_ids, pred_ids, strict=True)) / len(true_ids)
     cm = confusion_matrix(true_ids, pred_ids)
     report = per_class_report(cm)
 
@@ -127,7 +133,7 @@ def main():
     for label, r in report.items():
         print(f"  {label:10s} precision={r['precision']*100:5.1f}%  recall={r['recall']*100:5.1f}%  support={r['support']}")
     print("Confusion matrix (rows=true, cols=pred):")
-    print("  " + "  ".join(f"{l[:4]:>6s}" for l in LABELS))
+    print("  " + "  ".join(f"{label[:4]:>6s}" for label in LABELS))
     for i, row in enumerate(cm.tolist()):
         print(f"  {LABELS[i][:4]:4s} " + "  ".join(f"{v:6d}" for v in row))
 

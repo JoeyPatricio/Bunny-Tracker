@@ -11,8 +11,8 @@ from pydantic import BaseModel
 
 from app.config import EMAIL_PASS, EMAIL_USER, NOTIFY_COOLDOWN_MINUTES, NOTIFY_TO, RECORDINGS_DIR
 from app.lib.recording_name import is_recording_filename
-from shared.labels import LABELS, RESTING_LABELS
 from app.routers.monitor import read_monitor_state
+from shared.labels import LABELS, RESTING_LABELS
 
 router = APIRouter()
 
@@ -20,7 +20,7 @@ router = APIRouter()
 # the single `normal` class; v2 splits rest into lying and sitting, so this
 # subtracts the whole resting set. `out_of_view` is not in LABELS at all, so it
 # can never reach here.
-ALERT_LABELS = {l for l in LABELS if l not in RESTING_LABELS}
+ALERT_LABELS = {label for label in LABELS if label not in RESTING_LABELS}
 
 # notify.js's OWN label phrase map (for email subject/body text) — distinct
 # from shared/labels.py's LABEL_PHRASE, which is the client UI's wording.

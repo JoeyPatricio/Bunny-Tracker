@@ -2,7 +2,7 @@
 import asyncio
 import json
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from app.config import LABELS_BACKUP_DIR, SERVER_DIR
 
@@ -20,7 +20,7 @@ async def _make_backup() -> None:
             return  # don't snapshot an empty/blank file over a good one
 
         await asyncio.to_thread(LABELS_BACKUP_DIR.mkdir, parents=True, exist_ok=True)
-        day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        day = datetime.now(UTC).strftime("%Y-%m-%d")
         dest = LABELS_BACKUP_DIR / f"labels-{day}.json"
         await asyncio.to_thread(dest.write_text, raw, encoding="utf-8")  # one per day
 

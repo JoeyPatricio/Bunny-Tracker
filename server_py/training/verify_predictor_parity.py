@@ -49,7 +49,7 @@ def main():
         true_ids.append(LABELS.index(e["label"]))
         pred_ids.append(pred)
 
-    acc = sum(t == p for t, p in zip(true_ids, pred_ids)) / len(true_ids)
+    acc = sum(t == p for t, p in zip(true_ids, pred_ids, strict=True)) / len(true_ids)
 
     gate_result = json.loads((MODELS_DIR / "gate_result.json").read_text())
     onnx_fp32_acc = gate_result["onnx_fp32_acc"]

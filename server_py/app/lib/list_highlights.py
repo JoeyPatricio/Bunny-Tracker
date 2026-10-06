@@ -5,11 +5,11 @@ first, each annotated with its current demo-page visibility.
 """
 import asyncio
 
-from shared.labels import NON_HIGHLIGHT
 from app.config import RECORDINGS_DIR
 from app.lib.hidden_store import read_hidden
 from app.lib.iso_time import to_iso_millis
 from app.lib.label_store import read_labels
+from shared.labels import NON_HIGHLIGHT
 
 
 async def list_highlights(include_hidden: bool) -> list[dict]:
