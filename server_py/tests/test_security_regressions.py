@@ -12,10 +12,15 @@ uvicorn does, so the %2e%2e traversal cases reproduce here rather than needing
 a live server. Read-only apart from POSTs that touch in-memory state only:
 nothing under server/ is written.
 """
+import os
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+# These checks must exercise authentication without an owner's .env file.
+os.environ["ADMIN_PASSWORD"] = "security-test-password"
+os.environ["AGENT_TOKEN"] = "security-test-agent-token"
 
 from fastapi.testclient import TestClient
 

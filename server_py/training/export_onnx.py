@@ -159,7 +159,20 @@ def git_sha() -> str | None:
         return None
 
 
-def write_manifest(out: Path, window: int | None = None) -> dict:
+def validate_train_result(result: dict) -> None:
+    if result.get("view", "full") != "full":
+        raise SystemExit("Crop is an offline CV arm. The agent has no matching ROI preprocessing.")
+    if result.get("mode") != "all-clips" or not result.get("cv_run_id"):
+        raise SystemExit("Export requires a CV-selected all-clips head. Run training.train --all-clips first.")
+    if any(key not in result for key in ("cv_arm", "aug_policy", "view", "labels_sha256")):
+        raise SystemExit("Training result lacks per-arm provenance. Rerun training.train --all-clips.")
+    if result.get("ethogram_version") != ETHOGRAM_VERSION:
+        raise SystemExit("The head uses a different ethogram. Recode and retrain before export.")
+    if result.get("labels_sha256") != sha256_file(LABELS_JSON):
+        raise SystemExit("Labels changed after training. Rebuild the cache, cross-validate and retrain before export.")
+
+
+def write_manifest(out: Path, window: int | None = None, train_result: dict | None = None) -> dict:
     manifest = {
         "artifacts": {p.name: sha256_file(p) for p in artifacts_in(out)},
         "git_sha": git_sha(),
@@ -168,6 +181,10 @@ def write_manifest(out: Path, window: int | None = None) -> dict:
         "window": window,
         "created_at": datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
     }
+    if train_result is not None:
+        manifest.update({key: train_result[key] for key in (
+            "cv_arm", "cv_run_id", "labels_sha256", "aug_policy", "view",
+        )})
     (out / MANIFEST_NAME).write_text(json.dumps(manifest, indent=2) + "\n")
     return manifest
 
@@ -178,10 +195,13 @@ def main():
                         help="candidate directory (default models/candidate/)")
     args = parser.parse_args()
 
+    out = args.out.resolve()
+    if out == MODELS_DIR.resolve():
+        raise SystemExit("Export cannot write into the live models directory. Use models/candidate and promote after evaluation.")
     train_result = json.loads((MODELS_DIR / "train_result.json").read_text())
+    validate_train_result(train_result)
     window = train_result["window"]
 
-    out = args.out.resolve()
     out.mkdir(parents=True, exist_ok=True)
     # A stale gate result from an earlier candidate must never be read as
     # applying to this one.
@@ -190,7 +210,7 @@ def main():
     export_backbone(window)
     export_head(window)
     quantize_backbone()
-    manifest = write_manifest(out, window)
+    manifest = write_manifest(out, window, train_result)
     print(f"\nDone. Candidate in {out} ({len(manifest['artifacts'])} artifacts hashed).")
     print("Nothing is deployed yet: run training.evaluate, then training.promote.")
 

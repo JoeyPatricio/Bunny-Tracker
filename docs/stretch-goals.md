@@ -433,177 +433,105 @@ sensor in your hand.
 
 ### Phase C: The paper
 
-#### 14. Decide what the paper claims, before running anything
+#### 14. Register a methods claim before reading model results
 
-This is the step that determines whether the rest is worth doing, so it comes
-first and it is a writing step, not a coding one.
+The paper describes an open-source, edge-deployable continuous home-monitoring
+system for rabbits, with a published-ethogram vocabulary, measured label
+reliability, nested grouped cross-validation, and paired comparisons against
+multiple baselines. Whether a temporal head improves on static aggregation is an
+experimental question. The old negative-result claim used selection scores under
+an obsolete vocabulary and cannot support a v2 conclusion.
 
-The claim this project can currently support is **not** "we built a more
-accurate rabbit behavior classifier." It lost to its own baseline. What it can
-support is a case study with a measured negative result:
+Write a one-paragraph claim and choose a venue before fitting models. State the
+collection setting, clip-level weak-label design, targeted retention of difficult
+clips, class imbalance and single-camera scope. Report a blind re-code as
+intra-observer reliability. Claim inter-observer reliability only after an
+independent observer has actually coded a registered sample.
 
-> Continuous home animal monitoring on commodity hardware, built twice. On
-> 184 clip-level labels across 5 behaviors, a frozen modern edge backbone with
-> a learned temporal head (GRU over an embedding sequence) underperforms an
-> older backbone with hand-designed mean/std window pooling, 61.5% vs 74.4%.
-> We report the engineering that makes the comparison trustworthy (group-aware
-> splitting by recording session, a two-stage streaming architecture, int8
-> quantization that silently breaks on depthwise convolutions under per-tensor
-> weight scaling), and characterize where the crossover between designed and
-> learned temporal aggregation sits as a function of dataset size.
+**Verify:** every empirical sentence in the claim has a frozen source report.
+Leave unsupported quantities and comparisons out of the manuscript.
 
-Write that paragraph, in your own words, before writing code. If the
-experiments in step 15 do not survive contact with it, the claim changes, not
-the experiments.
+#### 15. Run paired experiments and generate figures from measured artifacts
 
-The alternative framing, worth a deliberate decision rather than drift: wait
-until the labeled set is 2-3x larger, retrain, and write an accuracy paper
-instead. That is a better paper if the retrain wins and a wasted year if it
-does not. The negative-result version can be written now, and it is
-publishable exactly because most people who hit this outcome never write it
-down. Recommendation: write the current one; a future accuracy result is a
-second paper, not a reason to delay the first.
+Complete v2 recoding, blind reliability coding and the temporal holdout cut-date
+decision first. The science path is repeated nested grouped CV, not repeated
+train/validation selection scores. Keep hyperparameter selection, stopping,
+standardization and class weighting inside each training fold. All model arms
+share outer evaluation groups and label provenance.
 
-Also decide the venue now, because it sets length and format: an arXiv
-preprint (cs.CV or cs.LG) is the default and has no gatekeeper, and a
-workshop on animal behavior/computer vision or on-device ML is the realistic
-peer-reviewed target. Nothing in this project needs a full conference paper's
-scope.
+Use `training.crossval` for the primary majority, static logistic-regression,
+static mean/std MLP and GRU comparison. Use paired augmentation and crop arms only
+after their embedding caches have been built. Treat pose as an offline comparison
+with additional information, using independently annotated keypoints or an
+estimator trained outside the entire CV pool. It stays outside runtime inference.
+No pose advantage can be claimed before annotation and actual grouped evaluation.
 
-**Verify:** a one-paragraph claim and a named target venue exist in writing,
-and every number in the claim traces to a file in `server_py/models/`.
+`training.learning_curve` reuses the CV fitter while retaining each outer
+evaluation set. It selects nested subsets of complete training groups and runs
+inner selection again within each subset. Its measured reports record actual
+training clip counts, group counts, split membership and OOF predictions. A
+subset without enough class/group support fails rather than changing the design.
 
-#### 15. Run the experiments the claim needs
+`training.figures` reads JSON and OOF files under `server_py/models/` and writes
+standalone SVG/PDF figures with source hashes and plotted data in JSON sidecars.
+It exports the head comparison, one-repeat OOF confusion matrix, v1-to-v2
+recoding cross-tab, model kappa alongside blind human re-code kappa, quantization
+deployment table and measured learning curve. See
+[paper/README.md](../paper/README.md) for producer commands and schemas.
 
-The current evidence is one split at one seed with 39 validation clips and
-per-class support between 5 and 8. That is enough to make an engineering
-decision and nowhere near enough to publish. Six experiments, roughly in order
-of how much they change the paper's credibility. All of them run offline on
-the cached embeddings in `server_py/models/cache/`, so they are minutes of
-compute, not hours.
+Repeat standard deviations describe variability and must not be called confidence
+intervals. Do not inflate support by counting repeated predictions as new clips.
+Human self-agreement is measured on a subset and is not a model performance
+ceiling. The all-clips fp32/int8 comparison is an in-sample deployment check,
+separate from the headline OOF result. Report latency only on hardware actually
+measured. Do not infer Pi throughput from this laptop.
 
-1. **Repeated group-aware splits.** `extract_frames.py --seed` and
-   `train.py` already take the parameters; run 5 to 10 seeds and report mean
-   and standard deviation, not a single number. With 39 val clips, a single
-   split's accuracy moves several points on luck alone, and a reviewer will
-   ask. Expect the gap to the baseline to survive this, and note that the JS
-   baseline in `models/js_baseline.json` was measured on one split too, so it
-   needs the same treatment or the comparison is not like-for-like.
-2. **Learning curve.** Train both head architectures on 25%, 50%, 75%, and
-   100% of the training clips, holding the val set fixed, and plot accuracy
-   against dataset size. This is what converts "we believe it is a data
-   problem" into evidence: if the mean/std curve is flattening while the GRU
-   curve is still climbing, the crossover argument becomes a measurement
-   instead of an opinion. This is the paper's most valuable figure.
-3. **Head ablation on identical embeddings.** Single frame, mean pooling,
-   mean+std pooling, 1D convolutional stack, GRU. `diagnose_meanstd.py`
-   already implements the mean/std arm; the rest are variations on the same
-   loop. Same backbone, same splits, same seeds, so the only variable is the
-   aggregation.
-4. **Backbone ablation.** Re-embed the same clips with a torch MobileNetV2
-   from `timm` and rerun the head ablation on those embeddings. This
-   disentangles "new backbone" from "new head", which is the confound the
-   original result has. State plainly that the torch MobileNetV2 is not
-   byte-identical to the tfjs one the live system used, so it is a controlled
-   comparison of architectures, not a reproduction of the deployed baseline.
-5. **Quantization table.** fp32, int8 per-tensor, int8 per-channel, each with
-   accuracy and latency. The per-tensor result is a genuine finding worth a
-   table row and a paragraph: MobileNet-family depthwise convolutions have
-   per-channel weight ranges that one shared scale destroys, the accuracy
-   collapse is silent, and per-channel recovers float32 exactly here.
-6. **Latency.** `scripts/bench_pi.py` on the dev box now, on the Pi after
-   Phase A. Report both, labeled by machine. If the Pi never happens, report
-   dev-box numbers and say so; do not extrapolate to ARM in print.
+**Verify:** each plotted number traces to its source report and SHA-256. Missing
+inputs fail actionably. No number is supplied by a chart template or typed into a
+manuscript from the archived v1 selection scores.
 
-Two things to fix while running these, both cheap and both things reviewers
-poke at:
+#### 16. Freeze the artifacts before writing results
 
-- **Confidence intervals.** With support of 5 to 8 clips per class, report
-  Wilson intervals on per-class recall rather than bare percentages. A recall
-  of 42.9% on 7 clips has an interval wide enough that the honest statement is
-  "we cannot distinguish these classes at this sample size."
-- **Label reliability.** Every label came from one annotator with no measured
-  agreement. Re-label a random 40-clip subset blind, months after the
-  originals, and report self-agreement. It is an afternoon of work and it
-  turns an unstated assumption into a number.
+Joe handles tags and publishing. Freeze the code revision, environment lock,
+ethogram version, label hash, embedding manifests, seeds, reference CV/OOF files,
+pose annotations/provenance if used, learning-curve reports, reliability report,
+recoding report, candidate gate and quantization reports, ONNX artifacts and the
+figure sidecars. Record a freeze date. The paper describes that snapshot even if
+the deployed system is retrained later.
 
-**Verify:** every table and figure in the paper is emitted by a script in
-`server_py/training/` or `server_py/scripts/` that reads from
-`models/cache/` and writes to a `paper/figures/` directory. No number is typed
-into the manuscript by hand.
+**Verify:** the frozen reports regenerate all figures without model fitting, and
+the frozen cache plus environment reproduce the head experiments without video.
 
-#### 16. Freeze the artifacts the paper describes
+#### 17. Write the methods, results and limitations
 
-A paper about a live system that keeps changing under it is unciteable. Before
-writing prose, tag a commit, and copy into `paper/artifacts/`: the ONNX files,
-`train_result.json`, `gate_result.json`, `js_baseline.json`, the manifest, and
-the seed list. Every claim in the text cites one of those files.
+Explain the motion gate and cached-backbone/two-stage inference path. Describe
+how the ethogram becomes clip-level labels, how uncertain clips are handled, how
+the blind sample was drawn, and what grouped nested CV protects against. Report
+the paired comparator, repeat variability, confidence-interval method where
+available, and disagreement between selected hyperparameters across folds.
 
-If the model gets retrained during writing (a real possibility, since more
-labels are the point of debt item 1), the paper describes the frozen artifacts
-and says so with a date. It does not chase the deployment.
+The threats-to-validity section covers one room and camera, limited animals,
+one observer unless a second was actually used, small class support, targeted
+collection, temporal distribution shift, annotation effort, and the mismatch
+between clip-level labels and short training windows. Pose introduces additional
+annotation/model provenance and cannot be treated as a pure head ablation.
+Describe limits on unrepeated backbone or hardware comparisons explicitly.
 
-**Verify:** a fresh clone at the tagged commit, plus the frozen artifacts,
-reproduces every number in the results section.
+**Verify:** someone unfamiliar with the implementation can explain which data
+selected each model and which data produced each reported score.
 
-#### 17. Write it
+#### 18. Prepare a reproducible release
 
-Structure, with the sections that actually matter for this paper called out:
+Release only artifacts Joe has reviewed for privacy. Frozen embeddings and the
+manifest can reproduce head training without indoor footage. They do not
+reproduce alternative-backbone extraction, crop preprocessing or pose estimation,
+and they do not provide a proof of anonymization. Include the scripts, lockfile,
+exact commands, report/annotation provenance, artifact hashes and figure sidecars.
+Keep recordings, credentials and local notes out of the release.
 
-- **System description.** The two-stage streaming design and why it exists:
-  the backbone runs once per frame, the head runs once per window step, and a
-  single end-to-end graph over a sliding window would re-run the backbone N
-  times per step for embeddings it computed a moment ago. The classical motion
-  gate in front of the network, and why a hand-built detector still earns its
-  place next to a CNN. This section writes itself out of `docs/provenance.md`
-  and `docs/provenance.md, architecture.md`.
-- **Dataset.** 184 clips, 5 behaviors, one camera, one room, two rabbits,
-  clip-level labels, class imbalance dominated by "normal". State the
-  collection process honestly, including that high-motion low-confidence clips
-  were preferentially retained for review, which is targeted collection of hard
-  examples and also a sampling bias worth naming.
-- **The weak-label problem.** The most interesting technical honesty in the
-  project: labels are clip-level over roughly 12 seconds, but the behavior
-  they name may occupy a fraction of the window. A "yawn" clip is mostly not
-  yawning. The head is therefore trained on windows whose label is true of the
-  clip but not of every window sampled from it. This is a multiple-instance
-  learning setup being treated as ordinary supervised classification, it
-  plausibly hurts the temporal head more than the pooling head (an ordering-
-  sensitive model has more to lose from a mislocated event), and it is a
-  legitimate future-work hook rather than a flaw to hide.
-- **Results.** The tables and figures from step 15, with intervals.
-- **Threats to validity.** Single environment, single camera, two animals,
-  one annotator, small n, and the backbone-ablation caveat from step 15.4.
-  Write this section early rather than last; it is the section that decides
-  whether the paper reads as honest or as excuse-making, and drafting it early
-  usually reveals an experiment worth adding.
-- **Reproducibility and dataset release.** See step 18.
-
-**Verify:** someone who has never seen the project can read the system section
-and correctly describe the inference path. Run `/stop-slop` on the manuscript
-before it goes anywhere.
-
-#### 18. Release the artifact
-
-The obvious blocker is that the raw data is video of the inside of a house.
-The frozen-backbone design solves this almost for free: **release the cached
-embeddings, not the video.** `models/cache/` holds `[T, 1280]` float arrays
-plus `manifest.json` with labels and split assignments. Because the backbone is
-frozen and never trains, those embeddings are sufficient to reproduce every
-head-training result in the paper exactly, and they are not reconstructible
-into recognizable images of the room.
-
-Ship: the embedding cache, the manifest, the label file, the ONNX artifacts,
-the training and evaluation scripts, and a README with the exact commands. Note
-in the paper that the backbone ablation (step 15.4) cannot be reproduced from
-the release alone, since it needs the source video to re-embed; that is an
-honest limitation to state rather than paper over.
-
-Do not release `.env`, recordings, or anything under `notes/`, which contains
-machine-specific paths and is git-ignored for that reason.
-
-**Verify:** unpack the release into a clean directory on a machine without the
-recordings, run the documented command, and get the paper's headline numbers.
+**Verify:** a clean environment without recordings reproduces the declared
+head-only experiments and figures. List the experiments that still require raw
+video or unreleased annotations.
 
 ## Risks
 

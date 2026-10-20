@@ -2,9 +2,9 @@
 
 Compares first-pass labels (server/labels.json) with the blind re-code
 (server/labels.reliability.json) over the frozen sample
-(server/labels.reliability_sample.json). That kappa is the ceiling on what any
-classifier can achieve against these labels, and the paper leads with model
-kappa so the two are directly comparable.
+(server/labels.reliability_sample.json). Human repeatability and model OOF
+agreement describe different samples. The re-code includes out_of_view, which
+the classifier excludes, so it is not an upper bound on classifier performance.
 
 Reported:
 - overall kappa and raw percent agreement over every coding code, including

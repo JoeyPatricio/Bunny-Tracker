@@ -192,6 +192,36 @@ def test_wilson_interval() -> None:
     check("n = 0 carries no information", M.wilson_interval(0, 0) == (0.0, 1.0))
 
 
+def test_grouped_macro_f1_interval() -> None:
+    """Intervals resample capture groups, preserving repeated predictions for each clip."""
+    y = np.tile([0, 1], 8)
+    groups = np.repeat(np.arange(8), 2)
+    probs = np.eye(2)[y][None]
+    perfect = M.grouped_macro_f1_interval(y, probs, groups)
+    check("perfect predictions have interval [1,1]", perfect["ci95"] == [1.0, 1.0])
+    probs[:, :8] = probs[:, :8, ::-1]
+    one = M.grouped_macro_f1_interval(y, probs, groups, seed=12)
+    repeated = M.grouped_macro_f1_interval(y, np.repeat(probs, 5, axis=0), groups, seed=12)
+    check("duplicating repeats does not narrow the interval", one == repeated)
+    check("interval spans heterogeneous group performance", one["ci95"][0] < 0.5 < one["ci95"][1])
+    check("interval uses eight groups, not sixteen clips", one["n_groups"] == 8)
+    check("seed reproduces the interval", one == M.grouped_macro_f1_interval(y, probs, groups, seed=12))
+    # A literal group bootstrap is the reference for the vectorized calculation.
+    rng = np.random.default_rng(12)
+    weights = rng.multinomial(8, np.full(8, 1 / 8), 1000)
+    scores = []
+    for count in weights:
+        idx = np.concatenate([np.tile(np.flatnonzero(groups == g), n) for g, n in enumerate(count)])
+        scores.append(M.macro_f1(M.confusion_matrix(y[idx], probs[0, idx].argmax(1), 2)))
+    check("vectorized interval matches literal group resampling",
+          np.allclose(one["ci95"], np.quantile(scores, [0.025, 0.975])))
+    try:
+        M.grouped_macro_f1_interval(y, probs, np.zeros_like(groups))
+        check("one source group refuses an interval", False)
+    except ValueError:
+        check("one source group refuses an interval", True)
+
+
 def test_classification_report_and_pooling() -> None:
     """classification_report carries the headline numbers; pool_oof refuses a non-partition."""
     y = np.array([0, 0, 1, 1, 2, 2])
@@ -238,6 +268,7 @@ def main() -> None:
         test_metrics_match_sklearn,
         test_majority_baseline,
         test_wilson_interval,
+        test_grouped_macro_f1_interval,
         test_classification_report_and_pooling,
         test_check_degenerate_preserved,
     ):

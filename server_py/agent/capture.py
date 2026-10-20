@@ -18,6 +18,7 @@ from dotenv import load_dotenv
 from agent.client import AgentClient
 from agent.ffmpeg_io import FfmpegCapture, LiveFramePoller
 from inference.backbone import Backbone
+from inference.deployment import read_promoted
 from inference.predictor import Predictor
 from inference.temporal_head import TemporalHead
 from shared.frames import normalize
@@ -420,6 +421,17 @@ class Agent:
         log("Loading ONNX models...")
         backbone = head = None
         try:
+            promoted = read_promoted(MODELS_DIR)
+            if promoted is None:
+                raise ValueError("No promoted model metadata. Evaluate and promote a candidate before inference.")
+            window = promoted["manifest"]["window"]
+            override = os.environ.get("AGENT_EMBED_WINDOW")
+            if override is not None and int(override) != window:
+                raise ValueError(
+                    f"AGENT_EMBED_WINDOW={override} differs from the promoted window {window}. "
+                    "Remove the override or retrain with the intended window."
+                )
+            self.embed_window = window
             backbone = Backbone(str(MODELS_DIR / "backbone_int8.onnx"))
             head = TemporalHead(str(MODELS_DIR / "head.onnx"))
             # The head's output width and the label vocabulary have to agree.

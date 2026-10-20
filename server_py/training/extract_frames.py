@@ -6,13 +6,18 @@ raw uint8 frames under frames/; a later run reuses them, so changing the
 augmentation policy or the backbone re-runs only the embed pass, not every
 decode. The embed pass always runs and writes emb/ plus the manifest.
 
+--view crop (Phase 5, training/crop.py) embeds a per-clip ROI crop instead of
+the full frame. It reads the full-view frames tier to find each box, then
+decodes the boxed clips again at higher resolution; that second decode is not
+cached, because it depends on the crop parameters.
+
 ffmpeg reads real container duration, sidestepping the browser's
 `duration === Infinity` MediaRecorder bug class entirely (no <video> element
 involved at all).
 
 Usage (from server_py/, using the training venv):
     .venv-train/bin/python -m training.extract_frames [--seed N] [--eval-windows 8 12]
-        [--aug-policy legacy|albu_v1]
+        [--aug-policy legacy|albu_v1] [--view full|crop]
 """
 import argparse
 import hashlib
@@ -29,8 +34,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from shared.frames import extract_frames as ffmpeg_extract_frames
 from shared.frames import normalize
 from shared.labels import ETHOGRAM_VERSION, LABELS
+from training import crop
 from training.augment import DEFAULT_POLICY, POLICIES, get_policy
-from training.cache import DEFAULT_CACHE_DIR, SCHEMA, manifest_path, variant_name
+from training.cache import (
+    DEFAULT_CACHE_DIR,
+    FULL_VIEW,
+    SCHEMA,
+    VIEWS,
+    eval_name,
+    manifest_path,
+    variant_name,
+)
 from training.dataset import TRAIN_FRAMES, WINDOW
 from training.model import BACKBONE_NAME, build_backbone
 from training.splits import group_key
@@ -67,11 +81,14 @@ def cached_frames(path: Path, recording: Path, n: int) -> np.ndarray:
 
 def build_cache(*, cache_dir: Path, labels_json: Path, recordings_dir: Path, backbone,
                 backbone_name: str = BACKBONE_NAME, seed: int = 0,
-                eval_windows: list[int] | None = None, aug_policy: str = DEFAULT_POLICY) -> dict:
+                eval_windows: list[int] | None = None, aug_policy: str = DEFAULT_POLICY,
+                view: str = FULL_VIEW) -> dict:
     eval_windows = sorted(set(eval_windows or [WINDOW]))
     policy = get_policy(aug_policy)
+    if view not in VIEWS:
+        raise SystemExit(f"Unknown view {view!r}; choose from {list(VIEWS)}.")
     cache_dir = Path(cache_dir)
-    mpath = manifest_path(cache_dir, policy.name)
+    mpath = manifest_path(cache_dir, policy.name, view)
     # Check the legacy manifest too: any policy writes into the shared frames
     # and eval tiers, so a schema-1 dir must be archived whichever policy runs.
     for existing in {mpath, manifest_path(cache_dir)}:
@@ -102,23 +119,40 @@ def build_cache(*, cache_dir: Path, labels_json: Path, recordings_dir: Path, bac
         # it. The detail string changes whenever a policy's transforms do.
         "aug_policy": policy.name,
         "aug_policy_detail": policy.detail,
+        "view": view,
         "seed": seed,
     }
+    raws = {fn: cached_frames(frames_dir / f"{fn}.npy", Path(recordings_dir) / fn, TRAIN_FRAMES)
+            for fn, _ in clips}
+    if view != FULL_VIEW:
+        manifest["crop_params"] = crop.CROP_PARAMS
+        manifest["roi"] = rois = {}
+        groups: dict[str, list[str]] = {}
+        for fn, _ in clips:
+            groups.setdefault(group_key(fn), []).append(fn)
+        for members in groups.values():
+            bg = crop.background([raws[fn] for fn in members])
+            for fn in members:
+                rois[fn] = crop.estimate_roi(raws[fn], bg)
     for filename, label in clips:
         recording = Path(recordings_dir) / filename
-        raw = cached_frames(frames_dir / f"{filename}.npy", recording, TRAIN_FRAMES)
+        raw = raws[filename]
+        if view != FULL_VIEW:
+            raw = crop.cropped_sample(str(recording), TRAIN_FRAMES, rois[filename], raw)
         # Seeded per clip, not from one shared stream, so a clip's variants do
         # not change when another clip is added or removed.
         rng = random.Random(f"{seed}:{filename}")
         variant_names = []
         for k, variant in enumerate(policy.make(raw, rng)):
-            name = variant_name(filename, k, policy.name)
+            name = variant_name(filename, k, policy.name, view)
             np.save(emb_dir / name, embed_frames(backbone, variant))
             variant_names.append(name)
         eval_names = {}
         for w in eval_windows:
             ev = cached_frames(frames_dir / f"{filename}.eval{w}.npy", recording, w)
-            name = f"{filename}.eval{w}.npy"
+            if view != FULL_VIEW:
+                ev = crop.cropped_sample(str(recording), w, rois[filename], ev)
+            name = eval_name(filename, w, view)
             np.save(emb_dir / name, embed_frames(backbone, ev))
             eval_names[str(w)] = name
         manifest["clips"].append({
@@ -127,6 +161,13 @@ def build_cache(*, cache_dir: Path, labels_json: Path, recordings_dir: Path, bac
         })
         print(f"  {filename} ({label}) x{len(variant_names)} variants")
 
+    if view != FULL_VIEW:
+        by_class: dict[str, list[bool]] = {}
+        for fn, label in clips:
+            by_class.setdefault(label, []).append(rois[fn]["box"] is None)
+        print("Full-frame fallback per class (these clips are NOT cropped):")
+        for label, fell in sorted(by_class.items()):
+            print(f"  {label:18s} {sum(fell)}/{len(fell)}")
     mpath.write_text(json.dumps(manifest, indent=2))
     print(f"Manifest written to {mpath}")
     return manifest
@@ -142,12 +183,14 @@ def main():
     parser.add_argument("--recordings-dir", type=Path, default=RECORDINGS_DIR)
     parser.add_argument("--aug-policy", choices=sorted(POLICIES), default=DEFAULT_POLICY,
                         help="training/augment.py policy; several can share one --cache-dir")
+    parser.add_argument("--view", choices=VIEWS, default=FULL_VIEW,
+                        help="full frame, or the training/crop.py ROI (crossval-only arm, not exportable)")
     args = parser.parse_args()
 
     build_cache(
         cache_dir=args.cache_dir, labels_json=args.labels, recordings_dir=args.recordings_dir,
         backbone=build_backbone(pretrained=True), seed=args.seed, eval_windows=args.eval_windows,
-        aug_policy=args.aug_policy,
+        aug_policy=args.aug_policy, view=args.view,
     )
 
 

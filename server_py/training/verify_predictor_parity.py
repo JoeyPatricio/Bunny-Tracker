@@ -21,7 +21,6 @@ Usage (from server_py/, training venv, after promote):
     .venv-train/bin/python -m training.verify_predictor_parity [--models-dir DIR] [--cache-dir DIR]
 """
 import argparse
-import json
 import sys
 from pathlib import Path
 
@@ -30,11 +29,12 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from inference.backbone import Backbone
+from inference.deployment import read_promoted
 from inference.predictor import Predictor
 from inference.temporal_head import TemporalHead
 from shared.frames import normalize
 from shared.labels import LABELS
-from training.cache import DEFAULT_CACHE_DIR, load_manifest
+from training.cache import DEFAULT_CACHE_DIR, LEGACY_POLICY, load_manifest
 
 MODELS_DIR = Path(__file__).resolve().parent.parent / "models"
 TOLERANCE = 1e-5
@@ -52,12 +52,16 @@ def main():
     parser.add_argument("--cache-dir", type=Path, default=DEFAULT_CACHE_DIR)
     args = parser.parse_args()
 
-    manifest = load_manifest(args.cache_dir)
-    promoted = args.models_dir / "promoted.json"
-    window = None
-    if promoted.is_file():
-        window = (json.loads(promoted.read_text()).get("manifest") or {}).get("window")
-    window = int(window or manifest["window"])
+    promoted = read_promoted(args.models_dir)
+    if promoted is None:
+        raise SystemExit("No promoted model metadata. Run training.promote before verifying deployment.")
+    deployed = promoted["manifest"]
+    manifest = load_manifest(args.cache_dir, deployed.get("aug_policy", LEGACY_POLICY))
+    window = deployed["window"]
+    if not manifest["clips"] or str(window) not in {str(w) for w in manifest["eval_windows"]}:
+        raise SystemExit("Cache needs nonempty eval samples for the promoted window. Rebuild the cache.")
+    if manifest.get("labels_sha256") != deployed.get("labels_sha256"):
+        raise SystemExit("Cache labels differ from the promoted model. Use its frozen cache for parity.")
 
     backbone = Backbone(str(args.models_dir / "backbone_int8.onnx"))
     head = TemporalHead(str(args.models_dir / "head.onnx"))
@@ -82,7 +86,7 @@ def main():
             disagree.append(clip["filename"])
         n += 1
 
-    ok = worst <= TOLERANCE and not disagree
+    ok = n > 0 and worst <= TOLERANCE and not disagree
     print(f"{n} clips, window {window}: max |flat - predictor| probability {worst:.2e} "
           f"(tolerance {TOLERANCE:g}), argmax disagreements {len(disagree)}")
     for fn in disagree[:10]:

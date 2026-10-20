@@ -96,6 +96,50 @@ def wilson_interval(successes: int, n: int, z: float = 1.959964) -> tuple[float,
     return (max(0.0, centre - half), min(1.0, centre + half))
 
 
+def grouped_macro_f1_interval(y, oof_probs, groups, *, seed: int = 0,
+                              n_bootstrap: int = 1000) -> dict:
+    """Resample source groups together across all OOF repeats.
+
+    Repeats reuse clips and fitted training sets. Resampling them as independent
+    observations would understate uncertainty. This interval is conditional on
+    the fitted OOF predictions and does not include uncertainty from retraining.
+    """
+    y = np.asarray(y)
+    probs = np.asarray(oof_probs)
+    groups = np.asarray(groups)
+    if (probs.ndim != 3 or probs.shape[0] == 0 or probs.shape[2] == 0
+            or y.shape != (probs.shape[1],) or groups.shape != y.shape):
+        raise ValueError("expected OOF [repeats, clips, classes] and one label/group per clip")
+    if y.dtype.kind not in "iu" or (y < 0).any() or (y >= probs.shape[2]).any():
+        raise ValueError("OOF labels must be valid integer class indices")
+    if (not np.isfinite(probs).all() or (probs < 0).any() or (probs > 1).any()
+            or not np.allclose(probs.sum(axis=2), 1, atol=1e-6)):
+        raise ValueError("OOF probabilities must be finite, in [0,1], and sum to one")
+    unique, inverse = np.unique(groups, return_inverse=True)
+    if len(unique) < 2 or n_bootstrap < 2:
+        raise ValueError("a grouped interval needs at least two source groups and bootstrap draws")
+
+    n_repeats, _, n_classes = probs.shape
+    per_group = np.zeros((len(unique), n_repeats, n_classes, n_classes), dtype=int)
+    predicted = probs.argmax(axis=2)
+    for r in range(n_repeats):
+        np.add.at(per_group, (inverse, r, y, predicted[r]), 1)
+    rng = np.random.default_rng(seed)
+    counts = rng.multinomial(len(unique), np.full(len(unique), 1 / len(unique)), n_bootstrap)
+    matrices = np.einsum("bg,grij->brij", counts, per_group, optimize=True)
+    tp = np.diagonal(matrices, axis1=2, axis2=3)
+    denom = matrices.sum(axis=2) + matrices.sum(axis=3)
+    f1 = np.divide(2 * tp, denom, out=np.zeros_like(tp, dtype=float), where=denom > 0)
+    per_repeat = f1.sum(axis=2) / (denom > 0).sum(axis=2)
+    lo, hi = np.quantile(per_repeat.mean(axis=1), [0.025, 0.975])
+    return {
+        "ci95": [float(lo), float(hi)],
+        "method": "percentile bootstrap of source groups, mean pooled OOF macro-F1 over repeats",
+        "n_groups": len(unique), "n_bootstrap": n_bootstrap, "seed": seed,
+        "caveat": "conditional on fitted OOF predictions, excludes retraining uncertainty",
+    }
+
+
 def classification_report(cm: np.ndarray, labels: list[str] = LABELS) -> dict:
     """Everything cv_result.json needs from one confusion matrix."""
     f1 = _f1_per_class(cm)

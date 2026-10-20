@@ -9,12 +9,16 @@ import { LABEL_COLOR } from '../labels.js'
  * currently deployed model's metadata.
  */
 export default function TrainingStudio() {
-  const [info, setInfo] = useState(null) // { exists, savedAt, labels, valAcc, window, backups }
+  const [info, setInfo] = useState(null)
   const [error, setError] = useState(null)
 
   useEffect(() => {
     fetch('/api/model')
-      .then(r => r.json())
+      .then(async r => {
+        const data = await r.json()
+        if (!r.ok) throw new Error(data.error || 'Could not load model info')
+        return data
+      })
       .then(setInfo)
       .catch(() => setError('Could not load model info'))
   }, [])
@@ -29,10 +33,8 @@ export default function TrainingStudio() {
       </div>
 
       <div className="ts-note">
-        Retraining runs offline: <code>server_py/training/train.py</code>, then{' '}
-        <code>export_onnx.py</code>. They read the labeled clips, retrain the classifier,
-        and write the ONNX artifacts the camera agent loads — there's nothing to do here
-        except see what's currently deployed.
+        Retraining runs offline. A candidate must pass evaluation before promotion.
+        This panel shows the promoted model and its cross-validation result.
       </div>
 
       {error && <div className="ts-error">{error}</div>}
@@ -54,10 +56,10 @@ export default function TrainingStudio() {
             <div className="ts-metric-val">{new Date(info.savedAt).toLocaleString()}</div>
             <div className="ts-metric-label">Exported at</div>
           </div>
-          {typeof info.valAcc === 'number' && (
+          {typeof info.cvMacroF1 === 'number' && (
             <div className="ts-metric-card">
-              <div className="ts-metric-val">{(info.valAcc * 100).toFixed(1)}%</div>
-              <div className="ts-metric-label">Held-out accuracy</div>
+              <div className="ts-metric-val">{info.cvMacroF1.toFixed(3)}</div>
+              <div className="ts-metric-label">Pooled OOF macro-F1</div>
             </div>
           )}
           {typeof info.window === 'number' && (

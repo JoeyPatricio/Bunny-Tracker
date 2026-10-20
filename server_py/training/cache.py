@@ -5,10 +5,14 @@ Layout under the cache dir (default models/cache/):
     frames/<clip>.npy          uint8 [TRAIN_FRAMES,224,224,3]  training sample
     frames/<clip>.eval<W>.npy  uint8 [W,224,224,3]             eval sample, window W
     emb/<clip>.v<k>.npy        float32 [TRAIN_FRAMES,1280]     variant k (k=0 identity), legacy policy
-    emb/<clip>.<policy>.v<k>.npy                               same, any other aug policy
-    emb/<clip>.eval<W>.npy     float32 [W,1280]                eval sample, identity
-    manifest.json              schema 2, legacy policy, see below
-    manifest.<policy>.json     schema 2, any other aug policy (training/augment.py)
+    emb/<clip>.<key>.v<k>.npy                                  same, any other cache key (below)
+    emb/<clip>.eval<W>.npy     float32 [W,1280]                eval sample, identity, full view
+    emb/<clip>.crop.eval<W>.npy                                same, crop view (training/crop.py)
+    manifest.json              schema 2, legacy policy, full view, see below
+    manifest.<key>.json        schema 2, any other cache key
+
+A cache key names one (view, aug policy) pair: "" for full/legacy, otherwise
+the non-default parts joined by dots, e.g. "albu_v1", "crop", "crop.albu_v1".
 
 Schema 1 baked the train/val split in at extraction time, because augmented
 variants were only generated for training clips. The backbone is frozen, so an
@@ -30,7 +34,8 @@ Manifest:
                              "variants": [emb names, index = k],
                              "eval": {"<W>": emb name}}],
      "window", "eval_windows", "train_frames", "backbone", "labels",
-     "labels_sha256", "ethogram_version", "aug_policy"}
+     "labels_sha256", "ethogram_version", "aug_policy", "view",
+     crop view only: "roi": {clip: training.crop.estimate_roi result}}
 
 No torch import: the loaders here are plain numpy so anything can use them.
 """
@@ -43,22 +48,36 @@ SCHEMA = 2
 DEFAULT_CACHE_DIR = Path(__file__).resolve().parent.parent / "models" / "cache"
 
 
-# Augmentation policies (training/augment.py) share one cache dir. The frames
-# tier and the identity eval embeddings do not depend on the policy, so they
-# are shared; each policy gets its own manifest and its own training-variant
-# embeddings. The legacy policy keeps the original names, so a cache built
-# before Phase 4 is still a valid legacy cache.
+# Augmentation policies (training/augment.py) and views (full frame, or the
+# training/crop.py ROI) share one cache dir. The full-view frames tier and
+# eval embeddings do not depend on the policy, so they are shared; each
+# (view, policy) gets its own manifest and its own training-variant
+# embeddings, and the crop view its own eval embeddings. Full/legacy keeps the
+# original names, so a cache built before Phase 4 is still a valid one.
 LEGACY_POLICY = "legacy"
+FULL_VIEW = "full"
+VIEWS = (FULL_VIEW, "crop")
 
 
-def manifest_path(cache_dir: Path, policy: str = LEGACY_POLICY) -> Path:
-    name = "manifest.json" if policy == LEGACY_POLICY else f"manifest.{policy}.json"
-    return Path(cache_dir) / name
+def cache_key(policy: str = LEGACY_POLICY, view: str = FULL_VIEW) -> str:
+    return ".".join(p for p in (view != FULL_VIEW and view, policy != LEGACY_POLICY and policy) if p)
 
 
-def variant_name(filename: str, k: int, policy: str = LEGACY_POLICY) -> str:
-    """emb/ filename for training variant k of a clip under `policy`."""
-    return f"{filename}.v{k}.npy" if policy == LEGACY_POLICY else f"{filename}.{policy}.v{k}.npy"
+def manifest_path(cache_dir: Path, policy: str = LEGACY_POLICY, view: str = FULL_VIEW) -> Path:
+    key = cache_key(policy, view)
+    return Path(cache_dir) / (f"manifest.{key}.json" if key else "manifest.json")
+
+
+def variant_name(filename: str, k: int, policy: str = LEGACY_POLICY, view: str = FULL_VIEW) -> str:
+    """emb/ filename for training variant k of a clip under (policy, view)."""
+    key = cache_key(policy, view)
+    return f"{filename}.{key}.v{k}.npy" if key else f"{filename}.v{k}.npy"
+
+
+def eval_name(filename: str, window: int, view: str = FULL_VIEW) -> str:
+    """emb/ filename for a clip's identity eval sample. Depends on the view
+    only: augmentation never touches eval clips."""
+    return f"{filename}.eval{window}.npy" if view == FULL_VIEW else f"{filename}.{view}.eval{window}.npy"
 
 
 def check_schema(manifest: dict, where: str = "the embedding cache") -> dict:
@@ -74,10 +93,12 @@ def check_schema(manifest: dict, where: str = "the embedding cache") -> dict:
     return manifest
 
 
-def load_manifest(cache_dir: Path = DEFAULT_CACHE_DIR, policy: str = LEGACY_POLICY) -> dict:
-    path = manifest_path(cache_dir, policy)
+def load_manifest(cache_dir: Path = DEFAULT_CACHE_DIR, policy: str = LEGACY_POLICY,
+                  view: str = FULL_VIEW) -> dict:
+    path = manifest_path(cache_dir, policy, view)
     if not path.is_file():
-        hint = "" if policy == LEGACY_POLICY else f" --aug-policy {policy}"
+        hint = "".join(f" --{flag} {v}" for flag, v, default in
+                       (("aug-policy", policy, LEGACY_POLICY), ("view", view, FULL_VIEW)) if v != default)
         raise SystemExit(f"No embedding cache at {path}. Run training/extract_frames.py{hint} first.")
     return check_schema(json.loads(path.read_text()), str(path))
 

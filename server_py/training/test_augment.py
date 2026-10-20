@@ -8,7 +8,8 @@ What this pins down:
   - Both are deterministic per seed, and two policies coexist in one cache dir
     without touching each other's embeddings or re-decoding the frames tier.
   - crossval.py runs the paired gru@<policy> arm on identical folds without
-    changing the primary arms' results.
+    changing the primary arms' results, and train.py --arm deploys exactly
+    that arm's config and cache.
 
 albu_v1 is UNEVALUATED; this checks that it is built correctly, not that it
 helps. Hermetic: synthetic clips, stub backbone, temp dirs.
@@ -33,9 +34,9 @@ from training import cache as C
 from training import crossval as CV
 from training import test_cache_v2 as TC
 from training import test_crossval_guards as TG
+from training import train as T
 from training.augment import POLICIES, replay_clip
 from training.dataset import AUG_COPIES
-
 
 # ── the pre-Phase-4 implementation, copied verbatim as the reference ─────
 
@@ -170,7 +171,7 @@ def test_policies_coexist(tmp: Path) -> None:
     check("both load through cache.load_manifest",
           C.load_manifest(cache_dir)["aug_policy"] == "legacy"
           and C.load_manifest(cache_dir, "albu_v1")["aug_policy"] == "albu_v1")
-    CV.check_policies_comparable(legacy, albu, "legacy", "albu_v1")
+    CV.check_caches_comparable(legacy, albu, "legacy", "albu_v1")
     check("the two policies are a valid paired comparison", True)
 
 
@@ -211,13 +212,32 @@ def test_crossval_paired_policies(tmp: Path) -> None:
           "p_two_sided" in pc.get("corrected_resampled_t", {}), str(pc)[:200])
     check("both arms scored on the same folds", len(pc.get("differences", [])) ==
           TG.CFG["repeats"] * TG.CFG["n_splits"])
-    check("aug_policy_arms maps each arm to its policy",
-          paired.get("aug_policy_arms") == {"gru": "legacy", "gru@albu_v1": "albu_v1"})
+    check("arm_cache binds each arm to its policy and the full view",
+          paired.get("arm_cache") == {"gru": {"aug_policy": "legacy", "view": "full"},
+                                      "gru@albu_v1": {"aug_policy": "albu_v1", "view": "full"}},
+          str(paired.get("arm_cache")))
+    check("config records the primary policy by name", paired["config"]["aug_policy"] == "legacy")
     oof = np.load(tmp / "cv-paired" / "cv_oof.npz")
     check("OOF saved for the extra arm", "gru@albu_v1_P" in oof.files, str(oof.files))
     lines = [json.loads(x) for x in (tmp / "cv-paired" / "runs" / "index.jsonl").read_text().splitlines()]
-    check("index.jsonl records each arm's policy",
-          {(x["arm"], x["aug_policy"]) for x in lines} == {("gru", "legacy"), ("gru@albu_v1", "albu_v1")})
+    check("index.jsonl records each arm's policy and view",
+          {(x["arm"], x["aug_policy"], x["view"]) for x in lines}
+          == {("gru", "legacy", "full"), ("gru@albu_v1", "albu_v1", "full")})
+
+    out = tmp / "cv-paired"
+    result = T.train_all_clips(cache, out, seed=0, arm="gru@albu_v1")
+    tr = json.loads((out / "train_result.json").read_text())
+    check("train_result binds the deployed arm, policy, view and CV run",
+          (tr.get("cv_arm"), tr.get("aug_policy"), tr.get("view"), tr.get("cv_run_id"))
+          == ("gru@albu_v1", "albu_v1", "full", paired["run_id"]), str(tr)[:300])
+    sel = paired["arms"]["gru@albu_v1"]["selections"]
+    check("all-clips fit uses the chosen arm's selections",
+          tr["epochs"] == T.aggregate_selection(sel, manifest["window"])["epochs"])
+    policy_entries, _ = C.split_entries(C.load_manifest(cache, "albu_v1"), range(result["n_clips"]), [],
+                                        cache_dir=cache)
+    stacked = np.concatenate([e["embeddings"] for e in policy_entries]).mean(axis=0)
+    check("all-clips fit standardizes on the chosen policy's embeddings",
+          np.allclose(result["emb_mean"].numpy(), stacked, atol=1e-5))
 
     bad = json.loads(C.manifest_path(cache, "albu_v1").read_text())
     bad["labels_sha256"] = "cd" * 32
