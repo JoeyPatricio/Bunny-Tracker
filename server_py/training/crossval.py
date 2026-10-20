@@ -47,6 +47,15 @@ corrected resampled t-test (Nadeau and Bengio 2003; Bouckaert and Frank
 Wilcoxon signed-rank on the same differences is reported alongside as a
 secondary, uncorrected check.
 
+Extra gru arms (Phases 4 and 5). --aug-policies and --views add one gru arm
+per further cache, fitted on the identical folds with the identical fit seeds:
+`gru@<policy>` (training/augment.py) and `gru@crop` (training/crop.py). The
+only difference from `gru` is the cache it reads, so each gets the corrected
+paired test against gru. result["arm_cache"] binds every arm to the exact
+(aug_policy, view) it was fitted on. The primary view is always full: the
+runtime feeds full frames, so a crop arm is a measurement, not a deployable
+model.
+
 Outputs (in --out-dir, default models/):
     cv_result.json      config, per-arm metrics, selections, per-fold numbers,
                         the paired comparison
@@ -58,6 +67,7 @@ Outputs (in --out-dir, default models/):
 Usage (from server_py/, training venv):
     .venv-train/bin/python -m training.crossval [--repeats 5] [--n-splits 5]
         [--n-inner 4] [--seed 0] [--quick] [--jobs N] [--cache-dir DIR] [--out-dir DIR]
+        [--aug-policies legacy albu_v1] [--views full crop]
 """
 import argparse
 import json
@@ -80,11 +90,23 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from shared.labels import LABELS
 from training import train as T
-from training.cache import DEFAULT_CACHE_DIR, LEGACY_POLICY, load_manifest, split_entries
+from training.cache import (
+    DEFAULT_CACHE_DIR,
+    FULL_VIEW,
+    LEGACY_POLICY,
+    VIEWS,
+    load_manifest,
+    split_entries,
+)
 from training.dataset import class_weights
 from training.diagnose_meanstd import MeanStdClassifier
-from training.metrics import classification_report, confusion_matrix, wilson_interval
-from training.splits import make_folds
+from training.metrics import (
+    classification_report,
+    confusion_matrix,
+    grouped_macro_f1_interval,
+    wilson_interval,
+)
+from training.splits import group_key, make_folds
 
 MODELS_DIR = Path(__file__).resolve().parent.parent / "models"
 ARMS = ("majority", "static_logreg", "static_meanstd_mlp", "gru")
@@ -261,12 +283,16 @@ def _run_fold(arm, manifest, fold, windows, *, seed, quick, epochs, patience, ca
 def corrected_resampled_t(diffs: np.ndarray, n_train: float, n_eval: float) -> dict:
     """Nadeau-Bengio corrected resampled t-test on per-fold differences."""
     j = len(diffs)
-    mean = float(diffs.mean())
-    var = float(diffs.var(ddof=1)) if j > 1 else 0.0
-    denom = math.sqrt((1 / j + n_eval / n_train) * var) if var > 0 else 0.0
-    if denom == 0:
-        return {"t": None, "df": j - 1, "p_two_sided": 1.0 if mean == 0 else 0.0}
-    t = mean / denom
+    # Checked on the data, not on var(): constant data can give a var of
+    # ~1e-34 from rounding in the mean, and then a spurious p of 0.
+    if j < 2 or np.ptp(diffs) == 0:
+        if not diffs.any():
+            return {"t": None, "df": j - 1, "p_two_sided": 1.0}
+        return {"t": None, "df": j - 1, "p_two_sided": None,
+                "note": "every fold difference is the same nonzero value, so the variance is zero "
+                        "and the test is not estimable"}
+    denom = math.sqrt((1 / j + n_eval / n_train) * float(diffs.var(ddof=1)))
+    t = float(diffs.mean()) / denom
     return {"t": t, "df": j - 1, "p_two_sided": float(2 * stats.t.sf(abs(t), df=j - 1))}
 
 
@@ -293,7 +319,9 @@ def paired_comparison(per_fold: dict, a: str, b: str, n_clips: int, n_splits: in
     return out
 
 
-def summarise(arm_runs: list[dict], y_all: np.ndarray, repeats: int) -> tuple[dict, np.ndarray]:
+def summarise(arm_runs: list[dict], y_all: np.ndarray, repeats: int, groups: list[str] | None = None,
+              seed: int = 0) -> tuple[dict, np.ndarray]:
+    """`groups` (one group_key per clip) adds the grouped bootstrap CI on macro-F1."""
     n = len(y_all)
     oof = np.full((repeats, n, len(LABELS)), np.nan)
     for run in arm_runs:
@@ -321,8 +349,12 @@ def summarise(arm_runs: list[dict], y_all: np.ndarray, repeats: int) -> tuple[di
         lo, hi = wilson_interval(int(round(recall * support[k])), int(support[k]))
         per_class[label] = {"recall_mean": recall, "recall_ci95": [lo, hi], "support": int(support[k])}
 
+    pooled_oof = {key: mean_sd(key) for key in ("macro_f1", "balanced_accuracy", "kappa", "accuracy")}
+    if groups is not None:
+        # The sd over repeats is not a confidence interval; this is the headline's.
+        pooled_oof["macro_f1"]["group_bootstrap"] = grouped_macro_f1_interval(y_all, oof, groups, seed=seed)
     summary = {
-        "pooled_oof": {key: mean_sd(key) for key in ("macro_f1", "balanced_accuracy", "kappa", "accuracy")},
+        "pooled_oof": pooled_oof,
         "per_class": per_class,
         "per_repeat_confusion": [rep["confusion_matrix"] for rep in per_repeat],
         "selections": [run["selection"] for run in arm_runs],
@@ -341,10 +373,10 @@ def git_sha() -> str | None:
         return None
 
 
-def check_policies_comparable(a: dict, b: dict, name_a: str, name_b: str) -> None:
-    """Two policy manifests are only a paired comparison if everything except
-    the augmentation is identical: same clips in the same order (so fold
-    indices mean the same clips), same labels, backbone and eval tiers."""
+def check_caches_comparable(a: dict, b: dict, name_a: str, name_b: str) -> None:
+    """Two cache manifests are only a paired comparison if everything except
+    the augmentation or view is identical: same clips in the same order (so
+    fold indices mean the same clips), same labels, backbone and windows."""
     same = {
         "clips": [(c["filename"], c["label"]) for c in a["clips"]]
                  == [(c["filename"], c["label"]) for c in b["clips"]],
@@ -354,7 +386,7 @@ def check_policies_comparable(a: dict, b: dict, name_a: str, name_b: str) -> Non
     bad = [k for k, ok in same.items() if not ok]
     if bad:
         raise SystemExit(
-            f"Aug policies {name_a!r} and {name_b!r} were extracted from different inputs "
+            f"Caches for {name_a!r} and {name_b!r} were extracted from different inputs "
             f"(differs: {bad}). Rebuild both with training/extract_frames.py against the same "
             f"labels.json and backbone before comparing them."
         )
@@ -362,27 +394,42 @@ def check_policies_comparable(a: dict, b: dict, name_a: str, name_b: str) -> Non
 
 def crossval(*, cache_dir: Path = DEFAULT_CACHE_DIR, out_dir: Path = MODELS_DIR, repeats: int = 5,
              n_splits: int = 5, n_inner: int = 4, seed: int = 0, quick: bool = False,
-             arms=ARMS, on_fit=None, jobs: int = 1, aug_policies: list[str] | None = None) -> dict:
+             arms=ARMS, on_fit=None, jobs: int = 1, aug_policies: list[str] | None = None,
+             views: list[str] | None = None) -> dict:
     """`jobs` outer folds run in parallel processes. `on_fit` (a test hook that
     sees every fit) needs the fits in this process, so it forces jobs=1.
 
-    `aug_policies` (Phase 4): the first policy is primary and every arm runs on
-    its cache, under the usual arm names, so evaluate.py, train.py and
-    calibrate_gate.py are unaffected. Each further policy adds one arm,
-    `gru@<policy>`, fitted on the identical folds with the identical fit
-    seeds, so the only difference between it and `gru` is the augmentation.
-    The corrected paired test for each lands in result["paired_aug_policy"].
-    Only gru gets the extra arms: it is the shipping model, and the question
-    Phase 4 asks is whether augmentation helps it.
+    `aug_policies` and `views`: the first of each is primary and every arm in
+    `arms` runs on that cache under the usual names, so evaluate.py, train.py
+    and calibrate_gate.py see the same "gru" they always did. Each further
+    policy adds `gru@<policy>` (primary view), each further view `gru@<view>`
+    (primary policy); see the module docstring. Only gru gets extra arms: it
+    is the shipping model, and the question is whether the cache change helps
+    it.
     """
     started = time.time()
     jobs = 1 if on_fit is not None else max(1, jobs)
     saved_threads = torch.get_num_threads()
     policies = list(dict.fromkeys(aug_policies or [LEGACY_POLICY]))
+    view_list = list(dict.fromkeys(views or [FULL_VIEW]))
+    if view_list[0] != FULL_VIEW:
+        raise SystemExit(
+            f"The primary view must be {FULL_VIEW!r} (got {view_list[0]!r}). The agent feeds full "
+            f"frames, so a head trained on crops would be scored on inputs it never sees at "
+            f"runtime. Pass --views full crop to measure crop as the paired gru@crop arm."
+        )
     manifest = load_manifest(cache_dir, policies[0])
-    extra_manifests = {pol: load_manifest(cache_dir, pol) for pol in policies[1:]}
-    for pol, other in extra_manifests.items():
-        check_policies_comparable(manifest, other, policies[0], pol)
+    # (arm name, aug policy, view) for every arm, extras after the primary ones.
+    cache_of = {arm: (policies[0], FULL_VIEW) for arm in arms}
+    extras = []
+    if "gru" in arms:
+        extras = ([(f"gru@{pol}", pol, FULL_VIEW) for pol in policies[1:]]
+                  + [(f"gru@{v}", policies[0], v) for v in view_list[1:]])
+    extra_manifests = {}
+    for name, pol, v in extras:
+        extra_manifests[name] = load_manifest(cache_dir, pol, v)
+        check_caches_comparable(manifest, extra_manifests[name], "gru", name)
+        cache_of[name] = (pol, v)
     clips = manifest["clips"]
     filenames = [c["filename"] for c in clips]
     labels = [c["label"] for c in clips]
@@ -394,10 +441,8 @@ def crossval(*, cache_dir: Path = DEFAULT_CACHE_DIR, out_dir: Path = MODELS_DIR,
     patience = 5 if quick else T.PATIENCE
     y_all = np.array([LABELS.index(lab) for lab in labels])
 
-    # (result name, fitter arm, manifest). Extra-policy arms reuse gru's fitter.
-    plan = [(arm, arm, manifest) for arm in arms]
-    if "gru" in arms:
-        plan += [(f"gru@{pol}", "gru", m) for pol, m in extra_manifests.items()]
+    # (result name, fitter arm, manifest). Extra arms reuse gru's fitter.
+    plan = [(arm, arm, manifest) for arm in arms] + [(n, "gru", m) for n, m in extra_manifests.items()]
 
     results, oof_arrays, per_fold = {}, {}, {}
     for name, arm, arm_manifest in plan:
@@ -409,12 +454,13 @@ def crossval(*, cache_dir: Path = DEFAULT_CACHE_DIR, out_dir: Path = MODELS_DIR,
         else:
             runs = Parallel(n_jobs=jobs)(delayed(run_fold)(arm, arm_manifest, fold, windows, **kwargs)
                                          for fold in folds)
-        summary, oof = summarise(runs, y_all, repeats)
+        summary, oof = summarise(runs, y_all, repeats, [group_key(f) for f in filenames], seed)
         results[name] = summary
         oof_arrays[name] = oof
         per_fold[name] = summary["per_fold"]
         po = summary["pooled_oof"]
-        print(f"{name:20s} macro-F1 {po['macro_f1']['mean']:.3f} +/- {po['macro_f1']['sd']:.3f}  "
+        lo, hi = po["macro_f1"]["group_bootstrap"]["ci95"]
+        print(f"{name:20s} macro-F1 {po['macro_f1']['mean']:.3f} [{lo:.3f}, {hi:.3f}] sd {po['macro_f1']['sd']:.3f}  "
               f"bal-acc {po['balanced_accuracy']['mean']:.3f}  kappa {po['kappa']['mean']:.3f}  "
               f"({time.time() - arm_started:.0f}s)", flush=True)
 
@@ -431,23 +477,25 @@ def crossval(*, cache_dir: Path = DEFAULT_CACHE_DIR, out_dir: Path = MODELS_DIR,
         "n_clips": len(clips),
         "config": {"repeats": repeats, "n_splits": n_splits, "n_inner": n_inner, "seed": seed, "jobs": jobs,
                    "quick": quick, "windows": windows, "epochs_cap": epochs, "patience": patience,
-                   "aug_policy": manifest.get("aug_policy"), "backbone": manifest.get("backbone")},
+                   "aug_policy": policies[0], "aug_policy_detail": manifest.get("aug_policy_detail"),
+                   "view": FULL_VIEW, "backbone": manifest.get("backbone")},
         "headline": "pooled_oof, mean over repeats. Every number here is out-of-fold: "
                     "no outer eval clip was used for stopping or selection.",
         "arms": results,
+        "arm_cache": {name: {"aug_policy": cache_of[name][0], "view": cache_of[name][1]} for name in results},
     }
     a, b = PRIMARY_COMPARISON
     if a in results and b in results:
         result["paired"] = paired_comparison(per_fold, a, b, len(clips), n_splits)
+    for key, dim in (("paired_aug_policy", 0), ("paired_view", 1)):
+        primary = (policies[0], FULL_VIEW)[dim]
+        pairs = {cache_of[n][dim]: paired_comparison(per_fold, n, "gru", len(clips), n_splits)
+                 for n in extra_manifests if cache_of[n][dim] != primary}
+        if pairs:
+            result[key] = pairs
     if extra_manifests:
-        result["aug_policy_arms"] = {name: (policies[0] if name == arm else name.split("@", 1)[1])
-                                     for name, arm, _ in plan if arm == "gru"}
-        result["paired_aug_policy"] = {
-            pol: paired_comparison(per_fold, f"gru@{pol}", "gru", len(clips), n_splits)
-            for pol in extra_manifests if f"gru@{pol}" in results
-        }
-        result["aug_policy_status"] = ("UNEVALUATED until a crossval run on the recoded v2 labels; "
-                                       "see training/augment.py")
+        result["extra_arm_status"] = ("UNEVALUATED until a crossval run on the recoded v2 labels; see "
+                                      "training/augment.py and training/crop.py")
     result["runtime_seconds"] = round(time.time() - started, 1)
 
     out_dir = Path(out_dir)
@@ -462,17 +510,21 @@ def crossval(*, cache_dir: Path = DEFAULT_CACHE_DIR, out_dir: Path = MODELS_DIR,
                 "run_id": run_id, "created_at": result["created_at"], "git_sha": sha, "seed": seed,
                 "labels_sha256": manifest["labels_sha256"],
                 "ethogram_version": manifest.get("ethogram_version"), "arm": arm,
-                "aug_policy": result.get("aug_policy_arms", {}).get(arm, policies[0]),
+                **result["arm_cache"][arm],
                 "config": result["config"],
                 "metrics": {k: v["mean"] for k, v in summary["pooled_oof"].items()},
+                "macro_f1_ci95": summary["pooled_oof"]["macro_f1"]["group_bootstrap"]["ci95"],
             }) + "\n")
-    for pol, pc in result.get("paired_aug_policy", {}).items():
-        print(f"\ngru@{pol} - gru ({policies[0]}): mean macro-F1 difference {pc['mean_difference']:+.3f}, "
-              f"corrected resampled t p={pc['corrected_resampled_t']['p_two_sided']:.3f}")
+    def p_text(test: dict) -> str:
+        return "not estimable" if test["p_two_sided"] is None else f"{test['p_two_sided']:.3f}"
+
+    for which, pc in {**result.get("paired_aug_policy", {}), **result.get("paired_view", {})}.items():
+        print(f"\ngru@{which} - gru: mean macro-F1 difference {pc['mean_difference']:+.3f}, "
+              f"corrected resampled t p={p_text(pc['corrected_resampled_t'])}")
     if "paired" in result:
         p = result["paired"]
         print(f"\n{a} - {b}: mean macro-F1 difference {p['mean_difference']:+.3f} over "
-              f"{len(p['differences'])} folds, corrected resampled t p={p['corrected_resampled_t']['p_two_sided']:.3f}")
+              f"{len(p['differences'])} folds, corrected resampled t p={p_text(p['corrected_resampled_t'])}")
     print(f"\nWrote {out_dir / 'cv_result.json'}, cv_oof.npz, runs/index.jsonl ({result['runtime_seconds']}s)")
     return result
 
@@ -493,10 +545,13 @@ def main() -> None:
     parser.add_argument("--aug-policies", nargs="+", default=None, metavar="POLICY",
                         help="first is primary (all arms); each further policy adds a paired "
                              "gru@<policy> arm. Build each with extract_frames --aug-policy.")
+    parser.add_argument("--views", nargs="+", choices=VIEWS, default=None, metavar="VIEW",
+                        help="first must be full; crop adds a paired gru@crop arm. Build it with "
+                             "extract_frames --view crop.")
     args = parser.parse_args()
     crossval(cache_dir=args.cache_dir, out_dir=args.out_dir, repeats=args.repeats,
              n_splits=args.n_splits, n_inner=args.n_inner, seed=args.seed, quick=args.quick,
-             arms=args.arms, jobs=args.jobs, aug_policies=args.aug_policies)
+             arms=args.arms, jobs=args.jobs, aug_policies=args.aug_policies, views=args.views)
 
 
 if __name__ == "__main__":

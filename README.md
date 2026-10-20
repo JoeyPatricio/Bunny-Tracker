@@ -67,27 +67,25 @@ cited as accuracy.
 
 ### 1. Install dependencies
 
-Two Python environments, on purpose: the runtime venv never contains torch
-because it is what ships to the Raspberry Pi. See
-[docs/pipeline.md](docs/pipeline.md) for the full rule.
+The runtime environment stays torch-free for Raspberry Pi deployment. The
+optional training environment uses CPU PyTorch. Both resolve from
+`server_py/uv.lock`. See [docs/pipeline.md](docs/pipeline.md).
 
 ```bash
 cd client && npm install && npm run build
 cd ../server_py
 
-# Runtime (server + agent). No torch.
-uv venv .venv
-uv pip install --python .venv/bin/python -r requirements.txt
+# Runtime (server + agent), plus the test runner and linter. No torch.
+uv sync --frozen --python 3.14 --group dev
 
-# Only if you're retraining the model. Pulls a CUDA build of torch.
-uv venv .venv-train --python 3.12
-uv pip install --python .venv-train/bin/python -r requirements-train.txt
+# Only if you're retraining the model. CPU-only, also used by CI.
+UV_PROJECT_ENVIRONMENT=.venv-train uv sync --frozen --python 3.12 --group train
 ```
 
-Both venvs here were created with `uv`, so **neither has `pip` inside it** and
-`.venv/bin/pip install ...` will not work. Use `uv pip install --python <venv>`
-as above. On Windows the interpreter is `.venv\Scripts\python.exe` rather than
-`.venv/bin/python`.
+Production runtime installs can omit `--group dev`. Update dependencies in
+`pyproject.toml` and regenerate with `uv lock`. On Windows, set
+`UV_PROJECT_ENVIRONMENT` using your shell's environment syntax, and use
+`.venv\Scripts\python.exe` rather than `.venv/bin/python`.
 
 ### 2. Configure the environment
 
@@ -214,9 +212,9 @@ Plain check-scripts, with pytest as a runner over them rather than a rewrite.
 From `server_py/`:
 
 ```bash
-uvx --from pytest==9.1.1 pytest                       # every script
-uvx --from pytest==9.1.1 pytest -m "not local_data"   # what CI runs
-uvx ruff check .
+.venv/bin/python -m pytest                       # every script
+.venv/bin/python -m pytest -m "not local_data"   # what CI runs
+.venv/bin/ruff check .
 ```
 
 Each script also runs on its own, which is quicker when one is red. The

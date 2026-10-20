@@ -27,6 +27,7 @@ import sys
 import tempfile
 import warnings
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -38,6 +39,7 @@ import torch
 from shared.labels import ALL_CODES, CODING_ONLY, LABELS
 from tests.checks import check, finish
 from training import export_onnx
+from training.artifacts import sha256_file
 from training.model import EMBEDDING_DIM, NUM_CLASSES, TemporalHead
 
 
@@ -163,6 +165,51 @@ def test_class_count_is_derived_from_the_ethogram() -> None:
           f"ALL_CODES={ALL_CODES} LABELS={LABELS}")
 
 
+def test_export_requires_matching_full_view_training() -> None:
+    """Export cannot install an offline crop arm or a head predating current labels."""
+    with tempfile.TemporaryDirectory(prefix="bunnyexport-") as tmp:
+        labels = Path(tmp) / "labels.json"
+        labels.write_text(json.dumps({"a.webm": LABELS[0]}))
+        result = {"mode": "all-clips", "cv_run_id": "test-run", "cv_arm": "gru@albu_v1",
+                  "aug_policy": "albu_v1", "view": "full", "labels_sha256": sha256_file(labels),
+                  "ethogram_version": export_onnx.ETHOGRAM_VERSION}
+        with patch.object(export_onnx, "LABELS_JSON", labels):
+            export_onnx.validate_train_result(result)
+            check("full-view CV-selected training is exportable", True)
+            for name, changed in (
+                ("crop", {"view": "crop"}),
+                ("legacy selection", {"mode": "legacy-split"}),
+                ("changed labels", {"labels_sha256": "0" * 64}),
+                ("old ethogram", {"ethogram_version": "1.0"}),
+            ):
+                try:
+                    export_onnx.validate_train_result({**result, **changed})
+                    check(f"export refuses {name}", False)
+                except SystemExit:
+                    check(f"export refuses {name}", True)
+        manifest = export_onnx.write_manifest(Path(tmp), 8, result)
+        check("candidate records the measured arm and view",
+              manifest["cv_arm"] == "gru@albu_v1" and manifest["view"] == "full")
+        check("candidate binds training labels and CV run",
+              manifest["labels_sha256"] == result["labels_sha256"] and manifest["cv_run_id"] == "test-run")
+
+
+def test_export_cannot_write_live_models() -> None:
+    """An explicit --out cannot bypass the candidate/promotion boundary."""
+    with tempfile.TemporaryDirectory(prefix="bunny-live-export-") as tmp:
+        root = Path(tmp)
+        gate = root / "gate_result.json"
+        gate.write_text("keep this deployed gate")
+        with patch.object(export_onnx, "MODELS_DIR", root), \
+                patch.object(sys, "argv", ["export_onnx", "--out", str(root)]):
+            try:
+                export_onnx.main()
+                check("export refuses the live models directory", False)
+            except SystemExit as err:
+                check("export refuses the live models directory", "live models directory" in str(err))
+        check("refusal leaves deployed metadata untouched", gate.read_text() == "keep this deployed gate")
+
+
 def main() -> None:
     tests = (
         test_head_exports_with_dynamic_batch_axis,
@@ -170,6 +217,8 @@ def main() -> None:
         test_calibration_skips_non_model_classes,
         test_calibration_fails_loudly_with_nothing_to_calibrate_on,
         test_class_count_is_derived_from_the_ethogram,
+        test_export_requires_matching_full_view_training,
+        test_export_cannot_write_live_models,
     )
     for fn in tests:
         print(f"\n{fn.__doc__.splitlines()[0]}")

@@ -16,11 +16,28 @@ import onnxruntime as ort
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from training.model import EMBEDDING_DIM
-
 MODELS_DIR = Path(__file__).resolve().parent.parent / "models"
 ITER = 50
 WARMUP = 5
+
+# EMBEDDING_DIM used to be imported from training/model.py, which imports torch
+# — a package requirements.txt deliberately excludes, since the runtime venv is
+# what ships to the Pi. That made this script crash on import on the one machine
+# it exists to measure. Read the dimension off the deployed head graph instead:
+# it needs no torch, and it is right by construction for the artifacts actually
+# on disk rather than for whatever the training code last declared.
+FALLBACK_EMBEDDING_DIM = 1280
+
+
+def embedding_dim(head_path: Path) -> int:
+    """Trailing input dimension of head.onnx ([batch, window, EMBEDDING_DIM])."""
+    if not head_path.exists():
+        return FALLBACK_EMBEDDING_DIM
+    sess = ort.InferenceSession(str(head_path), providers=["CPUExecutionProvider"])
+    dim = sess.get_inputs()[0].shape[-1]
+    # Only batch and window are exported dynamic; a symbolic name here would
+    # mean the export changed shape, so fall back rather than crash on a str.
+    return dim if isinstance(dim, int) else FALLBACK_EMBEDDING_DIM
 
 
 def bench_session(name: str, onnx_path: Path, make_input):
@@ -51,6 +68,7 @@ def main():
     if manifest_path.exists():
         import json
         window = json.loads(manifest_path.read_text())["window"]
+    embed_dim = embedding_dim(MODELS_DIR / "head.onnx")
 
     print("DEV-BOX benchmark only — NOT the Raspberry Pi 5 gate (no hardware owned yet).")
     print(f"CPU execution provider, window={window}\n")
@@ -65,7 +83,7 @@ def main():
     )
     head_times = bench_session(
         "head", MODELS_DIR / "head.onnx",
-        lambda: np.random.randn(1, window, EMBEDDING_DIM).astype(np.float32),
+        lambda: np.random.randn(1, window, embed_dim).astype(np.float32),
     )
 
     if backbone_int8_times is not None and head_times is not None:

@@ -17,8 +17,16 @@ train_result.json carries what export_onnx.py needs (window) plus a pointer to
 cv_result.json, and deliberately no accuracy field, so a selection score can
 no longer be quoted as a result by reading the wrong file.
 
+--arm picks which crossval gru arm the CV modes take their config and cache
+from: "gru" (the run's primary aug policy, the default) or a paired
+"gru@<policy>" arm such as gru@albu_v1. Augmentation only changes training
+variants, so the runtime's full-frame input is unchanged and any such arm can
+be deployed. A crop-view arm (gru@crop) is refused: the agent feeds full
+frames, so a head trained on crops would run on inputs it never saw.
+train_result.json records the arm, its aug policy and view, and the CV run.
+
 Usage (from server_py/, using the training venv):
-    .venv-train/bin/python -m training.train --all-clips [--seed N]
+    .venv-train/bin/python -m training.train --all-clips [--seed N] [--arm gru@albu_v1]
     .venv-train/bin/python -m training.train --fold 0:3
     .venv-train/bin/python -m training.train [--window N] [--seed N]
 """
@@ -38,7 +46,13 @@ import torch.nn as nn
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from shared.labels import LABELS
-from training.cache import DEFAULT_CACHE_DIR, legacy_split_indices, split_entries
+from training.cache import (
+    DEFAULT_CACHE_DIR,
+    FULL_VIEW,
+    legacy_split_indices,
+    load_manifest,
+    split_entries,
+)
 from training.dataset import class_weights
 from training.metrics import confusion_matrix, per_class_report
 from training.model import TemporalHead
@@ -318,18 +332,35 @@ def train_one(window: int, unfreeze_note: str = "", seed: int = SEED) -> dict:
 
 # ── CV-driven modes ──────────────────────────────────────────────────────
 
-def load_cv_result(out_dir: Path, manifest: dict) -> dict:
+def load_cv_arm(cache_dir: Path, out_dir: Path, arm: str) -> tuple[dict, dict, dict]:
+    """cv_result.json, the {aug_policy, view} cache that `arm` was fitted on,
+    and that cache's manifest, checked to hold the labels CV ran on."""
     path = Path(out_dir) / "cv_result.json"
     if not path.is_file():
         raise SystemExit(f"No {path}. Run training/crossval.py first; its selections set the hyperparameters here.")
     cv = json.loads(path.read_text())
+    caches = cv.get("arm_cache")
+    if caches is None:
+        raise SystemExit(f"{path} predates per-arm cache records (arm_cache). Re-run crossval.py.")
+    gru_arms = sorted(a for a in caches if a.split("@")[0] == "gru")
+    if arm not in gru_arms:
+        raise SystemExit(f"{path} has no arm {arm!r}; its gru arms are {gru_arms}.")
+    cache = caches[arm]
+    if cache["view"] != FULL_VIEW:
+        raise SystemExit(
+            f"{arm} was fitted on the {cache['view']!r} view. The agent feeds full frames and has no "
+            f"matching ROI preprocessing, so this head cannot be trained for deployment or exported. "
+            f"Deploy a full-view arm (one of {[a for a in gru_arms if caches[a]['view'] == FULL_VIEW]}); "
+            f"crop stays a crossval measurement until the runtime crops identically."
+        )
+    manifest = load_manifest(cache_dir, cache["aug_policy"], cache["view"])
     if cv.get("labels_sha256") != manifest.get("labels_sha256"):
         raise SystemExit(
             f"{path} was computed on labels {cv.get('labels_sha256', '?')[:12]} but the cache "
             f"holds labels {manifest.get('labels_sha256', '?')[:12]}. Re-run crossval.py on the "
             f"current cache so the selected hyperparameters match the data."
         )
-    return cv
+    return cv, cache, manifest
 
 
 def aggregate_selection(selections: list[dict], default_window: int) -> dict:
@@ -355,15 +386,12 @@ def aggregate_selection(selections: list[dict], default_window: int) -> dict:
     }
 
 
-def train_all_clips(cache_dir: Path, out_dir: Path, seed: int = SEED) -> dict:
-    from training.cache import load_manifest
-
-    manifest = load_manifest(cache_dir)
-    cv = load_cv_result(out_dir, manifest)
-    config = aggregate_selection(cv["arms"]["gru"]["selections"], manifest["window"])
+def train_all_clips(cache_dir: Path, out_dir: Path, seed: int = SEED, arm: str = "gru") -> dict:
+    cv, cache, manifest = load_cv_arm(cache_dir, out_dir, arm)
+    config = aggregate_selection(cv["arms"][arm]["selections"], manifest["window"])
     every = list(range(len(manifest["clips"])))
     entries, _ = split_entries(manifest, every, [], window=config["window"], cache_dir=cache_dir)
-    print(f"All-clips fit on {len(manifest['clips'])} clips with the CV-selected config {config}")
+    print(f"All-clips fit on {len(manifest['clips'])} clips with {arm}'s CV-selected config {config}")
     fit = fit_head(entries, None, lr=config["lr"], seed=seed, epochs=config["epochs"])
 
     out_dir = Path(out_dir)
@@ -380,6 +408,10 @@ def train_all_clips(cache_dir: Path, out_dir: Path, seed: int = SEED) -> dict:
         "ethogram_version": manifest.get("ethogram_version"),
         "cv_result": "cv_result.json",
         "cv_run_id": cv.get("run_id"),
+        "cv_arm": arm,
+        "aug_policy": cache["aug_policy"],
+        "aug_policy_detail": manifest.get("aug_policy_detail"),
+        "view": cache["view"],
         "note": "No held-out data in this mode, so no accuracy is reported. Quote "
                 "cv_result.json's pooled out-of-fold estimate, never a number from here.",
     }
@@ -388,12 +420,11 @@ def train_all_clips(cache_dir: Path, out_dir: Path, seed: int = SEED) -> dict:
     return {**result, "head": fit["head"], "emb_mean": fit["emb_mean"], "emb_std": fit["emb_std"]}
 
 
-def train_fold(cache_dir: Path, out_dir: Path, repeat: int, outer: int, seed: int = SEED) -> dict:
-    from training.cache import load_manifest
+def train_fold(cache_dir: Path, out_dir: Path, repeat: int, outer: int, seed: int = SEED,
+               arm: str = "gru") -> dict:
     from training.splits import make_folds
 
-    manifest = load_manifest(cache_dir)
-    cv = load_cv_result(out_dir, manifest)
+    cv, _, manifest = load_cv_arm(cache_dir, out_dir, arm)
     cfg = cv["config"]
     folds = make_folds([c["filename"] for c in manifest["clips"]], [c["label"] for c in manifest["clips"]],
                        n_splits=cfg["n_splits"], n_inner=cfg["n_inner"], repeats=cfg["repeats"],
@@ -401,12 +432,12 @@ def train_fold(cache_dir: Path, out_dir: Path, repeat: int, outer: int, seed: in
     fold = next((f for f in folds if f.repeat == repeat and f.outer == outer), None)
     if fold is None:
         raise SystemExit(f"No fold {repeat}:{outer}; cv_result.json has {cfg['repeats']} repeats x {cfg['n_splits']} folds.")
-    sel = next(s for s in cv["arms"]["gru"]["selections"] if s["repeat"] == repeat and s["outer"] == outer)
+    sel = next(s for s in cv["arms"][arm]["selections"] if s["repeat"] == repeat and s["outer"] == outer)
     train_entries, eval_entries = split_entries(manifest, fold.train, fold.eval, window=sel["window"],
                                                 cache_dir=cache_dir)
     fit = fit_head(train_entries, None, lr=sel["lr"], seed=seed, epochs=sel["epochs"])
     acc, cm = evaluate_head(fit["head"], eval_entries)
-    print(f"Fold {repeat}:{outer} with {sel}: {len(eval_entries)} eval clips")
+    print(f"Fold {repeat}:{outer} of {arm} with {sel}: {len(eval_entries)} eval clips")
     print_report(cm)
     print("One fold of one repeat. Quote cv_result.json's pooled estimate, not this.")
     return {"selection": sel, "accuracy": acc, "confusion_matrix": cm.tolist()}
@@ -433,14 +464,16 @@ def main():
     parser.add_argument("--cache-dir", type=Path, default=CACHE_DIR)
     parser.add_argument("--out-dir", type=Path, default=MODELS_DIR,
                         help="where cv_result.json is read and head_state.pt/train_result.json written")
+    parser.add_argument("--arm", default="gru",
+                        help="crossval gru arm whose config and cache the CV modes use, e.g. gru@albu_v1")
     args = parser.parse_args()
 
     if args.all_clips:
-        train_all_clips(args.cache_dir, args.out_dir, seed=args.seed)
+        train_all_clips(args.cache_dir, args.out_dir, seed=args.seed, arm=args.arm)
         return
     if args.fold:
         r, k = (int(x) for x in args.fold.split(":"))
-        train_fold(args.cache_dir, args.out_dir, r, k, seed=args.seed)
+        train_fold(args.cache_dir, args.out_dir, r, k, seed=args.seed, arm=args.arm)
         return
 
     result = train_one(args.window, seed=args.seed)

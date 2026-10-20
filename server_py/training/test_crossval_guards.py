@@ -196,6 +196,11 @@ def test_results(result: dict, out: Path, manifest: dict) -> None:
     check("paired comparison is gru minus static_logreg", (paired["a"], paired["b"]) == ("gru", "static_logreg"))
     check("paired comparison uses the corrected resampled t-test",
           "p_two_sided" in paired["corrected_resampled_t"])
+    const = CV.corrected_resampled_t(np.full(6, 0.1), n_train=80, n_eval=20)
+    check("constant nonzero fold differences give no p-value, with a note",
+          const["p_two_sided"] is None and "not estimable" in const.get("note", ""), str(const))
+    check("all-zero fold differences give p=1",
+          CV.corrected_resampled_t(np.zeros(6), n_train=80, n_eval=20)["p_two_sided"] == 1.0)
 
     oof = np.load(out / "cv_oof.npz")
     shape = oof["gru_P"].shape

@@ -1,10 +1,9 @@
 # The training pipeline, end to end
 
-The full command order existed nowhere before this document. It was distributed
-across per-file `Usage:` docstrings, several of which disagreed with each other
-and all of which used Windows paths on what is now a Linux box. `README.md`
-pointed at `training/train.py`'s docstring "for the full pipeline"; that
-docstring is two lines and documents only its own invocation.
+Commands below run from `server_py/`. The data, model and paper steps require
+real recoded clips. A checkout without `server/recordings/` or
+`server/labels.json` can run the hermetic checks but cannot produce research
+results.
 
 ## The two-venv rule
 
@@ -14,22 +13,45 @@ is deliberate.
 | | `server_py/.venv` | `server_py/.venv-train` |
 |---|---|---|
 | Python | 3.14 | 3.12 |
-| Contains torch | **no, ever** | yes, with CUDA |
+| Contains torch | no | yes, CPU build |
 | Runs | server, agent, `tests/`, `calibrate_gate.py` | everything in `training/` |
 | Deployed to the Pi | yes | no |
-| Requirements | `requirements.txt` | `requirements-train.txt` |
+| Locked dependencies | project dependencies | project plus `train` group |
 
 The runtime venv stays torch-free because it is what ships to the Raspberry Pi,
 where inference is ONNX Runtime on CPU. Putting torch in it would add gigabytes
 to a deployment that cannot use them. The Python versions differ because torch's
 wheel coverage lags the interpreter the runtime targets.
 
-Both venvs were created with `uv`, so **neither has `pip`**. Use:
+`pyproject.toml` defines the dependencies, and `uv.lock` pins the complete
+dependency graph for both interpreters. The train group's Python constraint
+allows it to use 3.12 while the runtime uses 3.14. The named, explicit CPU
+index applies only to torch and torchvision. No CUDA packages are installed.
+CI and local verification use the same frozen lock:
 
 ```bash
-uv pip install --python server_py/.venv/bin/python       -r server_py/requirements.txt
-uv pip install --python server_py/.venv-train/bin/python -r server_py/requirements-train.txt
+uv sync --frozen --python 3.14 --group dev
+UV_PROJECT_ENVIRONMENT=.venv-train uv sync --frozen --python 3.12 --group train
 ```
+
+Omit `--group dev` for a runtime deployment. Existing environments need not be
+replaced to test the lock. Set `UV_PROJECT_ENVIRONMENT` to a fresh scratch
+directory and point `BT_RUNTIME_PYTHON` / `BT_TRAIN_PYTHON` at its interpreters
+when running the check-script runner.
+
+For a dependency change, edit `pyproject.toml`, run `uv lock`, and regenerate
+the compatibility requirements files. They are generated output:
+
+```bash
+uv export --frozen --no-hashes --no-annotate --no-emit-project --output-file requirements.txt
+uv export --frozen --no-hashes --no-annotate --no-emit-project --emit-index-url --group train --output-file requirements-train.txt
+uv export --frozen --no-hashes --no-annotate --no-emit-project --emit-index-url --group train --output-file requirements-train-cpu.txt
+```
+
+The two training exports are CPU-only. Prefer frozen sync because requirements
+format cannot preserve per-package index restrictions. `uv pip install
+--python <interpreter> -r <requirements-file>` remains available for consumers
+that need an exported requirements file.
 
 ## The order
 
@@ -71,7 +93,7 @@ overwritten: archive it first (see "After an ethogram change").
 
 ```bash
 $TRAIN -m training.extract_frames [--seed N] [--eval-windows 8 12] [--cache-dir DIR] \
-    [--aug-policy legacy|albu_v1]
+    [--aug-policy legacy|albu_v1] [--view full|crop]
 ```
 
 **Augmentation policy (Phase 4, unevaluated).** `--aug-policy` picks how the
@@ -87,8 +109,34 @@ identical folds and seeds as `gru`, plus a corrected paired test in
 `cv_result.json["paired_aug_policy"]`. **albu_v1 has not been evaluated on
 real labels.** Adopt it only if it wins that paired comparison after the v2
 recoding pass. Its magnitudes are deliberately small because rotation and blur
-can change what a clip depicts (see the module docstring). `train.py` and
-`evaluate.py` still read the legacy manifest.
+can change what a clip depicts (see the module docstring). Final training can
+select the measured full-view arm with `--arm gru@albu_v1`. Evaluation and
+runtime parity read that arm's recorded policy instead of assuming legacy.
+
+**Crop view (Phase 5, unevaluated).** Build full and crop caches, then compare
+them on identical grouped folds:
+
+```bash
+$TRAIN -m training.extract_frames --eval-windows 8 12 --view full
+$TRAIN -m training.extract_frames --eval-windows 8 12 --view crop
+$TRAIN -m training.crossval --views full crop
+```
+
+`training/crop.py` estimates a background from each source group's frames,
+finds moving connected components with the shared pooled-luma detector, and
+uses their union with a margin as one square ROI per clip. It re-decodes at
+higher resolution before crop/resize. A clip with too little motion or too
+large a box uses full frames. The manifest records crop parameters, every ROI
+and fallback, and extraction prints fallback counts per class. Singleton
+resting clips can disappear into their own median background, so this method
+can crop active classes more often than resting classes.
+
+Crop has `manifest.crop.json` and separate `.crop.` embeddings. Crossval adds
+`gru@crop` and `paired_view.crop`, while `arm_cache` records each arm's policy
+and view. Backgrounds never cross source groups, which stay together through
+outer and inner folds. Crop is an offline experiment. Runtime has no matching
+history-derived ROI or crop preprocessing, so final training and export refuse
+crop heads. No crop improvement or runtime fallback has been measured.
 
 `--eval-windows` lists every window length step 2 may be asked to evaluate at.
 An eval sample is W frames spread across the whole clip, the protocol schema 1
@@ -118,6 +166,14 @@ fold by fold with the Nadeau-Bengio corrected resampled t-test, plus an
 uncorrected Wilcoxon for reference. `--quick` (one config per arm, 15-epoch
 cap) is for smoke runs only.
 
+Each macro-F1 summary also records `group_bootstrap.ci95`: a seeded percentile
+bootstrap over source groups, resampling the same groups across all repeats
+and taking mean pooled OOF macro-F1. Repeats are not treated as independent
+clips. This interval is conditional on the fitted OOF predictions and excludes
+retraining uncertainty. Repeat SD remains a separate descriptive statistic.
+Constant nonzero paired fold differences have no estimable p-value and record
+null rather than zero.
+
 It refuses to run if any class has fewer clips or source groups than
 `--n-splits`, naming the class and the remedy.
 
@@ -125,7 +181,7 @@ It refuses to run if any class has fewer clips or source groups than
 `models/head_state.pt` and `models/train_result.json`.
 
 ```bash
-$TRAIN -m training.train --all-clips [--seed N]
+$TRAIN -m training.train --all-clips [--seed N] [--arm gru|gru@albu_v1]
 ```
 
 Trains on every labeled clip with the CV-selected config: the most common
@@ -133,6 +189,9 @@ window and learning rate across outer folds, and the median epoch count.
 There is no held-out data in this mode, so `train_result.json` records the
 config and a pointer to `cv_result.json` and no accuracy at all. It refuses a
 `cv_result.json` computed on different labels than the cache.
+It requires the CV report's per-arm cache records. Reports from before this
+change must be regenerated. `train_result.json` records the selected arm,
+policy, view, label hash and CV run ID.
 
 `--fold R:K` fits one outer fold with its CV-selected config and prints that
 fold's report, for debugging. With no flag, `train.py` still fits the legacy
@@ -144,6 +203,10 @@ writes `models/candidate/` (`backbone_fp32.onnx`, `backbone_int8.onnx`,
 `head.onnx`, their `.data` sidecars, and `manifest.json` with each artifact's
 sha256, the git SHA, labels, ethogram version and window). Nothing the agent
 loads is touched.
+
+Export requires an all-clips fit with matching current labels and ethogram.
+It refuses legacy single-split fits and offline crop heads. The candidate
+manifest carries the training label hash, CV run, arm, policy and view.
 
 ```bash
 $TRAIN -m training.export_onnx
@@ -163,7 +226,7 @@ longer match its manifest, and exits 1 if any gate fails.
 | G3 | the ONNX head's logits differ from the torch head's (`head_state.pt`) by more than 1e-4 on any cached eval embedding |
 | G4 | the int8 pipeline's macro-F1 is more than 0.03 below the fp32 pipeline's |
 | G5 | the int8 pipeline predicts one class for every clip |
-| G6 | `gru` does not strictly beat `static_logreg` on pooled OOF macro-F1 in `cv_result.json`, or that file was computed on different labels or a different CV run than the head |
+| G6 | the trained GRU arm does not strictly beat `static_logreg`, its provenance disagrees with the candidate or cache, or its CV run is a quick smoke run |
 | G7 | the candidate's OOF macro-F1 is below the deployed model's by more than one sd of its per-fold macro-F1 |
 
 G4 and G5 run every cached clip's eval sample through the pipeline. The
@@ -185,6 +248,11 @@ manifest. Archives the deployed `models/*.onnx` to
 `models/promoted.json`. `--force "<reason>"` overrides the gate (never the hash
 check) and records the reason. Restart the agent afterwards: it loads the
 model at startup.
+
+The agent reads the promoted window and vocabulary. A conflicting
+`AGENT_EMBED_WINDOW` override disables inference with an actionable message.
+The Training panel reads this promotion record and its OOF headline, so a
+later unpromoted training run cannot change the deployed model's metadata.
 
 ```bash
 $RUN -m training.promote [--force "reason"]
@@ -209,6 +277,9 @@ threshold is not fitted in-sample. It loads no ONNX model.
 $RUN -m training.calibrate_gate [--oof models/cv_oof.npz]
 ```
 
+For a selected augmentation arm, pass `--arm gru@albu_v1` to calibrate its
+OOF probabilities. Do not calibrate the default arm for a different deployment.
+
 ## Dataset reports
 
 Both run on the runtime venv and write to `models/`.
@@ -219,8 +290,9 @@ Both run on the runtime venv and write to `models/`.
 - `training/reliability.py` computes Cohen's kappa, overall and one-vs-rest per
   class, between the first pass (`server/labels.json`) and the blind 25%
   re-code (`server/labels.reliability.json`) into `models/reliability.json`.
-  It refuses until the re-code is complete. This kappa is the ceiling any
-  classifier can be compared against.
+  It refuses until the re-code is complete. This measures intra-observer
+  repeatability on a subset, including coding-only labels, rather than an
+  upper bound on classifier OOF agreement.
 
 ## Off the path
 
@@ -234,13 +306,18 @@ Both run on the runtime venv and write to `models/`.
   `models/archive/v1-ethogram/`.
 - `scripts/bench_pi.py` measures inference latency on the target hardware.
 
+Offline pose features, measured learning curves and paper figure generation
+are documented in [paper/README.md](../paper/README.md). Those tools consume
+recorded labels, annotations and reports. Missing inputs are errors rather
+than placeholder results.
+
 ## Tests
 
 Every check-script runs through one pytest runner, from `server_py/`:
 
 ```bash
-uvx --from pytest==9.1.1 pytest                       # all of them
-uvx --from pytest==9.1.1 pytest -m "not local_data"   # what CI runs
+.venv/bin/python -m pytest                       # all of them
+.venv/bin/python -m pytest -m "not local_data"   # what CI runs
 ```
 
 `ci/test_scripts.py` runs each script as a subprocess under the venv it belongs
@@ -256,12 +333,20 @@ their own, which is the faster loop when one is red:
 .venv/bin/python tests/test_capture_loop.py
 .venv/bin/python tests/test_clipping_mode.py
 .venv/bin/python tests/test_labeling_sidecars.py
+.venv/bin/python tests/test_holdout.py
+.venv/bin/python tests/test_deployment.py
 .venv/bin/python training/test_promote_reports.py
 .venv-train/bin/python training/test_export_guards.py
 .venv-train/bin/python training/test_train_guards.py
 .venv-train/bin/python training/test_splits_metrics.py
 .venv-train/bin/python training/test_cache_v2.py
 .venv-train/bin/python training/test_crossval_guards.py      # also runs calibrate_gate under .venv
+.venv-train/bin/python training/test_evaluate_gates.py
+.venv-train/bin/python training/test_augment.py
+.venv-train/bin/python training/test_crop.py
+.venv-train/bin/python training/test_pose_features.py
+.venv-train/bin/python training/test_learning_curve.py
+.venv-train/bin/python training/test_figures.py
 .venv-train/bin/python training/check_decode_parity.py       # local_data: needs server/recordings/
 ```
 
@@ -272,16 +357,15 @@ batch cannot stall the event loop past the measured timer floor. Its
 structural check, that the listing scan never runs on the event-loop thread,
 always runs.
 
-`test_security_regressions.py` reads `ADMIN_PASSWORD` and `AGENT_TOKEN` from
-`server/.env`. Without them it fails two checks (login returns 503; the
-stream-frame route cannot be reached). CI sets placeholder values.
+`test_security_regressions.py` sets fixed test-only credentials before importing
+the app. It does not require a local `server/.env`.
 
 `agent/test_capture_offline.py` is not in the runner. It is a smoke harness
 that replays fixture frames through `AgentDecisionLoop` with the ONNX pair on
 disk and asserts nothing beyond not crashing.
 
 CI (`.github/workflows/ci.yml`) runs the `not local_data` set on a fresh
-runner, building both venvs from the pinned requirements files (CPU torch) and
+runner, building both venvs from `uv.lock` (CPU torch) and
 the client, plus `ruff check` as a separate job.
 
 ## After an ethogram change

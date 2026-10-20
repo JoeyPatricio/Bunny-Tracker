@@ -9,9 +9,9 @@ functions, and pytest collecting those without an async plugin would report
 them as skips that read like passes. pyproject.toml's `testpaths = ["ci"]`
 keeps pytest out of tests/ for the same reason.
 
-Usage (from server_py/; pytest is not in either venv, so run it with uvx):
-    uvx --from pytest==9.1.1 pytest                       # everything
-    uvx --from pytest==9.1.1 pytest -m "not local_data"   # what CI runs
+Usage (from server_py/, after uv sync --frozen --group dev):
+    .venv/bin/python -m pytest                       # everything
+    .venv/bin/python -m pytest -m "not local_data"   # what CI runs
 
 Interpreters default to the two venvs beside this directory. Override with
 BT_RUNTIME_PYTHON / BT_TRAIN_PYTHON to point at others.
@@ -50,6 +50,7 @@ SCRIPTS = [
     ("tests/test_server_robustness.py", "runtime"),
     ("tests/test_labeling_sidecars.py", "runtime"),
     ("tests/test_holdout.py", "runtime"),
+    ("tests/test_deployment.py", "runtime"),
     ("training/test_export_guards.py", "train"),
     ("training/test_train_guards.py", "train"),
     ("training/test_splits_metrics.py", "train"),
@@ -57,6 +58,11 @@ SCRIPTS = [
     ("training/test_cache_v2.py", "train"),
     ("training/test_crossval_guards.py", "train"),
     ("training/test_evaluate_gates.py", "train"),
+    ("training/test_augment.py", "train"),
+    ("training/test_pose_features.py", "train"),
+    ("training/test_figures.py", "train"),
+    ("training/test_learning_curve.py", "train"),
+    ("training/test_crop.py", "train"),
 ]
 
 # Scripts that need real recordings or a trained model on disk.

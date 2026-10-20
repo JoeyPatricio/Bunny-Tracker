@@ -82,7 +82,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from shared.frames import normalize
 from shared.labels import ETHOGRAM_VERSION, LABELS
 from training.artifacts import GATE_RESULT_NAME, MANIFEST_NAME, artifacts_in, sha256_file
-from training.cache import DEFAULT_CACHE_DIR, load_manifest
+from training.cache import DEFAULT_CACHE_DIR, LEGACY_POLICY, load_manifest
 from training.metrics import check_degenerate, confusion_matrix, macro_f1
 from training.model import TemporalHead
 
@@ -140,7 +140,11 @@ class Inputs:
             raise SystemExit("Neither the candidate manifest nor train_result.json records a window.")
         self.window = int(self.window)
 
-        self.cache = load_manifest(self.cache_dir)
+        self.arm = self.train_result.get("cv_arm", "gru")
+        if (self.train_result.get("view", "full") != "full"
+                or self.manifest.get("view", "full") != "full"):
+            raise SystemExit("Crop is an offline CV arm. The agent has no matching ROI preprocessing.")
+        self.cache = load_manifest(self.cache_dir, self.train_result.get("aug_policy", LEGACY_POLICY))
         key = str(self.window)
         if key not in {str(w) for w in self.cache["eval_windows"]}:
             raise SystemExit(
@@ -247,10 +251,11 @@ def gate_g5(inp: Inputs, probs: dict) -> dict:
             "detail": f"int8 pipeline predicts {len(predicted)} distinct classes: {predicted}"}
 
 
-def _gru_headline(cv: dict) -> dict:
-    gru = cv["arms"]["gru"]
+def _gru_headline(cv: dict, arm: str = "gru") -> dict:
+    gru = cv["arms"][arm]
     folds = np.array([f["macro_f1"] for f in gru["per_fold"]])
     return {
+        "arm": arm,
         "run_id": cv.get("run_id"),
         "labels_sha256": cv.get("labels_sha256"),
         "ethogram_version": cv.get("ethogram_version"),
@@ -265,6 +270,18 @@ def gate_g6(inp: Inputs) -> dict:
     if cv is None:
         return {"passed": False, "detail": f"no cv_result.json at {inp.cv_result_path}; run training.crossval"}
     problems = []
+    arm = inp.arm
+    for name, data in (("candidate", inp.manifest), ("cache", inp.cache),
+                       ("CV result", cv), ("training result", inp.train_result)):
+        if data.get("ethogram_version") != ETHOGRAM_VERSION:
+            problems.append(f"{name} uses a different ethogram version")
+        if name != "training result" and data.get("labels") != LABELS:
+            problems.append(f"{name} uses a different ordered label vocabulary")
+    if cv.get("config", {}).get("quick"):
+        problems.append("cv_result.json is a --quick smoke run, not deployment evidence")
+    for key in ("cv_arm", "cv_run_id", "labels_sha256", "aug_policy", "view"):
+        if key in inp.manifest and inp.manifest[key] != inp.train_result.get(key):
+            problems.append(f"candidate manifest and train_result.json disagree on {key}")
     if cv.get("labels_sha256") != inp.cache.get("labels_sha256"):
         problems.append("cv_result.json was computed on different labels than the cache holds")
     tr_sha = inp.train_result.get("labels_sha256")
@@ -274,24 +291,33 @@ def gate_g6(inp: Inputs) -> dict:
     if tr_run is not None and tr_run != cv.get("run_id"):
         problems.append(f"train_result.json took its config from CV run {tr_run}, not {cv.get('run_id')}")
     arms = cv.get("arms", {})
-    if "gru" not in arms or "static_logreg" not in arms:
-        return {"passed": False, "detail": "cv_result.json lacks the gru or static_logreg arm"}
-    gru = arms["gru"]["pooled_oof"]["macro_f1"]["mean"]
+    if arm not in arms or "static_logreg" not in arms:
+        return {"passed": False, "detail": f"cv_result.json lacks the {arm} or static_logreg arm"}
+    cache = cv.get("arm_cache", {}).get(arm)
+    if cache is not None and cache != {"aug_policy": inp.train_result.get("aug_policy", LEGACY_POLICY), "view": "full"}:
+        problems.append("the head's cache differs from its selected CV arm")
+    gru = arms[arm]["pooled_oof"]["macro_f1"]["mean"]
     logreg = arms["static_logreg"]["pooled_oof"]["macro_f1"]["mean"]
     p = ((cv.get("paired") or {}).get("corrected_resampled_t") or {}).get("p_two_sided")
+    if arm != "gru":
+        from training.crossval import paired_comparison
+
+        paired = paired_comparison({a: arms[a]["per_fold"] for a in (arm, "static_logreg")},
+                                   arm, "static_logreg", cv["n_clips"], cv["config"]["n_splits"])
+        p = paired["corrected_resampled_t"]["p_two_sided"]
     if not gru > logreg:
-        problems.append(f"gru does not beat static_logreg ({gru:.3f} vs {logreg:.3f})")
+        problems.append(f"{arm} does not beat static_logreg ({gru:.3f} vs {logreg:.3f})")
     p_text = f"{p:.3f}" if p is not None else "n/a"
-    return {"passed": not problems, "gru_macro_f1": gru, "static_logreg_macro_f1": logreg,
+    return {"passed": not problems, "arm": arm, "gru_macro_f1": gru, "static_logreg_macro_f1": logreg,
             "corrected_paired_p": p, "significance_required": False,
             "detail": "; ".join(problems) if problems else
-            f"gru {gru:.3f} > static_logreg {logreg:.3f} (corrected paired p = {p_text}, reported, not required)"}
+            f"{arm} {gru:.3f} > static_logreg {logreg:.3f} (corrected paired p = {p_text}, reported, not required)"}
 
 
 def gate_g7(inp: Inputs) -> dict:
-    if inp.cv is None or "gru" not in inp.cv.get("arms", {}):
+    if inp.cv is None or inp.arm not in inp.cv.get("arms", {}):
         return {"passed": False, "detail": "no candidate CV headline to compare"}
-    cand = _gru_headline(inp.cv)
+    cand = _gru_headline(inp.cv, inp.arm)
     promoted_path = inp.models_dir / "promoted.json"
     baseline = None
     if promoted_path.is_file():
@@ -362,7 +388,7 @@ def evaluate(*, candidate_dir: Path, models_dir: Path = MODELS_DIR, cache_dir: P
         "window": inp.window,
         "n_clips": len(inp.y),
         "ethogram_version": ETHOGRAM_VERSION,
-        "cv": _guarded(_gru_headline, inp.cv) if inp.cv else None,
+        "cv": _guarded(_gru_headline, inp.cv, inp.arm) if inp.cv else None,
         "created_at": datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
     }
     inp.candidate_dir.joinpath(GATE_RESULT_NAME).write_text(json.dumps(result, indent=2) + "\n")

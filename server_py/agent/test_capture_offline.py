@@ -16,16 +16,23 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from agent.capture import AgentDecisionLoop
 from inference.backbone import Backbone
+from inference.deployment import read_promoted
 from inference.temporal_head import TemporalHead
+from shared.labels import LABELS
 
 MODELS_DIR = Path(__file__).resolve().parent.parent / "models"
 FIXTURES_DIR = Path(__file__).resolve().parent.parent / "tests" / "fixtures"
 
 
 def main():
+    promoted = read_promoted(MODELS_DIR)
+    if promoted is None:
+        raise SystemExit("No promoted model. Recode, retrain, evaluate and promote before the offline smoke run.")
     backbone = Backbone(str(MODELS_DIR / "backbone_int8.onnx"))
     head = TemporalHead(str(MODELS_DIR / "head.onnx"))
-    loop = AgentDecisionLoop(backbone, head)
+    if head.num_classes != len(LABELS):
+        raise SystemExit("The deployed head does not match the ethogram. Retrain and promote before replay.")
+    loop = AgentDecisionLoop(backbone, head, embed_window=promoted["manifest"]["window"])
 
     frames = np.load(FIXTURES_DIR / "motion_fixture_frames.npy")
     print(f"Replaying {len(frames)} fixture frames through AgentDecisionLoop...")

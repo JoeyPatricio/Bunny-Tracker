@@ -290,9 +290,10 @@ must be defined as such.
 
 *Rule for v2:* code the **predominant state**, defined as the state occupying
 the largest share of the clip, and only if that share is **at least 50%** of the
-clip duration. If no state reaches 50%, code `mixed`. `mixed` clips are excluded
-from training and reported as a count. Events are coded for the whole clip
-regardless of state.
+clip duration. The studio has no `mixed` code. If no state reaches 50%, leave
+the clip unlabeled and flag it uncertain for review. Decide how these clips
+will be excluded before freezing the coding protocol. Events are not recorded
+in the current flat schema.
 
 *Upgrade path:* true interval coding, with onset and offset timestamps per bout,
 scored in [BORIS](https://www.boris.unito.it/) (the standard open-source
@@ -307,23 +308,40 @@ required. Default: code the rabbit nearest the frame centre at clip onset, and
 record its identity. If the individuals are not visually distinguishable, say so
 and code at the group level, which weakens but does not invalidate the design.
 
-**Uncertainty.** A `quality` field with values `good` / `poor` / `unusable`.
-Poor-quality clips stay in the dataset and are reported; unusable ones are
-excluded. Never guess a label to avoid leaving a clip uncoded.
+**Uncertainty.** The studio records an `uncertain` boolean in
+`server/labels.meta.json`. It does not record a `quality` enum, focal identity,
+event list or free-text notes. An uncertain label stays in training, and the
+reliability report also computes agreement with uncertain clips excluded.
+Leave a clip unlabeled when a state cannot be assigned. Never guess a label to
+avoid leaving a clip uncoded.
 
-## Inter-observer reliability
+## Reliability protocol
 
-Required for publication and impossible to retrofit.
+The implemented protocol measures intra-observer repeatability. It does not
+measure agreement between independent observers.
 
 1. Freeze this document. No edits after step 2 begins.
-2. Train the second observer on 10 practice clips that are **not** part of the
-   dataset. Discuss disagreements on those freely.
-3. The second observer independently codes a random 20% sample, stratified by
-   the primary observer's v2 labels, blind to those labels.
-4. Report **Cohen's kappa**, unweighted (the categories are nominal), overall
-   and per class. Target kappa >= 0.70; below 0.60 means a definition is
-   ambiguous and needs rewriting, which means going back to step 1.
-5. Report event agreement separately, as agreement on counts per clip.
+2. Complete the first pass over the CV pool. Resolve the ambiguous definitions
+   and the handling of mixed or unusable clips before drawing a sample.
+3. Draw the studio's fixed 25% sample, seed 0, rounded up. It is a uniform
+   random sample, not stratified by label. For a pool of 112 clips it has 28.
+4. Use reliability mode for the blind re-code. The studio hides first-pass
+   labels, suggestions, filenames and metadata. Re-codes go to
+   `server/labels.reliability.json` and do not replace the first pass.
+5. Run `training.reliability` after every sampled clip has a re-code. Report
+   overall unweighted Cohen's kappa, one-vs-rest per-code kappa, raw agreement
+   and uncertainty counts from `server_py/models/reliability.json`.
+
+No kappa has been measured in this checkout. A second observer would require
+a separately documented independent coding pass. Human re-code agreement and
+classifier OOF kappa use different samples and can use different coding
+vocabularies because the classifier excludes `out_of_view`. Re-code kappa is
+not a mathematical upper bound on classifier performance.
+
+Before coding, resolve the supported-forepaw wording under `rearing`, the
+unavailable `allo` modifier and notes field, and the exclusion rule for clips
+without a predominant state. The operational definition text in
+`client/src/labels.js` must change with any definition revision.
 
 ## Prospective temporal holdout
 
@@ -375,25 +393,18 @@ under the frozen v2 definitions. At roughly 30 s each that is about an hour, and
 it buys the ability to state in a methods section that the entire dataset was
 coded under one protocol by a trained observer, which a partial migration cannot.
 
-**Keep v1.** Write v2 to a new file rather than overwriting `server/labels.json`,
-so the v1-to-v2 confusion table can be reported. Proposed schema, one entry per
-clip:
+**Keep v1.** The archive is `server/labels.v1.json`, with its labels nested
+under `labels`. The current schema in `server/labels.json` stays flat:
 
 ```json
 {
-  "recording-clip-2026-09-24T14-03-11.webm": {
-    "state": "resting_sitting",
-    "events": ["yawn"],
-    "focal": "bun_a",
-    "quality": "good",
-    "coder": "primary",
-    "ethogram_version": "2.0"
-  }
+  "recording-clip-2026-09-24T14-03-11.webm": "resting_sitting"
 }
 ```
 
-The bare-string v1 format cannot express an event co-occurring with a state, so
-the schema change is forced by the state/event split, not optional.
+Coder, coding time, ethogram version and uncertainty live in
+`server/labels.meta.json`. `training.recoding_report` reads the archive and
+the current flat map to report the migration without automatic relabeling.
 
 ## Code touchpoints when v2 goes in force
 
@@ -437,4 +448,5 @@ Still open:
    the question a reviewer will ask first.
 2. Clip-level predominant-state coding, or full interval coding in BORIS? The
    50% predominant-state rule above is what is in force; BORIS is the upgrade.
-3. Who is the second coder for the reliability pass, and when?
+3. When will the blind intra-observer re-code happen, and will a separate
+   second-observer study also be collected?

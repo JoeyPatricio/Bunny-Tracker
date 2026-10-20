@@ -1,8 +1,7 @@
 # Two jobs, per Phase 1 of docs/upgrade-plan.md.
 #
-# hermetic: builds both venvs from the pinned requirements files (the training
-# one from requirements-train-cpu.txt, so a GPU-less runner does not pull the
-# CUDA torch wheel and its nvidia_* packages), builds the client because
+# hermetic: builds both venvs from uv.lock (the training group uses the CPU
+# torch index), builds the client because
 # test_security_regressions.py exercises the real SPA fallback in client/dist/,
 # then runs every check-script through ci/test_scripts.py.
 #
@@ -44,17 +43,15 @@ jobs:
           npm run build
 
       - name: Runtime venv (3.14, no torch)
-        run: |
-          uv venv --python 3.14 .venv
-          uv pip install --python .venv/bin/python -r requirements.txt
+        run: uv sync --frozen --python 3.14 --group dev
 
       - name: Training venv (3.12, CPU torch)
-        run: |
-          uv venv --python 3.12 .venv-train
-          uv pip install --python .venv-train/bin/python -r requirements-train-cpu.txt
+        env:
+          UV_PROJECT_ENVIRONMENT: .venv-train
+        run: uv sync --frozen --python 3.12 --group train
 
       - name: Check-scripts
-        run: uvx --from pytest==9.1.1 pytest -m "not local_data"
+        run: .venv/bin/python -m pytest -m "not local_data"
 
   lint:
     runs-on: ubuntu-latest
@@ -64,5 +61,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
+      - run: uv sync --frozen --python 3.14 --group dev
       - name: ruff check
-        run: uvx ruff@0.16.10 check .
+        run: .venv/bin/ruff check .
