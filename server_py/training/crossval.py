@@ -80,7 +80,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from shared.labels import LABELS
 from training import train as T
-from training.cache import DEFAULT_CACHE_DIR, load_manifest, split_entries
+from training.cache import DEFAULT_CACHE_DIR, LEGACY_POLICY, load_manifest, split_entries
 from training.dataset import class_weights
 from training.diagnose_meanstd import MeanStdClassifier
 from training.metrics import classification_report, confusion_matrix, wilson_interval
@@ -341,15 +341,48 @@ def git_sha() -> str | None:
         return None
 
 
+def check_policies_comparable(a: dict, b: dict, name_a: str, name_b: str) -> None:
+    """Two policy manifests are only a paired comparison if everything except
+    the augmentation is identical: same clips in the same order (so fold
+    indices mean the same clips), same labels, backbone and eval tiers."""
+    same = {
+        "clips": [(c["filename"], c["label"]) for c in a["clips"]]
+                 == [(c["filename"], c["label"]) for c in b["clips"]],
+        **{k: a.get(k) == b.get(k) for k in ("labels_sha256", "backbone", "eval_windows", "window",
+                                             "train_frames", "labels")},
+    }
+    bad = [k for k, ok in same.items() if not ok]
+    if bad:
+        raise SystemExit(
+            f"Aug policies {name_a!r} and {name_b!r} were extracted from different inputs "
+            f"(differs: {bad}). Rebuild both with training/extract_frames.py against the same "
+            f"labels.json and backbone before comparing them."
+        )
+
+
 def crossval(*, cache_dir: Path = DEFAULT_CACHE_DIR, out_dir: Path = MODELS_DIR, repeats: int = 5,
              n_splits: int = 5, n_inner: int = 4, seed: int = 0, quick: bool = False,
-             arms=ARMS, on_fit=None, jobs: int = 1) -> dict:
+             arms=ARMS, on_fit=None, jobs: int = 1, aug_policies: list[str] | None = None) -> dict:
     """`jobs` outer folds run in parallel processes. `on_fit` (a test hook that
-    sees every fit) needs the fits in this process, so it forces jobs=1."""
+    sees every fit) needs the fits in this process, so it forces jobs=1.
+
+    `aug_policies` (Phase 4): the first policy is primary and every arm runs on
+    its cache, under the usual arm names, so evaluate.py, train.py and
+    calibrate_gate.py are unaffected. Each further policy adds one arm,
+    `gru@<policy>`, fitted on the identical folds with the identical fit
+    seeds, so the only difference between it and `gru` is the augmentation.
+    The corrected paired test for each lands in result["paired_aug_policy"].
+    Only gru gets the extra arms: it is the shipping model, and the question
+    Phase 4 asks is whether augmentation helps it.
+    """
     started = time.time()
     jobs = 1 if on_fit is not None else max(1, jobs)
     saved_threads = torch.get_num_threads()
-    manifest = load_manifest(cache_dir)
+    policies = list(dict.fromkeys(aug_policies or [LEGACY_POLICY]))
+    manifest = load_manifest(cache_dir, policies[0])
+    extra_manifests = {pol: load_manifest(cache_dir, pol) for pol in policies[1:]}
+    for pol, other in extra_manifests.items():
+        check_policies_comparable(manifest, other, policies[0], pol)
     clips = manifest["clips"]
     filenames = [c["filename"] for c in clips]
     labels = [c["label"] for c in clips]
@@ -361,22 +394,27 @@ def crossval(*, cache_dir: Path = DEFAULT_CACHE_DIR, out_dir: Path = MODELS_DIR,
     patience = 5 if quick else T.PATIENCE
     y_all = np.array([LABELS.index(lab) for lab in labels])
 
+    # (result name, fitter arm, manifest). Extra-policy arms reuse gru's fitter.
+    plan = [(arm, arm, manifest) for arm in arms]
+    if "gru" in arms:
+        plan += [(f"gru@{pol}", "gru", m) for pol, m in extra_manifests.items()]
+
     results, oof_arrays, per_fold = {}, {}, {}
-    for arm in arms:
+    for name, arm, arm_manifest in plan:
         arm_started = time.time()
         kwargs = dict(seed=seed, quick=quick, epochs=epochs, patience=patience, cache_dir=cache_dir)
         if jobs == 1:
-            runs = [run_fold(arm, manifest, fold, windows, on_fit=on_fit, **kwargs) for fold in folds]
+            runs = [run_fold(arm, arm_manifest, fold, windows, on_fit=on_fit, **kwargs) for fold in folds]
             torch.set_num_threads(saved_threads)
         else:
-            runs = Parallel(n_jobs=jobs)(delayed(run_fold)(arm, manifest, fold, windows, **kwargs)
+            runs = Parallel(n_jobs=jobs)(delayed(run_fold)(arm, arm_manifest, fold, windows, **kwargs)
                                          for fold in folds)
         summary, oof = summarise(runs, y_all, repeats)
-        results[arm] = summary
-        oof_arrays[arm] = oof
-        per_fold[arm] = summary["per_fold"]
+        results[name] = summary
+        oof_arrays[name] = oof
+        per_fold[name] = summary["per_fold"]
         po = summary["pooled_oof"]
-        print(f"{arm:20s} macro-F1 {po['macro_f1']['mean']:.3f} +/- {po['macro_f1']['sd']:.3f}  "
+        print(f"{name:20s} macro-F1 {po['macro_f1']['mean']:.3f} +/- {po['macro_f1']['sd']:.3f}  "
               f"bal-acc {po['balanced_accuracy']['mean']:.3f}  kappa {po['kappa']['mean']:.3f}  "
               f"({time.time() - arm_started:.0f}s)", flush=True)
 
@@ -401,6 +439,15 @@ def crossval(*, cache_dir: Path = DEFAULT_CACHE_DIR, out_dir: Path = MODELS_DIR,
     a, b = PRIMARY_COMPARISON
     if a in results and b in results:
         result["paired"] = paired_comparison(per_fold, a, b, len(clips), n_splits)
+    if extra_manifests:
+        result["aug_policy_arms"] = {name: (policies[0] if name == arm else name.split("@", 1)[1])
+                                     for name, arm, _ in plan if arm == "gru"}
+        result["paired_aug_policy"] = {
+            pol: paired_comparison(per_fold, f"gru@{pol}", "gru", len(clips), n_splits)
+            for pol in extra_manifests if f"gru@{pol}" in results
+        }
+        result["aug_policy_status"] = ("UNEVALUATED until a crossval run on the recoded v2 labels; "
+                                       "see training/augment.py")
     result["runtime_seconds"] = round(time.time() - started, 1)
 
     out_dir = Path(out_dir)
@@ -415,9 +462,13 @@ def crossval(*, cache_dir: Path = DEFAULT_CACHE_DIR, out_dir: Path = MODELS_DIR,
                 "run_id": run_id, "created_at": result["created_at"], "git_sha": sha, "seed": seed,
                 "labels_sha256": manifest["labels_sha256"],
                 "ethogram_version": manifest.get("ethogram_version"), "arm": arm,
+                "aug_policy": result.get("aug_policy_arms", {}).get(arm, policies[0]),
                 "config": result["config"],
                 "metrics": {k: v["mean"] for k, v in summary["pooled_oof"].items()},
             }) + "\n")
+    for pol, pc in result.get("paired_aug_policy", {}).items():
+        print(f"\ngru@{pol} - gru ({policies[0]}): mean macro-F1 difference {pc['mean_difference']:+.3f}, "
+              f"corrected resampled t p={pc['corrected_resampled_t']['p_two_sided']:.3f}")
     if "paired" in result:
         p = result["paired"]
         print(f"\n{a} - {b}: mean macro-F1 difference {p['mean_difference']:+.3f} over "
@@ -439,10 +490,13 @@ def main() -> None:
                         help="outer folds fitted in parallel (results do not depend on it)")
     parser.add_argument("--cache-dir", type=Path, default=DEFAULT_CACHE_DIR)
     parser.add_argument("--out-dir", type=Path, default=MODELS_DIR)
+    parser.add_argument("--aug-policies", nargs="+", default=None, metavar="POLICY",
+                        help="first is primary (all arms); each further policy adds a paired "
+                             "gru@<policy> arm. Build each with extract_frames --aug-policy.")
     args = parser.parse_args()
     crossval(cache_dir=args.cache_dir, out_dir=args.out_dir, repeats=args.repeats,
              n_splits=args.n_splits, n_inner=args.n_inner, seed=args.seed, quick=args.quick,
-             arms=args.arms, jobs=args.jobs)
+             arms=args.arms, jobs=args.jobs, aug_policies=args.aug_policies)
 
 
 if __name__ == "__main__":

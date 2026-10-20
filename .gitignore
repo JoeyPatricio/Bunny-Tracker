@@ -37,6 +37,15 @@ server/model/mobilenet/
 server_py/.venv/
 server_py/.venv-train/
 server_py/models/cache/
+# Archived caches too. `server_py/models/cache/` above covers only that exact
+# path, so moving a cache anywhere else (e.g. archiving it under a versioned
+# directory during an ethogram migration) silently makes ~14 MB of embedding
+# .npy files trackable again. Match the cache by name at any depth instead.
+server_py/models/**/cache/
+# Loose embedding/probability arrays, wherever they land. These are derived
+# from the owner's own footage and have no business in a public repo.
+server_py/models/**/*.npy
+server_py/models/**/*.npz
 server_py/agent/live_frame.jpg
 __pycache__/
 *.pyc

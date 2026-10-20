@@ -12,6 +12,7 @@ involved at all).
 
 Usage (from server_py/, using the training venv):
     .venv-train/bin/python -m training.extract_frames [--seed N] [--eval-windows 8 12]
+        [--aug-policy legacy|albu_v1]
 """
 import argparse
 import hashlib
@@ -28,19 +29,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from shared.frames import extract_frames as ffmpeg_extract_frames
 from shared.frames import normalize
 from shared.labels import ETHOGRAM_VERSION, LABELS
-from training.cache import DEFAULT_CACHE_DIR, SCHEMA, manifest_path
-from training.dataset import AUG_COPIES, TRAIN_FRAMES, WINDOW, make_variants
+from training.augment import DEFAULT_POLICY, POLICIES, get_policy
+from training.cache import DEFAULT_CACHE_DIR, SCHEMA, manifest_path, variant_name
+from training.dataset import TRAIN_FRAMES, WINDOW
 from training.model import BACKBONE_NAME, build_backbone
 from training.splits import group_key
 
 ROOT = Path(__file__).resolve().parent.parent.parent  # BunnyTracker/
 RECORDINGS_DIR = ROOT / "server" / "recordings"
 LABELS_JSON = ROOT / "server" / "labels.json"
-
-# Recorded in the manifest so a result can be traced to the augmentation that
-# produced it. Change this string whenever make_variants changes.
-AUG_POLICY = f"flip+jitter:copies={AUG_COPIES}"
-
 
 @torch.no_grad()
 def embed_frames(backbone, frames: np.ndarray) -> np.ndarray:
@@ -70,15 +67,19 @@ def cached_frames(path: Path, recording: Path, n: int) -> np.ndarray:
 
 def build_cache(*, cache_dir: Path, labels_json: Path, recordings_dir: Path, backbone,
                 backbone_name: str = BACKBONE_NAME, seed: int = 0,
-                eval_windows: list[int] | None = None) -> dict:
+                eval_windows: list[int] | None = None, aug_policy: str = DEFAULT_POLICY) -> dict:
     eval_windows = sorted(set(eval_windows or [WINDOW]))
+    policy = get_policy(aug_policy)
     cache_dir = Path(cache_dir)
-    mpath = manifest_path(cache_dir)
-    if mpath.is_file() and json.loads(mpath.read_text()).get("schema", 1) != SCHEMA:
-        raise SystemExit(
-            f"{mpath} is a schema-1 cache. Archive it rather than writing over it "
-            f"(docs/pipeline.md, 'After an ethogram change'), then re-run."
-        )
+    mpath = manifest_path(cache_dir, policy.name)
+    # Check the legacy manifest too: any policy writes into the shared frames
+    # and eval tiers, so a schema-1 dir must be archived whichever policy runs.
+    for existing in {mpath, manifest_path(cache_dir)}:
+        if existing.is_file() and json.loads(existing.read_text()).get("schema", 1) != SCHEMA:
+            raise SystemExit(
+                f"{existing} is a schema-1 cache. Archive it rather than writing over it "
+                f"(docs/pipeline.md, 'After an ethogram change'), then re-run."
+            )
     frames_dir, emb_dir = cache_dir / "frames", cache_dir / "emb"
     frames_dir.mkdir(parents=True, exist_ok=True)
     emb_dir.mkdir(parents=True, exist_ok=True)
@@ -97,7 +98,10 @@ def build_cache(*, cache_dir: Path, labels_json: Path, recordings_dir: Path, bac
         "labels": list(LABELS),
         "labels_sha256": hashlib.sha256(labels_bytes).hexdigest(),
         "ethogram_version": ETHOGRAM_VERSION,
-        "aug_policy": AUG_POLICY,
+        # Recorded so a result can be traced to the augmentation that produced
+        # it. The detail string changes whenever a policy's transforms do.
+        "aug_policy": policy.name,
+        "aug_policy_detail": policy.detail,
         "seed": seed,
     }
     for filename, label in clips:
@@ -107,8 +111,8 @@ def build_cache(*, cache_dir: Path, labels_json: Path, recordings_dir: Path, bac
         # not change when another clip is added or removed.
         rng = random.Random(f"{seed}:{filename}")
         variant_names = []
-        for k, variant in enumerate(make_variants(raw, rng)):
-            name = f"{filename}.v{k}.npy"
+        for k, variant in enumerate(policy.make(raw, rng)):
+            name = variant_name(filename, k, policy.name)
             np.save(emb_dir / name, embed_frames(backbone, variant))
             variant_names.append(name)
         eval_names = {}
@@ -136,11 +140,14 @@ def main():
     parser.add_argument("--cache-dir", type=Path, default=DEFAULT_CACHE_DIR)
     parser.add_argument("--labels", type=Path, default=LABELS_JSON)
     parser.add_argument("--recordings-dir", type=Path, default=RECORDINGS_DIR)
+    parser.add_argument("--aug-policy", choices=sorted(POLICIES), default=DEFAULT_POLICY,
+                        help="training/augment.py policy; several can share one --cache-dir")
     args = parser.parse_args()
 
     build_cache(
         cache_dir=args.cache_dir, labels_json=args.labels, recordings_dir=args.recordings_dir,
         backbone=build_backbone(pretrained=True), seed=args.seed, eval_windows=args.eval_windows,
+        aug_policy=args.aug_policy,
     )
 
 

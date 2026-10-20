@@ -70,8 +70,25 @@ checks that over every recording. A schema-1 cache is refused rather than
 overwritten: archive it first (see "After an ethogram change").
 
 ```bash
-$TRAIN -m training.extract_frames [--seed N] [--eval-windows 8 12] [--cache-dir DIR]
+$TRAIN -m training.extract_frames [--seed N] [--eval-windows 8 12] [--cache-dir DIR] \
+    [--aug-policy legacy|albu_v1]
 ```
+
+**Augmentation policy (Phase 4, unevaluated).** `--aug-policy` picks how the
+training variants are made (`training/augment.py`). `legacy` (the default) is
+the original mirror plus brightness/contrast jitter, 3 variants, and keeps the
+file names above. `albu_v1` adds mild rotation, perspective, motion blur and
+occlusion through albumentations' `ReplayCompose`, 8 variants, written as
+`emb/<clip>.albu_v1.v<k>.npy` with its own `manifest.albu_v1.json`. Both share
+the frames and eval tiers, so building the second policy decodes nothing.
+To compare them, build both into one cache dir and run
+`crossval --aug-policies legacy albu_v1`. That adds a `gru@albu_v1` arm on the
+identical folds and seeds as `gru`, plus a corrected paired test in
+`cv_result.json["paired_aug_policy"]`. **albu_v1 has not been evaluated on
+real labels.** Adopt it only if it wins that paired comparison after the v2
+recoding pass. Its magnitudes are deliberately small because rotation and blur
+can change what a clip depicts (see the module docstring). `train.py` and
+`evaluate.py` still read the legacy manifest.
 
 `--eval-windows` lists every window length step 2 may be asked to evaluate at.
 An eval sample is W frames spread across the whole clip, the protocol schema 1

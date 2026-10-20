@@ -24,4 +24,8 @@ onnxscript==0.7.2
 onnxruntime==1.29.0
 numpy==2.5.3
 scikit-learn==1.9.0
+# Phase 4 augmentation policies (training/augment.py). Pulls
+# opencv-python-headless as a transitive dep; that is fine here and it must
+# never be added to requirements.txt (the runtime venv).
+albumentations==2.0.8
 imageio-ffmpeg==0.6.0
