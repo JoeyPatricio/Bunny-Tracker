@@ -12,9 +12,9 @@ Type=simple
 User=bunnycam
 Group=bunnycam
 SupplementaryGroups=video
-WorkingDirectory=/opt/bunny-tracker/server_py
+WorkingDirectory=/opt/bunny-tracker/server
 EnvironmentFile=/opt/bunny-tracker/deploy/pi/bunnycam.env
-ExecStart=/opt/bunny-tracker/server_py/.venv/bin/python -m agent.capture
+ExecStart=/opt/bunny-tracker/server/.venv/bin/python -m agent.capture
 Restart=always
 RestartSec=5
 # SIGTERM goes to the agent alone so it can stop its ffmpeg child cleanly.

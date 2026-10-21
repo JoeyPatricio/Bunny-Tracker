@@ -47,7 +47,7 @@ interpreter the README uses:
 
 ```bash
 sudo -u bunnycam -H sh -c 'curl -LsSf https://astral.sh/uv/install.sh | sh'
-cd /opt/bunny-tracker/server_py
+cd /opt/bunny-tracker/server
 sudo -u bunnycam -H /var/lib/bunnycam/.local/bin/uv sync --frozen --python 3.14
 sudo -u bunnycam .venv/bin/python -c "import onnxruntime; print(onnxruntime.get_available_providers())"
 ```
@@ -115,14 +115,14 @@ them again. Then, from the repo root on the PC in PowerShell (Windows ships
 `tar` and `scp`):
 
 ```powershell
-tar -czf server-data.tgz --exclude server/.env --exclude server/agent/segments `
-    --exclude server/tmp --exclude "server/sessions.json*" server
+tar -czf data.tgz --exclude data/.env --exclude data/agent/segments `
+    --exclude data/tmp --exclude "data/sessions.json*" data
 cd client; npm ci; npm run build; cd ..
 tar -czf client-dist.tgz client/dist
-scp server-data.tgz client-dist.tgz server/.env <user>@<pi>:~/
+scp data.tgz client-dist.tgz data/.env <user>@<pi>:~/
 ```
 
-The archive carries the whole durable `server/` tree: recordings, `labels.json`
+The archive carries the whole durable `data/` tree: recordings, `labels.json`
 and its `labels.meta.json`, `labels.reliability.json`,
 `labels.reliability_sample.json`, and `labels.holdout.json` sidecars, autolabels,
 hidden, monitor state, the activity log, and backups. Rolling segments are
@@ -133,12 +133,12 @@ On the Pi:
 
 ```bash
 cd /opt/bunny-tracker
-sudo tar --no-same-owner -xzf ~/server-data.tgz -C /opt/bunny-tracker
+sudo tar --no-same-owner -xzf ~/data.tgz -C /opt/bunny-tracker
 sudo tar --no-same-owner -xzf ~/client-dist.tgz -C /opt/bunny-tracker
-sudo chown -R bunnycam:bunnycam server client/dist
-sudo install -o bunnycam -g bunnycam -m 600 ~/.env server/.env
-rm ~/server-data.tgz ~/client-dist.tgz ~/.env
-ls -l --time-style=full-iso server/recordings | head
+sudo chown -R bunnycam:bunnycam data client/dist
+sudo install -o bunnycam -g bunnycam -m 600 ~/.env data/.env
+rm ~/data.tgz ~/client-dist.tgz ~/.env
+ls -l --time-style=full-iso data/recordings | head
 ```
 
 The archives sit in your login home, which the `bunnycam` user can't read,
@@ -147,7 +147,7 @@ so root extracts them and `chown` hands the result to the service user.
 read a recording's mtime, so check that the listing shows the original dates
 and not today's. Any copy method that resets mtimes loses that information.
 
-Edit `server/.env` for the Pi:
+Edit `data/.env` for the Pi:
 
 - `CAMERA_FORMAT=v4l2` and `CAMERA_INPUT=/dev/v4l/by-id/...` from step 3.
   `CAMERA_SIZE` and `CAMERA_FPS` keep their meaning.
@@ -156,8 +156,8 @@ Edit `server/.env` for the Pi:
   through `smtplib` with `EMAIL_USER`, `EMAIL_PASS`, and `NOTIFY_TO`. A
   webhook URL copied from the PC still points at the PC's n8n.
 - `bunnycam.env` sets `PY_PORT`, `AGENT_SERVER_URL`, `FFMPEG_PATH`, and the two
-  tmpfs paths. Process environment wins over `server/.env`, so remove those
-  keys from `server/.env` to keep one source.
+  tmpfs paths. Process environment wins over `data/.env`, so remove those
+  keys from `data/.env` to keep one source.
 
 ## 6. Move a promoted model
 
@@ -168,7 +168,7 @@ exported with external data fails to load without its `.onnx.data` sidecar.
 after checking each file's sha256. From the repo root on the PC:
 
 ```powershell
-server_py\.venv\Scripts\python.exe deploy\pi\model_bundle.py pack server_py\models model-bundle.tar.gz
+server\.venv\Scripts\python.exe deploy\pi\model_bundle.py pack server\models model-bundle.tar.gz
 scp model-bundle.tar.gz <user>@<pi>:~/
 ```
 
@@ -177,9 +177,9 @@ On the Pi:
 ```bash
 cd /opt/bunny-tracker
 sudo systemctl stop bunnycam-agent
-sudo tar --no-same-owner -xzf ~/model-bundle.tar.gz -C server_py/models
-sudo chown -R bunnycam:bunnycam server_py/models
-sudo -u bunnycam server_py/.venv/bin/python deploy/pi/model_bundle.py verify server_py/models \
+sudo tar --no-same-owner -xzf ~/model-bundle.tar.gz -C server/models
+sudo chown -R bunnycam:bunnycam server/models
+sudo -u bunnycam server/.venv/bin/python deploy/pi/model_bundle.py verify server/models \
     && sudo systemctl start bunnycam-agent
 rm ~/model-bundle.tar.gz
 journalctl -u bunnycam-agent -n 20    # expect "Models ready"
@@ -243,7 +243,7 @@ Run `sudo systemctl edit bunnycam-server` and add:
 ```ini
 [Service]
 ExecStart=
-ExecStart=/opt/bunny-tracker/server_py/.venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 3001 --proxy-headers --forwarded-allow-ips=127.0.0.1,::1
+ExecStart=/opt/bunny-tracker/server/.venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 3001 --proxy-headers --forwarded-allow-ips=127.0.0.1,::1
 ```
 
 Keep `--forwarded-allow-ips` at loopback. LAN clients then can't spoof their

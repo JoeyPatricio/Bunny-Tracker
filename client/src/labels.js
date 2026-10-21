@@ -1,4 +1,4 @@
-// Canonical behavior vocabulary (ethogram v2). Mirrors server_py/shared/labels.py.
+// Canonical behavior vocabulary (ethogram v2). Mirrors server/shared/labels.py.
 //
 // Definitions and their published sources are in docs/ethogram.md. The
 // ethogram is the specification; this file is the implementation. Do not add,
@@ -51,7 +51,7 @@ export const LABEL_META = {
 }
 
 // The docs/ethogram.md version these codes implement. Mirrors
-// ETHOGRAM_VERSION in server_py/shared/labels.py.
+// ETHOGRAM_VERSION in server/shared/labels.py.
 export const ETHOGRAM_VERSION = '2.0'
 
 // Operational definitions, lifted verbatim from docs/ethogram.md (markdown

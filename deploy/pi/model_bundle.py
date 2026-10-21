@@ -8,8 +8,8 @@ and verify repeats the check after extraction.
 
 Standard library only, so it runs on the Windows PC and on the Pi.
 
-    python deploy/pi/model_bundle.py pack server_py/models model-bundle.tar.gz
-    python deploy/pi/model_bundle.py verify server_py/models
+    python deploy/pi/model_bundle.py pack server/models model-bundle.tar.gz
+    python deploy/pi/model_bundle.py verify server/models
 """
 import argparse
 import hashlib
