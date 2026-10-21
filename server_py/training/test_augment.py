@@ -1,4 +1,4 @@
-"""Regression gate for the Phase 4 augmentation policies (docs/upgrade-plan.md).
+"""Regression gate for the augmentation policies.
 
 What this pins down:
   - `legacy` is byte-identical to the pre-Phase-4 make_variants, so an old

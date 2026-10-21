@@ -1,4 +1,4 @@
-"""Regression gate for docs/provenance.md, fixes.md, installment 2 (agent/ffmpeg_io.py).
+"""Regression gate for agent/ffmpeg_io.py.
 
 Drives FfmpegCapture's reader/consumer tasks directly against a real
 asyncio.StreamReader instead of spawning ffmpeg, so this runs anywhere with no
@@ -48,7 +48,7 @@ class FakeProc:
 
 
 async def test_slow_handler_does_not_stall_reader() -> None:
-    """docs/provenance.md, fixes.md 2.1: the reader must keep draining stdout while on_frame runs."""
+    """The reader must keep draining stdout while on_frame runs."""
     handled: list[int] = []
 
     async def slow_on_frame(frame: bytes) -> None:
@@ -97,7 +97,7 @@ async def test_slow_handler_does_not_stall_reader() -> None:
 
 
 async def test_reader_is_bound_to_its_own_stream() -> None:
-    """docs/provenance.md, fixes.md 2.2: the loop must not re-read self.proc each iteration."""
+    """The loop must not re-read self.proc each iteration."""
     handled: list[int] = []
 
     async def on_frame(frame: bytes) -> None:
@@ -133,7 +133,7 @@ async def test_reader_is_bound_to_its_own_stream() -> None:
 
 
 async def test_restart_cancels_readers_first() -> None:
-    """docs/provenance.md, fixes.md 2.2: readers must be torn down before start() rebinds state."""
+    """Readers must be torn down before start() rebinds state."""
     cap = make_capture(lambda frame: asyncio.sleep(0))
     order: list[str] = []
     parked = asyncio.Event()

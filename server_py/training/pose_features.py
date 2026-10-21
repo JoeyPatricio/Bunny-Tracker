@@ -1,8 +1,7 @@
 """Offline geometric pose arm, paired with an existing nested grouped CV run.
 
 Consumes explicit, complete single-animal tracks. No pose estimator, torch,
-video decoder or runtime integration is imported. See paper/README.md for the
-input contract and the boundary on independently annotated keypoints.
+video decoder or runtime integration is imported.
 """
 import argparse
 import hashlib
@@ -292,7 +291,7 @@ def main():
                      reference_path=args.reference, oof_path=args.oof,
                      out_dir=args.out_dir, comparator=args.comparator)
     except (OSError, ValueError, KeyError) as err:
-        parser.exit(2, f"pose_features: {err}. See paper/README.md for required inputs.\n")
+        parser.exit(2, f"pose_features: {err}.\n")
     print(f"Wrote {args.out_dir / 'pose_result.json'} ({len(FEATURE_NAMES)} features, {result['n_clips']} clips)")
 
 

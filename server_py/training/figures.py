@@ -2,7 +2,6 @@
 
 No training, annotation or placeholder results. Missing requested inputs are
 errors. Each SVG/PDF has a JSON sidecar with plotted data and source hashes.
-See paper/README.md for inputs, including the learning-curve run contract.
 """
 import argparse
 import csv
@@ -260,7 +259,7 @@ def main():
         made = generate(models_dir=args.models_dir, out_dir=args.out_dir,
                         kinds=args.only, arm=args.arm, repeat=args.repeat)
     except (OSError, ValueError, KeyError, ImportError) as err:
-        parser.exit(2, f"figures: {err}. See paper/README.md for input producers and schemas.\n")
+        parser.exit(2, f"figures: {err}.\n")
     print(f"Wrote {', '.join(made)} to {args.out_dir}")
 
 

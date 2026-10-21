@@ -1,5 +1,5 @@
 """Port of capture.mjs's login()/loginWithRetry()/api() helper, replaced by
-AGENT_TOKEN (plan Phase 5): no login, no session, no re-login-on-401 wrapper
+AGENT_TOKEN: no login, no session, no re-login-on-401 wrapper
 — a 401 now means a config error (wrong/missing token), nothing to retry.
 
 Reads server/.env directly (independent of app/config.py) since the agent is

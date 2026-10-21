@@ -1,4 +1,4 @@
-"""Regression gate for training/crossval.py (docs/upgrade-plan.md, Phase 3).
+"""Regression gate for training/crossval.py.
 
 Hermetic: builds a synthetic schema-2 cache in a temp dir, with embeddings
 that carry a learnable per-class signal, and runs crossval in --quick mode on

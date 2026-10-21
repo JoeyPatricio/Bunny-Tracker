@@ -1,4 +1,4 @@
-"""The blind re-code sample for intra-observer reliability (upgrade-plan Phase 2).
+"""The blind re-code sample for intra-observer reliability.
 
 Drawn once, stored, and never redrawn. Agreement cannot be retrofitted: once
 the coder has seen which clips are in the sample, or the sample shifts as clips
