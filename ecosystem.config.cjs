@@ -14,13 +14,13 @@ const fs = require('fs')
 const { execFileSync } = require('child_process')
 
 const WINDOWS = process.platform === 'win32'
-const SERVER_PY = path.join(__dirname, 'server_py')
+const SERVER_DIR = path.join(__dirname, 'server')
 // The runtime venv's own interpreter directly, not `interpreter: 'python3'` —
 // that assumes a PATH entry this Windows box does not guarantee. The venv
 // layout differs by platform: Scripts/python.exe vs. bin/python.
 const PYTHON = WINDOWS
-  ? path.join(SERVER_PY, '.venv', 'Scripts', 'python.exe')
-  : path.join(SERVER_PY, '.venv', 'bin', 'python')
+  ? path.join(SERVER_DIR, '.venv', 'Scripts', 'python.exe')
+  : path.join(SERVER_DIR, '.venv', 'bin', 'python')
 
 // Resolve a binary that lives on PATH on Linux but at a fixed install path on
 // Windows. Returns null when it isn't installed, so the app list can drop it
@@ -50,14 +50,14 @@ const N8N_BIN = resolveBin(
   'C:\\Users\\joepa\\AppData\\Local\\Packages\\Claude_pzs8sxrjxfjjc\\LocalCache\\Roaming\\npm\\node_modules\\n8n\\bin\\n8n',
   'n8n')
 
-const RECORDINGS = path.join(__dirname, 'server', 'recordings')
+const RECORDINGS = path.join(__dirname, 'data', 'recordings')
 
 const apps = [
     {
       name: 'bunnycam-server',
       script: PYTHON,
       args: '-m uvicorn app.main:app --host 0.0.0.0 --port 3001',
-      cwd: SERVER_PY,
+      cwd: SERVER_DIR,
       autorestart: true,
       max_restarts: 20,
       restart_delay: 3000,
@@ -67,7 +67,7 @@ const apps = [
       name: 'bunnycam-agent',
       script: PYTHON,
       args: '-m agent.capture',
-      cwd: SERVER_PY,
+      cwd: SERVER_DIR,
       autorestart: true,
       max_restarts: 20,
       restart_delay: 5000,

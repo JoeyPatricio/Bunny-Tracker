@@ -6,7 +6,7 @@
 # then runs every check-script through ci/test_scripts.py.
 #
 # lint: ruff check only. ruff format is deliberately not enforced; see the
-# [tool.ruff.format] note in server_py/pyproject.toml.
+# [tool.ruff.format] note in server/pyproject.toml.
 
 name: ci
 
@@ -19,9 +19,9 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: server_py
+        working-directory: server
     env:
-      # Placeholders, not secrets. On the dev box these come from server/.env.
+      # Placeholders, not secrets. On the dev box these come from data/.env.
       # The security checks need them non-empty: login returns 503 with no
       # ADMIN_PASSWORD, and the stream-frame limits need an agent token to
       # reach the route at all.
@@ -57,7 +57,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: server_py
+        working-directory: server
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6

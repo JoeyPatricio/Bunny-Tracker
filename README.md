@@ -18,7 +18,7 @@ private to the owner).
                   └──► MJPEG live stream ──► dashboard                         └──► public text feed
 ```
 
-- **Capture agent** (`server_py/agent/capture.py`): a headless Python service
+- **Capture agent** (`server/agent/capture.py`): a headless Python service
   that reads the camera with one `ffmpeg` process, sampling a frame every few
   seconds for inference, recording rolling clips, and pushing a live view to
   the dashboard. Runs the same on a PC (`dshow`) or a Raspberry Pi (`v4l2`),
@@ -26,7 +26,7 @@ private to the owner).
 - **Classifier**: a frozen `timm` edge backbone (`mobilenetv4_conv_small`) plus
   a small learned temporal head, exported to ONNX and run via ONNX Runtime -
   replaced the original browser-trained TensorFlow.js/MobileNetV2 classifier.
-  Retraining is now an offline CLI script (`server_py/training/train.py`), not
+  Retraining is now an offline CLI script (`server/training/train.py`), not
   a browser tab; see the note below.
 - **Alerts**: a non-normal behavior emails you the clip (Python `smtplib` +
   Gmail), with motion gating, a multi-frame debounce, and a global cooldown to
@@ -69,11 +69,11 @@ cited as accuracy.
 
 The runtime environment stays torch-free for Raspberry Pi deployment. The
 optional training environment uses CPU PyTorch. Both resolve from
-`server_py/uv.lock`. See [docs/pipeline.md](docs/pipeline.md).
+`server/uv.lock`. See [docs/pipeline.md](docs/pipeline.md).
 
 ```bash
 cd client && npm install && npm run build
-cd ../server_py
+cd ../server
 
 # Runtime (server + agent), plus the test runner and linter. No torch.
 uv sync --frozen --python 3.14 --group dev
@@ -89,7 +89,7 @@ Production runtime installs can omit `--group dev`. Update dependencies in
 
 ### 2. Configure the environment
 
-Create `server/.env` (shared by both the server and the agent):
+Create `data/.env` (shared by both the server and the agent):
 
 ```ini
 # Email alerts (Gmail App Password, not your normal password)
@@ -152,7 +152,7 @@ the camera, labeling, and training tabs. Without login you see the public demo.
 2. **Train**: an offline CLI pipeline, extract -> cross-validate -> fit ->
    export a candidate -> evaluate -> promote; see
    [docs/pipeline.md](docs/pipeline.md#the-order). Export writes to
-   `server_py/models/candidate/`, and only `training/promote.py`, which refuses
+   `server/models/candidate/`, and only `training/promote.py`, which refuses
    a candidate that failed its gate, replaces the model the agent loads. The
    Training tab in the dashboard is a read-only view of whatever is deployed.
 3. **Monitor**: the agent loads the exported ONNX model and runs live. Toggle
@@ -179,7 +179,7 @@ Toggle it with **✂ Clipping** in the dashboard header. While it's on:
   situation you're in when you're collecting data to train one.
 - Clips are 8s (vs. 12s), sampled every 0.5s (vs. 1.5s), and the clip you get
   is the segment the motion happened in rather than the one before it.
-- They land in `server/recordings/` as `recording-clip-*.webm`, unlabeled, so
+- They land in `data/recordings/` as `recording-clip-*.webm`, unlabeled, so
   Label Studio's **Unlabeled** filter is your labeling queue.
 
 The panel under the live feed has the controls:
@@ -213,7 +213,7 @@ clip count gathered across several days is a far more useful dataset.
 ## Tests
 
 Plain check-scripts, with pytest as a runner over them rather than a rewrite.
-From `server_py/`:
+From `server/`:
 
 ```bash
 .venv/bin/python -m pytest                       # every script
@@ -271,7 +271,7 @@ BunnyTracker/
 │           ├── RecordingGallery.jsx # Recordings, filterable by label
 │           └── DemoView.jsx         # Public demo (highlights + live feed)
 │
-├── server/                     # Data only - no server code lives here anymore
+├── data/                       # Runtime data and .env, no code
 │   ├── recordings/             # Saved .webm clips (git-ignored)
 │   ├── model/                  # Retired tfjs artifacts. No Python code path
 │   │                           #   can run them; still served read-only at
@@ -279,7 +279,7 @@ BunnyTracker/
 │   ├── labels.json, hidden.json, monitor.json, activity-log.json, ...
 │   └── agent/segments/         # Rolling capture segments
 │
-└── server_py/                   # Python backend + agent + training
+└── server/                     # Python backend + agent + training
     ├── app/                      # FastAPI server (routers, auth, storage)
     ├── agent/                    # Headless capture agent (capture.py, ffmpeg_io.py, client.py)
     ├── inference/                 # ONNX Runtime wrappers (backbone, temporal head, predictor)
@@ -332,16 +332,16 @@ the full plan):
 
 **Relabel, then retrain.** All 112 clips were unlabeled during the v2 ethogram
 migration and need recoding against the new definitions; v1 labels are archived
-in `server/labels.v1.json` so the v1-to-v2 recoding can still be reported. The
+in `data/labels.v1.json` so the v1-to-v2 recoding can still be reported. The
 classifier cannot run until a 7-class head is trained and exported.
 
 ---
 
 ## Notes
 
-- Recordings (`server/recordings/`), labels (`server/labels.json`), backups,
+- Recordings (`data/recordings/`), labels (`data/labels.json`), backups,
   and `.env` are all git-ignored. The deployed ONNX artifacts in
-  `server_py/models/` are committed, so a clone can run inference without
+  `server/models/` are committed, so a clone can run inference without
   retraining.
 - Labels are written atomically and serialized, with `.bak` plus daily backups,
   so concurrent edits can't corrupt or wipe them.

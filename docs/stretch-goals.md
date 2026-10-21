@@ -72,14 +72,14 @@ uncompressed 4K and motion detection sees a frozen scene.
 
 **Water sensor design:**
 
-- A separate process, `server_py/sensor/water_sensor.py`, that posts to the
+- A separate process, `server/sensor/water_sensor.py`, that posts to the
   server's HTTP API like the agent does.
 - GPIO and I2C libraries stay out of the runtime dependencies since they don't
   install on the dev machines.
 - Its own secret, `WATER_SENSOR_SECRET`, checked with `hmac.compare_digest`
   next to `is_agent_authed()` in `app/auth.py`. A failing sensor can never
   lock out the admin login.
-- Readings go to append-only monthly JSONL (`server/water/YYYY-MM.jsonl`).
+- Readings go to append-only monthly JSONL (`data/water/YYYY-MM.jsonl`).
   `json_store.py` rewrites the whole file on every write, which is wrong for
   2,880 readings a day.
 - Calibration is 1g = 1ml, with tare and scale set once against a known
@@ -114,8 +114,8 @@ through the server's `POST /api/notify` using `smtplib`.
      revalidating it.
    - Check: steady cadence, and a hand wave saves a clip to the PC gallery.
 5. **Move the server and data.** Guide steps 5 to 7. The archive keeps the
-   durable `server/` tree and all label sidecars, and skips segments,
-   `server/tmp/` and `sessions.json`. Build `client/dist/` on the PC. Move the
+   durable `data/` tree and all label sidecars, and skips segments,
+   `data/tmp/` and `sessions.json`. Build `client/dist/` on the PC. Move the
    model only after promotion, checked with `deploy/pi/model_bundle.py`.
    Check: `curl -sI http://127.0.0.1:3001/` answers and a hand wave saves a
    clip.
@@ -191,7 +191,7 @@ it.
       keypoints. No pose claim without grouped evaluation.
     - `training.learning_curve` for performance vs. training groups, keeping
       the outer eval sets fixed.
-    - `training.figures` turns the reports in `server_py/models/` into
+    - `training.figures` turns the reports in `server/models/` into
       SVG/PDF figures with JSON sidecars that record source hashes.
 
     Repeat SDs aren't confidence intervals. Repeated predictions aren't new

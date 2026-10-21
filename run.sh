@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Start Bunny Tracker without pm2: the FastAPI server and the capture agent,
-# both on the runtime venv's own interpreter (server_py/.venv), the same two
+# both on the runtime venv's own interpreter (server/.venv), the same two
 # processes ecosystem.config.cjs defines. Ctrl+C stops both.
 #
 #   ./run.sh          server + agent   (dashboard on http://localhost:3001)
@@ -13,19 +13,19 @@
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SERVER_PY="$ROOT/server_py"
-PYTHON="$SERVER_PY/.venv/bin/python"
+SERVER_DIR="$ROOT/server"
+PYTHON="$SERVER_DIR/.venv/bin/python"
 PORT="${PY_PORT:-3001}"
 LOGS="$ROOT/logs"
 WHAT="${1:-all}"
 
 if [ ! -x "$PYTHON" ]; then
   echo "No runtime venv at $PYTHON" >&2
-  echo "Create it with:  (cd $SERVER_PY && uv sync --frozen --python 3.14)" >&2
+  echo "Create it with:  (cd $SERVER_DIR && uv sync --frozen --python 3.14)" >&2
   exit 1
 fi
-if [ ! -f "$ROOT/server/.env" ]; then
-  echo "Missing $ROOT/server/.env (camera, admin password, agent token) — see README." >&2
+if [ ! -f "$ROOT/data/.env" ]; then
+  echo "Missing $ROOT/data/.env (camera, admin password, agent token) — see README." >&2
   exit 1
 fi
 
@@ -42,11 +42,11 @@ cleanup() {
 trap cleanup INT TERM EXIT
 
 # Launch $1 (label) running the rest of the args under the venv python, from
-# server_py. Piping through a process substitution keeps $! as the python PID
+# server. Piping through a process substitution keeps $! as the python PID
 # itself, so cleanup signals the process and not a tee in front of it.
 start() {
   local name="$1"; shift
-  ( cd "$SERVER_PY" && exec "$PYTHON" "$@" ) \
+  ( cd "$SERVER_DIR" && exec "$PYTHON" "$@" ) \
     > >(sed -u "s/^/[$name] /" | tee -a "$LOGS/$name.log") 2>&1 &
   pids+=($!)
   echo "[run.sh] $name started (pid ${pids[-1]}, log $LOGS/$name.log)"
