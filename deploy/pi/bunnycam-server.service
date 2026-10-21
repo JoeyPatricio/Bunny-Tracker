@@ -1,0 +1,22 @@
+[Unit]
+Description=Bunny Tracker server (FastAPI)
+Documentation=file:///opt/bunny-tracker/deploy/pi/README.md
+
+[Service]
+Type=simple
+User=bunnycam
+Group=bunnycam
+WorkingDirectory=/opt/bunny-tracker/server_py
+EnvironmentFile=/opt/bunny-tracker/deploy/pi/bunnycam.env
+# Loopback only: cloudflared on this host is the public path, and it is the
+# only peer whose X-Forwarded-* headers uvicorn applies. Direct LAN access is
+# an override, see deploy/pi/README.md.
+ExecStart=/opt/bunny-tracker/server_py/.venv/bin/python -m uvicorn app.main:app \
+    --host 127.0.0.1 --port 3001 \
+    --proxy-headers --forwarded-allow-ips=127.0.0.1,::1
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

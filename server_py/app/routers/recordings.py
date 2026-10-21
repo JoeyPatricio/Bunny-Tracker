@@ -10,6 +10,7 @@ import os
 import shutil
 import time
 from pathlib import Path
+from typing import Annotated
 
 from fastapi import APIRouter, Form, Request, UploadFile
 from fastapi.responses import JSONResponse
@@ -29,10 +30,14 @@ router = APIRouter()
 # to fix here.
 GRAB_STALE_MS = 60_000
 
-# Upload sources. Only clips harvested by Clipping Mode are subject to the
-# budget in lib/clip_budget.py — a manual Record or an alert clip is never
-# refused, however full the labeling queue is.
+# Upload sources. Clips harvested by Clipping Mode are subject to the whole
+# budget in lib/clip_budget.py. Automatic motion clips get the free-disk floor
+# only: they are not labeling backlog, but in normal mode they fire on motion
+# alone and would otherwise fill the disk after clipping auto-stops. An
+# untagged upload (an alert clip) is never refused.
 CLIPPING_SOURCE = "clipping"
+MOTION_SOURCE = "motion"
+UPLOAD_SOURCES = (None, CLIPPING_SOURCE, MOTION_SOURCE)
 
 
 def _scan_recordings() -> list[dict]:
@@ -153,9 +158,24 @@ async def get_usage():
 
 @router.post("")
 @router.post("/")
-async def upload_recording(video: UploadFile, source: str | None = Form(None)):
+async def upload_recording(video: UploadFile, source: Annotated[str | None, Form()] = None):
     if not video.content_type or not video.content_type.startswith("video/"):
         return JSONResponse(status_code=500, content={"error": "Only video files are allowed"})
+
+    # A misspelled tag must not slip past the disk floor as an untagged upload.
+    if source not in UPLOAD_SOURCES:
+        return JSONResponse(status_code=400, content={"error": "Unknown upload source"})
+
+    if source == MOTION_SOURCE:
+        usage = await _current_usage()
+        if usage["diskLow"]:
+            # Refused per upload, never latched: motion clips resume on their
+            # own once space is freed, unlike clipping, which stays off until
+            # re-armed from the dashboard.
+            return JSONResponse(
+                status_code=507,
+                content={"error": "Free disk below floor", "reason": usage["diskReason"], "usage": usage},
+            )
 
     if source == CLIPPING_SOURCE:
         usage = await _current_usage()

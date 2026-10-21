@@ -24,6 +24,7 @@ from inference.temporal_head import TemporalHead
 from shared.frames import normalize
 from shared.labels import LABELS, RESTING_INDICES
 from shared.motion import MotionDetector
+from shared.paths import live_frame_path, segment_dir
 
 # Defaults match capture.mjs's env-var defaults.
 EMBED_WINDOW = 8
@@ -395,11 +396,8 @@ class Agent:
         self.alert_webhook_url = os.environ.get("ALERT_WEBHOOK_URL")
         self.alert_webhook_secret = os.environ.get("ALERT_WEBHOOK_SECRET", "")
 
-        self.seg_dir = SERVER_DIR / "agent" / "segments"
-        # Deliberately NOT server/agent/ — this is the Python agent's own scratch
-        # file, kept under server_py/ so it never collides with the Node agent's
-        # segments directory if both existed on disk at once.
-        self.live_frame_path = SERVER_PY_DIR / "agent" / "live_frame.jpg"
+        self.seg_dir = segment_dir()
+        self.live_frame_path = live_frame_path()
 
         self.client = AgentClient()
         self.decision_loop: AgentDecisionLoop | None = None
@@ -407,6 +405,7 @@ class Agent:
         self.live_poller: LiveFramePoller | None = None
         self.paused = False
         self.last_capture_at = 0.0
+        self._decision_lock = asyncio.Lock()
 
     async def load_models(self) -> None:
         """Load the ONNX artifacts, but never die for want of them.
@@ -494,8 +493,8 @@ class Agent:
         the event. Clipping Mode passes an explicit name instead (see
         _queue_clip) so the clip contains the motion rather than preceding it.
 
-        `source` tags the upload server-side: "clipping" gets the
-        recording-clip- prefix and is subject to the harvest budget.
+        "clipping" applies the harvest budget, and "motion" applies the disk
+        floor. Untagged manual and alert uploads keep their existing policy.
         """
         if seg_name is None:
             seg_name = await self._latest_finished_segment()
@@ -513,21 +512,19 @@ class Agent:
             data={"source": source} if source else None,
         )
         if resp.status_code == 507:
-            # Budget reached. The server has already flipped clipping off in
-            # monitor.json; _poll_monitor_loop picks that up within 5s.
             if not self.clip_budget_blocked:
                 self.clip_budget_blocked = True
                 try:
                     reason = resp.json().get("reason")
                 except Exception:
                     reason = None
-                log(
-                    f"  ⛔ Clipping stopped by the server: {reason or 'budget reached'}"
-                )
+                action = "Clipping stopped" if source == "clipping" else "Motion capture refused"
+                log(f"  {action} by the server: {reason or 'budget reached'}")
             return None
         if resp.status_code != 200:
             log("  upload failed:", resp.status_code)
             return None
+        self.clip_budget_blocked = False
         return resp.json()["filename"]
 
     async def _notify_webhook(self, pred: dict, filename: str) -> None:
@@ -599,7 +596,7 @@ class Agent:
             )
 
     async def _upload_motion_clip(self, motion_level: float) -> None:
-        filename = await self._upload_segment()
+        filename = await self._upload_segment(source="motion")
         if not filename:
             return
         log(
@@ -721,8 +718,25 @@ class Agent:
             self.clipped_segments.clear()
 
     async def _on_frame(self, frame_buf: bytes) -> None:
+        async with self._decision_lock:
+            await self._handle_frame(frame_buf)
+
+    async def _handle_frame(self, frame_buf: bytes) -> None:
         pixel_frame = np.frombuffer(frame_buf, dtype=np.uint8).reshape(224, 224, 3)
-        decision = self.decision_loop.handle_frame(pixel_frame)
+        worker = asyncio.create_task(asyncio.to_thread(self.decision_loop.handle_frame, pixel_frame))
+        cancelled = False
+        # Cancellation cannot stop a running thread. Keep the lock until it
+        # finishes so a reset or config update cannot race its state writes.
+        while not worker.done():
+            try:
+                await asyncio.wait({worker})
+            except asyncio.CancelledError:
+                cancelled = True
+        if cancelled:
+            if err := worker.exception():
+                log(f"Inference failed during cancellation: {err!r}")
+            raise asyncio.CancelledError
+        decision = worker.result()
         motion, pred = decision["motion"], decision["prediction"]
 
         if self.decision_loop.clipping:
@@ -801,6 +815,8 @@ class Agent:
             pass
 
     async def start_capture(self) -> None:
+        if self.ffmpeg is not None:
+            await self._stop_capture()
         # frame_interval and segment_secs are baked into ffmpeg's args, so
         # Clipping Mode's denser cadence and shorter segments only take effect
         # across a restart — which is why toggling the mode restarts capture
@@ -840,37 +856,23 @@ class Agent:
                 pass
 
     async def _stop_capture(self) -> None:
-        """Stop ffmpeg and wait for the child to actually exit before returning.
-
-        Restarting capture for a mode change is a stop immediately followed by a
-        start, unlike the monitor toggle where a human's next click is the gap.
-        A force-started second ffmpeg while the first still holds the camera
-        fails to open the device, so wait for the handle to be released.
-        """
         if self.live_poller:
             self.live_poller.stop()
         if not self.ffmpeg:
             return
-        ffmpeg, supervisor = self.ffmpeg, self.ffmpeg._supervisor
-        proc = ffmpeg.proc
-        ffmpeg.stop()
-        if proc:
+        ffmpeg = self.ffmpeg
+        cleanup = asyncio.create_task(ffmpeg.stop_and_wait())
+        cancelled = False
+        while not cleanup.done():
             try:
-                await asyncio.wait_for(proc.wait(), timeout=5.0)
-            except (TimeoutError, Exception):
-                pass
-        # proc.wait() returning is NOT enough. _watch_exit awaits the same
-        # future in its own task and only then tears the readers down, so
-        # without waiting for it a frame still sitting in the old handoff can
-        # be delivered after _reset_decision_state() and seed the fresh
-        # MotionDetector with a pre-restart scene — exactly the cross-gap
-        # blending that reset exists to prevent. paused is set, so _watch_exit
-        # stops the readers and returns instead of restarting.
-        if supervisor is not None:
-            try:
-                await asyncio.wait_for(asyncio.shield(supervisor), timeout=5.0)
-            except (TimeoutError, asyncio.CancelledError, Exception):
-                pass
+                await asyncio.wait({cleanup})
+            except asyncio.CancelledError:
+                cancelled = True
+        cleanup.result()
+        if self.ffmpeg is ffmpeg:
+            self.ffmpeg = None
+        if cancelled:
+            raise asyncio.CancelledError
 
     def _reset_decision_state(self) -> None:
         """Drop everything that describes the scene before a capture gap, so
@@ -880,6 +882,9 @@ class Agent:
             self.decision_loop.predictor.buffer.clear()
         self.decision_loop.last_label = None
         self.decision_loop.motion_streak = 0
+        self.decision_loop.streak_count = 0
+        self.decision_loop.streak_scores.clear()
+        self.decision_loop.last_capture_at = 0.0
 
     async def _poll_monitor_loop(self) -> None:
         while True:
@@ -889,83 +894,70 @@ class Agent:
                 state = resp.json()
             except Exception:
                 continue  # server unreachable — keep current state
-            enabled = state.get("enabled", True)
+            await self._apply_monitor_state(state)
 
-            if not enabled and not self.paused:
-                self.paused = True
-                log("⏸ Monitoring turned OFF from dashboard — releasing camera")
-                if self.ffmpeg:
-                    self.ffmpeg.stop()
-                if self.live_poller:
-                    self.live_poller.stop()
-                self._reset_decision_state()
-                continue
-            elif enabled and self.paused:
-                self.paused = False
-                log("▶ Monitoring turned ON from dashboard — starting capture")
-                await self.start_capture()
+    async def _apply_monitor_state(self, state: dict) -> None:
+        enabled = bool(state.get("enabled", True))
+        clipping = bool(state.get("clipping", False))
+        mode_changed = clipping != self.decision_loop.clipping
+        stopping = not enabled and not self.paused
+        resuming = enabled and self.paused
+        if stopping or mode_changed:
+            # Stop the consumer before taking the lock it may hold. This also
+            # joins an inference worker cancelled while processing a frame.
+            await self._stop_capture()
 
-            # Clipping Mode. Threshold/cooldown/dry-run land on the decision
-            # loop directly and take effect on the next frame; only flipping
-            # the mode itself needs a capture restart, because the frame
-            # cadence and segment length are ffmpeg arguments.
-            clipping = bool(state.get("clipping", False))
-            mode_changed = self.decision_loop.apply_clipping_config(
+        async with self._decision_lock:
+            self.decision_loop.apply_clipping_config(
                 clipping=clipping,
                 threshold=state.get("clippingMotionThreshold"),
                 cooldown=state.get("clippingCooldownSec"),
                 dry_run=bool(state.get("clippingDryRun", False)),
             )
-            if not mode_changed:
-                continue
+            if stopping or mode_changed:
+                self._reset_decision_state()
+            if mode_changed or resuming:
+                self.pending_clips.clear()
+                self.clipped_segments.clear()
+            self.paused = not enabled
 
+        if stopping:
+            log("Monitoring turned OFF from dashboard, camera released")
+        if resuming:
+            log("Monitoring turned ON from dashboard, starting capture")
+        if mode_changed:
             self.clip_budget_blocked = False
             if clipping:
-                dry = (
-                    " (dry run — nothing will be saved)"
-                    if self.decision_loop.dry_run
-                    else ""
-                )
+                dry = " (dry run, nothing will be saved)" if self.decision_loop.dry_run else ""
                 log(
-                    f"✂ Clipping Mode ON{dry} — motion ≥ {self.decision_loop.clip_threshold:.1f}, "
+                    f"Clipping Mode ON{dry}, motion >= {self.decision_loop.clip_threshold:.1f}, "
                     f"{self.clip_segment_secs}s clips, {self.decision_loop.clip_cooldown_sec:.0f}s cooldown. "
                     f"Alerts and predictions are paused."
                 )
             else:
                 reason = state.get("clippingStoppedReason")
-                log(f"✂ Clipping Mode OFF{f' — {reason}' if reason else ''}")
-
-            if not self.paused:
-                await self._stop_capture()
-                # Only now that no more frames can arrive. A frame already in
-                # flight when the mode flipped can queue a clip naming a
-                # segment from the OUTGOING ffmpeg run — and the incoming one
-                # restarts numbering at seg-00000 and overwrites that file, so
-                # the clip would be uploaded from footage it never saw.
-                # Clearing before the stop left exactly that window open.
-                self.pending_clips.clear()
-                self.clipped_segments.clear()
-                self._reset_decision_state()
-                await self.start_capture()
+                log(f"Clipping Mode OFF{f': {reason}' if reason else ''}")
+        if enabled and (mode_changed or resuming):
+            await self.start_capture()
 
     async def run(self) -> None:
         log("\U0001f407 BunnyCam Python Agent starting...")
         self.seg_dir.mkdir(parents=True, exist_ok=True)
+        self.live_frame_path.parent.mkdir(parents=True, exist_ok=True)
         await self.client.verify()
         log("✓ AGENT_TOKEN verified")
         await self.load_models()
 
         try:
             resp = await self.client.get("/api/monitor")
-            enabled = resp.json().get("enabled", True)
+            state = resp.json()
         except Exception:
-            enabled = True
+            state = {"enabled": True}
 
-        if not enabled:
-            self.paused = True
+        self.paused = True
+        await self._apply_monitor_state(state)
+        if self.paused:
             log("⏸ Monitoring is OFF — camera idle until enabled from dashboard")
-        else:
-            await self.start_capture()
 
         await asyncio.gather(
             self._poll_monitor_loop(),
@@ -998,18 +990,12 @@ async def main():
     try:
         await run_task
     except (asyncio.CancelledError, KeyboardInterrupt):
-        if agent.ffmpeg:
-            agent.ffmpeg.stop()
-        if agent.live_poller:
-            agent.live_poller.stop()
-        # Give the ffmpeg child a moment to actually exit before the process
-        # tree tears down — a force-killed parent orphans it, leaving the
-        # camera locked for the next attempt.
-        if agent.ffmpeg and agent.ffmpeg.proc:
-            try:
-                await asyncio.wait_for(agent.ffmpeg.proc.wait(), timeout=5.0)
-            except (TimeoutError, Exception):
-                pass
+        pass
+    finally:
+        try:
+            await agent._stop_capture()
+        finally:
+            await agent.client.close()
 
 
 if __name__ == "__main__":

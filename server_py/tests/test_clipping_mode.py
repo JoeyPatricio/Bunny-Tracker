@@ -464,6 +464,106 @@ async def test_budget_stops_clipping_but_never_other_uploads() -> None:
     check("module globals restored", rec.RECORDINGS_DIR == saved_dirs[0])
 
 
+async def test_low_disk_also_stops_normal_motion_uploads() -> None:
+    """Clipping's low-disk auto-stop must not hand the disk to normal motion.
+
+    Once clipping stops, the agent is back in normal mode, where motion alone
+    triggers uploads. Those are tagged "motion" and must hit the same disk
+    floor, but not the backlog cap, and must resume once space is freed.
+    """
+    tmp = Path(tempfile.mkdtemp(prefix="bunnybudget-"))
+    saved_dirs = (rec.RECORDINGS_DIR, rec.SEGMENTS_DIR)
+    saved_state = rec.read_monitor_state
+    saved_stop = rec.stop_clipping
+    saved_labels = clip_budget.read_labels
+
+    # 10 PB floor: unreachable on any real disk, so the floor is breached.
+    state = {**mon.DEFAULTS, "clipping": True, "clippingMaxUnlabeled": 0,
+             "clippingMinFreeGb": 10_000_000}
+    stopped: list[str] = []
+
+    async def fake_state():
+        return dict(state)
+
+    async def fake_stop(reason):
+        stopped.append(reason)
+        state.update(clipping=False, clippingStoppedReason=reason)
+
+    async def no_labels():
+        return {}
+
+    def written() -> int:
+        return len(list(rec.RECORDINGS_DIR.glob("*.webm")))
+
+    try:
+        rec.RECORDINGS_DIR = tmp / "recordings"
+        rec.SEGMENTS_DIR = tmp / "segments"
+        rec.RECORDINGS_DIR.mkdir()
+        rec.SEGMENTS_DIR.mkdir()
+        rec.read_monitor_state = fake_state
+        rec.stop_clipping = fake_stop
+        clip_budget.read_labels = no_labels
+
+        async def upload(**kwargs):
+            await asyncio.sleep(0.002)
+            return await rec.upload_recording(FakeUpload(), **kwargs)
+
+        clip = await upload(source="clipping")
+        check("a low-disk clipping upload is refused with 507",
+              getattr(clip, "status_code", None) == 507, str(clip))
+        check("clipping auto-stopped on low disk",
+              state["clipping"] is False and "disk" in (stopped[0] if stopped else ""), str(stopped))
+
+        motion = await upload(source="motion")
+        check("a motion upload after the auto-stop is refused with 507",
+              getattr(motion, "status_code", None) == 507, str(motion))
+        check("nothing was written below the floor", written() == 0)
+        check("a motion refusal does not touch monitor state", len(stopped) == 1, str(stopped))
+
+        alert = await upload()
+        check("an untagged alert upload is still accepted below the floor",
+              isinstance(alert, dict) and "filename" in alert, str(alert))
+
+        # Space freed: motion resumes by itself, clipping stays off until re-armed.
+        state["clippingMinFreeGb"] = 0
+        motion = await upload(source="motion")
+        check("motion uploads resume once the floor clears",
+              isinstance(motion, dict) and motion["filename"].startswith("recording-2"), str(motion))
+        check("clipping stays stopped until re-armed", state["clipping"] is False)
+
+        # The backlog cap is clipping's alone: a full queue never blocks motion.
+        state["clippingMaxUnlabeled"] = 1
+        capped = await upload(source="clipping")
+        check("the backlog cap still refuses clipping",
+              getattr(capped, "status_code", None) == 507, str(capped))
+        motion = await upload(source="motion")
+        check("the backlog cap never refuses a motion upload",
+              isinstance(motion, dict) and "filename" in motion, str(motion))
+    finally:
+        rec.RECORDINGS_DIR, rec.SEGMENTS_DIR = saved_dirs
+        rec.read_monitor_state = saved_state
+        rec.stop_clipping = saved_stop
+        clip_budget.read_labels = saved_labels
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+async def test_unknown_upload_source_is_rejected() -> None:
+    """A misspelled source tag must not bypass the disk floor as an untagged upload."""
+    tmp = Path(tempfile.mkdtemp(prefix="bunnybudget-"))
+    saved_dirs = (rec.RECORDINGS_DIR, rec.SEGMENTS_DIR)
+    try:
+        rec.RECORDINGS_DIR = tmp / "recordings"
+        rec.SEGMENTS_DIR = tmp / "segments"
+        for source in ("Motion", "clip"):
+            res = await rec.upload_recording(FakeUpload(), source=source)
+            check(f"source {source!r} is refused with 400",
+                  getattr(res, "status_code", None) == 400, str(res))
+        check("nothing was written for an unknown source", not rec.RECORDINGS_DIR.exists())
+    finally:
+        rec.RECORDINGS_DIR, rec.SEGMENTS_DIR = saved_dirs
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 async def test_disk_floor_blocks() -> None:
     """A free-disk floor above the real free space must block."""
     tmp = Path(tempfile.mkdtemp(prefix="bunnybudget-"))
@@ -582,6 +682,8 @@ async def main_async() -> None:
         test_ffmpeg_restart_does_not_collide,
         test_vanished_segment_is_dropped,
         test_budget_stops_clipping_but_never_other_uploads,
+        test_low_disk_also_stops_normal_motion_uploads,
+        test_unknown_upload_source_is_rejected,
         test_disk_floor_blocks,
         test_unreadable_labels_do_not_stop_the_harvest,
         test_missing_recordings_dir_is_not_fatal,

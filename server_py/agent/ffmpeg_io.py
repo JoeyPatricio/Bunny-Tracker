@@ -30,6 +30,7 @@ from pathlib import Path
 
 FRAME_SIZE = 224 * 224 * 3
 RESTART_DELAY_SEC = 5
+STOP_TIMEOUT_SEC = 5
 
 # Recorded segments run at a constant 15fps against real timestamps.
 SEGMENT_FPS = 15
@@ -82,6 +83,7 @@ class FfmpegCapture:
         self._newest_frame: bytes | None = None
         self._frame_ready: asyncio.Event | None = None
         self.frames_dropped = 0
+        self._lifecycle_lock = asyncio.Lock()
 
     def _build_args(self) -> list[str]:
         # -y: auto-overwrite the live-view JPEG on restart. Without it, ffmpeg
@@ -144,7 +146,13 @@ class FfmpegCapture:
         return args
 
     async def start(self) -> None:
+        async with self._lifecycle_lock:
+            if not self.paused:
+                await self._start()
+
+    async def _start(self) -> None:
         self.seg_dir.mkdir(parents=True, exist_ok=True)
+        self.live_frame_path.parent.mkdir(parents=True, exist_ok=True)
         args = self._build_args()
         proc = await asyncio.create_subprocess_exec(
             *args, stdin=asyncio.subprocess.DEVNULL,
@@ -269,8 +277,36 @@ class FfmpegCapture:
 
     def stop(self) -> None:
         self.paused = True
-        if self.proc:
-            self.proc.terminate()
+        if self.proc and self.proc.returncode is None:
+            try:
+                self.proc.terminate()
+            except ProcessLookupError:
+                pass  # The process exited between the returncode check and signal.
+
+    async def stop_and_wait(self) -> None:
+        """Release the camera and join frame processing before any restart."""
+        self.stop()
+        try:
+            # start() may still be awaiting process creation when stop() runs.
+            async with self._lifecycle_lock:
+                self.stop()
+                proc = self.proc
+                if proc is not None:
+                    try:
+                        await asyncio.wait_for(proc.wait(), timeout=STOP_TIMEOUT_SEC)
+                    except TimeoutError:
+                        try:
+                            proc.kill()
+                        except ProcessLookupError:
+                            pass
+                        await proc.wait()
+            if self._supervisor is not None:
+                try:
+                    await self._supervisor
+                except OSError as err:
+                    print(f"ffmpeg restart failed: {err!r}")
+        finally:
+            await self._stop_readers()
 
 
 class LiveFramePoller:

@@ -1,7 +1,11 @@
 # Stretch Goals: Pi Migration, Water Tracking, and the Paper
 
-Status as of 2026-07-24: **nothing here has been built.** No Pi 5 has been
-bought, no sensors ordered, no code written. This is a plan.
+Status as of 2026-10-19: the Phase A deployment files exist in `deploy/pi/`
+(systemd units, tmpfs and journald config, a model bundle checker) and the
+agent's transient paths are configurable. None of it has run on a Pi.
+Hardware bring-up and sensor integration remain unverified here.
+[deploy/pi/README.md](../deploy/pi/README.md) is the install and migration
+procedure. Where this plan and that guide differ, the guide is current.
 
 Rewritten 2026-07-24 for the Python backend. The previous version assumed the
 Node/Express server and the browser-trained TensorFlow.js MobileNetV2
@@ -37,12 +41,13 @@ start any time, though it gets a better latency section after Phase A.
 
 ## Non-goals
 
-- **No classifier improvement work.** The deployed model is currently less
-  accurate than the tfjs one it replaced (61.5% vs 74.4% held out,
-  `docs/provenance.md, architecture.md` debt item 1). That is a data-volume problem waiting
-  on more labeled clips, it is tracked there, and it does not block or change
-  anything in this plan. The Pi runs whatever ONNX artifacts exist at
-  migration time. Phase C runs *measurement* experiments (repeated splits,
+- **No classifier improvement work.** There is currently no usable
+  classifier. The ethogram moved to seven classes and no seven-class model has
+  been promoted, so the agent refuses the old five-class head and runs
+  motion-only (see the README's model status). Motion capture, Clipping Mode,
+  and labeling do not need a model, so the migration does not wait for one.
+  The Pi classifies only once a model has been promoted on the PC and its
+  bundle transferred. Phase C runs *measurement* experiments (repeated splits,
   ablations, a learning curve) offline on cached embeddings; those characterize
   the model, they do not try to fix it, and nothing they produce gets deployed.
 - **No training on the Pi.** `.venv-train` (torch, timm) is dev-box only.
@@ -77,22 +82,26 @@ start any time, though it gets a better latency section after Phase A.
   roughly 10GB/day, pruned every 60s) and the live-view JPEG, rewritten 12
   times a second (20-40KB each, on the order of 30GB/day to a single path).
   Neither is data anyone keeps. On a microSD that is a card-killing workload;
-  the fix is to put both on tmpfs (`/dev/shm`) so they never touch persistent
-  storage, and it needs a small code change (see step 3), since
-  `agent/capture.py` currently hardcodes both paths under the repo.
-- **OS**: Raspberry Pi OS Lite **64-bit** (Bookworm). The 64-bit image is not
+  the fix is to put both on tmpfs so they never touch persistent storage.
+  `AGENT_SEGMENT_DIR` and `AGENT_LIVE_FRAME_PATH` move them, and
+  `deploy/pi/bunnycam.env` points both the server and the agent at
+  `/run/bunnycam/`, which `deploy/pi/bunnycam.tmpfiles` creates at boot.
+- **OS**: Raspberry Pi OS Lite **64-bit**. The 64-bit image is not
   optional: onnxruntime ships aarch64 wheels and no armhf ones, so a 32-bit
-  install means building it from source. Bookworm's default Python is 3.11.2,
-  which matches onnxruntime's cp311 wheel exactly (researched in
-  `docs/pipeline.md`, not yet confirmed on hardware).
+  install means building it from source. Do not use the OS Python. The
+  project requires Python 3.12 to 3.14 and the lock has no cp311 wheels for
+  NumPy or ONNX Runtime, so Bookworm's 3.11 cannot install it. uv installs a
+  managed 3.14 and the frozen runtime set, as in the README. `uv.lock` lists
+  cp314 manylinux_2_28 aarch64 wheels for both. Nobody has installed them on
+  hardware yet.
 - **Inference is ONNX Runtime on the CPU execution provider**, running
   `server_py/models/backbone_int8.onnx` and `head.onnx`. No torch on the Pi,
-  ever: `requirements.txt` is the runtime list and deliberately excludes it.
-  The dev-box benchmark is about 5.8ms per step (int8 backbone plus head)
-  against a 1500ms frame budget, so there is roughly 250x of headroom to lose
-  to a slower CPU before this becomes a problem. `scripts/bench_pi.py` exists
-  precisely to turn that guess into a number on real hardware, and it takes a
-  minute to run.
+  ever: the runtime dependency set in `pyproject.toml` excludes it, and torch
+  lives only in the `train` group.
+  Target latency remains unmeasured. After a model is promoted,
+  `scripts/bench_pi.py` measures its backbone and head on the Pi using the
+  promoted window. Isolated inference timings do not establish whether
+  capture, encoding, streaming, and inference meet their deadlines together.
 - **Node is now optional on the Pi.** The backend is Python; the client is
   prebuilt static files. Node is needed only for n8n (droppable, see step 7)
   and for `npm run build`, which can happen on the PC with only `client/dist/`
@@ -101,9 +110,9 @@ start any time, though it gets a better latency section after Phase A.
   earlier version of this plan. pm2 is a Node process manager, and once the
   backend is Python and n8n is optional, keeping pm2 means installing a whole
   Node runtime to supervise two Python processes and cloudflared. systemd is
-  already running on Bookworm, handles restart-on-failure and boot ordering
-  natively, and drops pm2's documented footgun where `pm2 stop` is treated as
-  a crash and relaunches the process (`docs/pipeline.md`). Cost: unit
+  already running on the OS, and handles restart-on-failure, boot ordering,
+  and stopping the agent's ffmpeg child natively. PM2 would also need its
+  startup service installed to survive a reboot. Cost: unit
   files instead of `ecosystem.config.cjs`, and `journalctl -u` instead of
   `pm2 logs`. If n8n stays and Node is on the box anyway, `pm2` remains a
   defensible fallback, but do not install Node solely to keep it.
@@ -157,65 +166,30 @@ until the Pi arrives, but step 3 (portability commits) can happen meanwhile.
 #### 2. Base Pi setup
 
 Flash Pi OS Lite **64-bit** with SSH enabled (Raspberry Pi Imager sets user +
-wifi). Confirm the architecture before going further, because the wheel story
-depends on it:
+wifi). Then follow steps 1 to 4 of
+[deploy/pi/README.md](../deploy/pi/README.md): base packages and the
+`bunnycam` user, the uv-managed Python 3.14 runtime, camera identification,
+and the tmpfiles, journald, and unit installation.
 
-```bash
-uname -m    # must print aarch64
-python3 -V  # expect 3.11.2 on Bookworm
-```
+**Verify:** `uname -m` prints `aarch64`, the venv lists
+`CPUExecutionProvider`, and the camera lists `mjpeg` at `1280x720`.
 
-Then:
+#### 3. Portability changes
 
-```bash
-sudo apt update && sudo apt install -y ffmpeg git python3-venv python3-dev
-git clone <repo> ~/BunnyTracker && cd ~/BunnyTracker/server_py
-python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
-```
+All three exist in the repo, none yet verified on a Pi.
 
-**Verify:** `pip install` pulled a prebuilt onnxruntime wheel with no source
-build, and:
-
-```bash
-.venv/bin/python -c "import onnxruntime, fastapi; print(onnxruntime.get_available_providers())"
-```
-
-prints a provider list including `CPUExecutionProvider`. Then confirm the
-camera exposes MJPEG at 720p:
-
-```bash
-ffmpeg -f v4l2 -list_formats all -i /dev/video0
-```
-
-lists `mjpeg` at `1280x720`.
-
-#### 3. Portability commits (on the PC, can run in parallel with shipping)
-
-Three small changes, committed and verified on Windows before the Pi work
-depends on them. (The old plan's ffmpeg-path override and its "remove orphaned
-tfjs deps" item are both already resolved: `FFMPEG_PATH` is honored in
-`agent/capture.py`, and `server/package.json` no longer exists.)
-
-- **v4l2 input pinning** in `agent/ffmpeg_io.py::_build_args()`: add an
-  `elif self.camera_format == "v4l2"` branch passing
+- **v4l2 input pinning** in `agent/ffmpeg_io.py::_build_args()` passes
   `-input_format mjpeg -video_size $CAMERA_SIZE -framerate $CAMERA_FPS`, the
-  v4l2 spelling of what the dshow branch already does. Reuses the existing
-  `CAMERA_SIZE`/`CAMERA_FPS` env vars, so no new configuration.
-- **Path overrides for the transient writes**: `agent/capture.py` hardcodes
-  `self.seg_dir` and `self.live_frame_path`. Read each from an env var with
-  the current value as the default (`AGENT_SEGMENT_DIR`,
-  `AGENT_LIVE_FRAME_PATH`), so the Pi can point both at `/dev/shm/bunnycam/`
-  and Windows keeps behaving exactly as it does today.
-- **systemd units** in `deploy/pi/`: `bunnycam-server.service` (runs
-  `server_py/.venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port
-  3001`, `WorkingDirectory=server_py`), `bunnycam-agent.service`
-  (`-m agent.capture`), `bunnycam-tunnel.service`, and a
-  `bunnycam-water.service` left disabled until Phase B. Each with
-  `Restart=always`, `RestartSec=5`, and `After=network-online.target`. The
-  agent unit needs `TimeoutStopSec` long enough for its graceful ffmpeg
-  shutdown (10s is plenty) so systemd does not SIGKILL it and orphan ffmpeg,
-  which is the Linux version of the camera-lock problem documented in
-  `docs/pipeline.md`.
+  v4l2 spelling of the dshow branch.
+- **Path overrides for the transient writes**: `AGENT_SEGMENT_DIR` and
+  `AGENT_LIVE_FRAME_PATH` (`shared/paths.py`), read by both the agent and
+  the server's `SEGMENTS_DIR`, so the manual Record endpoint follows the
+  segments. Unset, both keep the Windows defaults.
+- **systemd units** in `deploy/pi/`: `bunnycam-server.service` (loopback
+  bind, proxy headers trusted only from loopback), `bunnycam-agent.service`
+  (retries with no start limit while the server comes up, `KillMode=mixed`
+  so ffmpeg is stopped and never orphaned), and `bunnycam-tunnel.service`.
+  The water sensor unit gets written in Phase B along with the sensor code.
 
 **Verify:** on Windows, `pm2 restart all`, dashboard loads, agent log shows
 normal frame lines with unchanged motion values. Nothing regressed.
@@ -224,114 +198,105 @@ normal frame lines with unchanged motion values. Nothing regressed.
 
 Two measurements, cheapest first.
 
-**4a. Synthetic benchmark.** From `server_py/` on the Pi:
+**4a. Inference benchmark.** Once a model has been promoted and transferred,
+from `server_py/` on the Pi:
 
 ```bash
 .venv/bin/python -m scripts.bench_pi
 ```
 
-This reports per-step latency for the int8 backbone and the head against the
-1500ms frame budget. On the dev box it is about 5.8ms. Anything under ~200ms
-on the Pi means inference is a non-issue and the rest of this step is a
-formality. (The script currently prints a "dev-box only" disclaimer; update
-that wording once it has run on real hardware, since this is the run it was
-written for.)
+This reports backbone and head latency using the promoted model's window.
+Compare it with the configured frame cadence, whose default is 1500ms.
+Without promotion metadata the benchmark refuses to run. Motion capture and
+Clipping Mode can still be tested without a classifier.
 
 **4b. Live run.** Point the Pi agent at the still-running PC server: a Pi-local
 `server/.env` with `AGENT_SERVER_URL=http://<pc-ip>:3001`, the same
 `AGENT_TOKEN` as the PC, `CAMERA_FORMAT=v4l2`, `CAMERA_INPUT=/dev/video0`,
 `FFMPEG_PATH=/usr/bin/ffmpeg`, and the two tmpfs path overrides from step 3.
-Run `.venv/bin/python -m agent.capture` for 30 minutes.
+`deploy/pi/bunnycam.env` sets `AGENT_SERVER_URL` to the Pi's own server, so
+for this run start the agent by hand rather than through its unit, with
+`AGENT_SERVER_URL` set in the shell. Run `.venv/bin/python -m agent.capture`
+for 30 minutes.
 
 Measure:
 
-- Frame log lines hold the 1.5s cadence. The `busy` flag in
-  `ffmpeg_io.py::_read_frames()` silently drops frames when inference is slow,
-  so stretched spacing is the symptom of "too slow", not an error message.
+- Frame log lines hold the configured cadence. The single-slot handoff in
+  `ffmpeg_io.py` drops old frames when processing falls behind and reports
+  every 100 drops. Watch both spacing and drop counts under load.
 - `top`: ffmpeg plus python comfortably inside the 4 cores. libvpx encoding,
   not inference, is the likelier hog.
 - `vcgencmd measure_temp` stays under 80C sustained.
 
-Fallback ladder if it is too slow, in order: confirm the int8 backbone is
-actually the one loaded (`agent/capture.py` loads `backbone_int8.onnx`, but
-check the log line at boot); cap onnxruntime's thread count so it stops
-fighting ffmpeg for cores (`SessionOptions.intra_op_num_threads`); classify
-every k-th frame while still embedding every frame into the ring buffer (the
-two-stage split exists to make this cheap); drop the segment encode to a lower
-bitrate or resolution; last resort raise `AGENT_FRAME_SECONDS` to 2-3, noting
-that the 8-frame window then spans 16-24s instead of the ~12s the head was
-trained on, which is real accuracy degradation, not a free knob.
+If capture misses its cadence, measure which stage consumes the time before
+changing the encoding profile or ONNX Runtime thread settings. Changing
+`AGENT_FRAME_SECONDS` changes the promoted window's time span and requires
+classifier revalidation.
 
 **Verify:** steady cadence in logs, and a hand wave in front of the Pi's
 camera saves a clip that appears in the PC server's gallery.
 
 #### 5. Move the server and its data
 
-Copy from PC to Pi:
+Follow steps 5 to 7 of [deploy/pi/README.md](../deploy/pi/README.md). The
+data archive carries the whole durable `server/` tree with mtimes intact,
+including the `labels.meta.json`, `labels.reliability.json`,
+`labels.reliability_sample.json`, and `labels.holdout.json` sidecars. It
+leaves out rolling segments, `server/tmp/`, and `sessions.json`, so the admin
+logs in again on the Pi. `client/dist/` is built on the PC and copied. The
+model moves only once one has been promoted, as a bundle of `promoted.json`
+plus every artifact its manifest lists, external-data sidecars included.
+`deploy/pi/model_bundle.py` checks each file's sha256 on both ends. Do not
+copy `.venv`.
 
-- `server/`: `recordings/`, `labels.json`, `autolabels.json`, `hidden.json`,
-  `monitor.json`, `activity-log.json`, `backups/`, `model/`, and `.env` (with
-  the Pi camera/ffmpeg/path lines from step 4).
-- `server_py/models/`: `backbone_int8.onnx` and `head.onnx`, the artifacts the
-  agent actually loads. The `cache/` subdirectory is training scratch and does
-  not need to travel.
-- `client/dist/`: build it on the PC (`cd client && npm run build`) and copy,
-  or install Node on the Pi and build there. Copying is preferable if n8n is
-  being dropped.
-
-Do **not** copy `.venv`. Virtualenvs embed absolute paths and platform-specific
-binaries; the Pi's was built in step 2.
-
-Install the systemd units, `systemctl enable --now bunnycam-server
-bunnycam-agent`.
-
-**Verify:** `http://<pi-ip>:3001` shows the dashboard with the full old
-recording gallery, live feed streams, login works, and the agent uploads a
-motion clip end to end on the Pi alone.
+**Verify:** on the Pi, `curl -sI http://127.0.0.1:3001/` answers, the agent
+journal shows frame lines, and a hand wave saves a motion clip. The dashboard
+itself is reached through the tunnel in step 6, or over the LAN with the
+override in the guide's step 9.
 
 #### 6. Move the Cloudflare tunnel
 
-Install arm64 cloudflared from Cloudflare's apt repo. Copy
-`C:\Users\joepa\.cloudflared\cert.pem` and the tunnel credentials JSON
-(`<tunnel-id>.json`) to `~/.cloudflared/` on the Pi. Stop the tunnel process
-on the PC, `systemctl enable --now bunnycam-tunnel` on the Pi.
+Step 8 of the guide. Copy the tunnel credentials JSON and the PC's ingress
+rules into `/etc/cloudflared/`. `cert.pem` is only needed to manage tunnels.
+Ingress points at `http://127.0.0.1:3001`, the only address the server
+listens on, and uvicorn trusts `X-Forwarded-*` only from loopback, so
+cloudflared is the one trusted proxy. Stop the PC's tunnel first, then
+`systemctl enable --now bunnycam-tunnel`.
 
 **Verify:** https://bunny-tracker.app loads from a phone on cellular while
-the PC's tunnel process is stopped. Also confirm login still works through the
-tunnel, since `app/security.py::get_client_ip()` reads the first
-`X-Forwarded-For` hop and the rate limiter depends on it.
+the PC's tunnel process is stopped, and login works through it.
 
 #### 7. Move n8n, or drop it
 
 Dropping it is the cheaper answer and removes the last reason to install Node
-on the Pi. To drop: leave `ALERT_WEBHOOK_URL` unset in the Pi's `.env` and
+on the Pi. To drop: remove `ALERT_WEBHOOK_URL` from the `.env` copied to
+the Pi, since the PC's value points at the PC's n8n, and
 `agent/capture.py` routes alerts to `POST /api/notify`, which sends mail
 through `smtplib` using the existing `EMAIL_*` settings.
 
 To keep it: `sudo npm i -g n8n` (NodeSource Node 22), export the workflow and
 credentials from the PC's n8n UI, and copy the `encryptionKey` from the PC's
 `~/.n8n/config` (without it, imported credentials cannot decrypt). Run it
-under systemd with the same env block the ecosystem file uses, and fix
-`N8N_RESTRICT_FILE_ACCESS_TO`, which still points at the pre-rename
-`Desktop\PetCam\server\recordings` path (`docs/provenance.md, architecture.md` debt item 4)
-and would be wrong on the Pi regardless.
+under systemd with the same env block the ecosystem file uses, setting
+`N8N_RESTRICT_FILE_ACCESS_TO=/opt/bunny-tracker/server/recordings`.
 
 **Verify:** force a motion event; either n8n's execution log shows a run, or
 the agent log shows `✉ Email: sent`. Mail lands at the hotmail address.
 
 #### 8. Autostart, burn-in, decommission
 
-`systemctl enable` each unit, then reboot the Pi and confirm everything comes
-back unattended. Kill the PC stack (`pm2 kill`) and remove
-`start-bunnycam.bat` from Windows startup, but keep the PC checkout intact for
+Reboot the Pi and confirm everything comes back unattended (step 10 of the
+guide). Stop the PC's Bunny Tracker apps by name (`pm2 stop bunnycam-server
+bunnycam-agent bunnycam-tunnel bunnycam-n8n`, which leaves other PM2 apps
+running) and remove `start-bunnycam.bat` from Windows startup, but keep the PC checkout intact for
 two weeks as rollback. Burn in for a week: check `systemctl status`,
 `journalctl -u bunnycam-agent --since -1h` for restart loops, temps, and disk
 usage a few times.
 
 **Verify:** after a Pi reboot with the PC off, the public site is live and a
 real bunny clip is captured overnight without intervention. Check that
-`/dev/shm` is holding segments and the live frame, and that persistent storage
-is only growing at the rate of saved clips.
+`/run/bunnycam` is holding segments and the live frame, and that persistent
+storage is only growing at the rate of saved clips.
 
 ### Phase B: Water and environment tracking
 
@@ -360,7 +325,8 @@ spikes that return to baseline within seconds.
 and POST once per 30s to `POST /api/water/reading` as
 `{ "grams": <n>, "tempC": <n>, "humidity": <n>, "at": <iso> }` with an
 `X-Water-Secret` header. Dependencies go in `requirements-pi-sensor.txt`,
-installed into the same `.venv`. Enable `bunnycam-water.service` from step 3.
+installed into the same `.venv`. Add `deploy/pi/bunnycam-water.service`
+alongside the other units and enable it.
 
 Mount the BME280 near the rabbits' level, away from direct sun and at least
 30cm from the Pi, which runs warm enough to skew a sensor sitting next to it.
@@ -537,9 +503,10 @@ video or unreleased annotations.
 
 1. **onnxruntime does not install cleanly on the Pi.** The aarch64 wheel story
    is desk research, not a device test (`docs/pipeline.md`). Step 2 checks
-   it before anything is migrated, and it is a five-minute check. If the wheel
-   is missing for the installed Python version, the escape hatch is a
-   different Python minor version via pyenv or deadsnakes, not a source build.
+   it before anything is migrated, and it is a five-minute check. The install
+   already uses a uv-managed interpreter, so if a wheel is missing the escape
+   hatch is a different supported minor version (`--python 3.12` or `3.13`,
+   both locked with aarch64 wheels), not a source build.
 2. **Inference or encoding too slow on the Pi.** Much lower risk than in the
    tfjs era: the model is int8 ONNX running on native code, benchmarked at
    ~5.8ms per step on the dev box against a 1500ms budget. Step 4 confronts it
@@ -548,7 +515,8 @@ video or unreleased annotations.
    bottleneck than the classifier.
 3. **Storage write endurance.** Continuous segment encoding plus a 12fps
    live-view file rewrite is tens of GB per day of writes, most of it
-   throwaway. Mitigated by moving both to tmpfs (step 3) and by preferring an
+   throwaway. Mitigated by moving both to tmpfs (step 3), capping the journal
+   (`deploy/pi/journald-bunnycam.conf`), and by preferring an
    SSD to a microSD. Left unaddressed, this is the failure that shows up three
    months in as mysterious corruption.
 4. **Load-cell data too noisy for meaningful intake numbers.** Rabbits step on

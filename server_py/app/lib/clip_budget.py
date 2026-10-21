@@ -56,7 +56,9 @@ def _free_bytes(recordings_dir: Path) -> int:
 
 async def recordings_usage(*, recordings_dir: Path, max_unlabeled: int,
                            min_free_gb: float, labeled: set[str] | None = None) -> dict:
-    """Current usage plus whether a clipping upload should be refused.
+    """Current usage plus whether a clipping upload should be refused
+    (`blocked`) and whether the disk floor alone is breached (`diskLow`), which
+    is all that applies to automatic motion uploads.
 
     max_unlabeled <= 0 disables the backlog cap; min_free_gb <= 0 disables the
     disk floor. `recordings_dir` is passed rather than imported so callers (and
@@ -89,14 +91,17 @@ async def recordings_usage(*, recordings_dir: Path, max_unlabeled: int,
     unlabeled = sum(1 for n in names if n not in labeled)
     min_free_bytes = int(min_free_gb * GB) if min_free_gb > 0 else 0
 
+    disk_low = bool(min_free_bytes) and 0 <= free < min_free_bytes
+    disk_reason = f"free disk below the {min_free_gb} GB floor ({free / GB:.1f} GB left)" if disk_low else None
+
     blocked = False
     reason = None
     if labels_readable and max_unlabeled > 0 and unlabeled >= max_unlabeled:
         blocked = True
         reason = f"unlabeled clip cap reached ({unlabeled}/{max_unlabeled}) — label some clips to free room"
-    elif min_free_bytes and 0 <= free < min_free_bytes:
+    elif disk_low:
         blocked = True
-        reason = f"free disk below the {min_free_gb} GB floor ({free / GB:.1f} GB left)"
+        reason = disk_reason
 
     return {
         "count": len(names),
@@ -108,4 +113,6 @@ async def recordings_usage(*, recordings_dir: Path, max_unlabeled: int,
         "minFreeBytes": min_free_bytes,
         "blocked": blocked,
         "reason": reason,
+        "diskLow": disk_low,
+        "diskReason": disk_reason,
     }

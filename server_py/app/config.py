@@ -9,6 +9,8 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from shared.paths import segment_dir
+
 APP_DIR = Path(__file__).resolve().parent
 SERVER_PY_DIR = APP_DIR.parent
 ROOT_DIR = SERVER_PY_DIR.parent  # BunnyTracker/
@@ -16,7 +18,6 @@ SERVER_DIR = ROOT_DIR / "server"          # ../server — same data files as Nod
 CLIENT_DIST_DIR = ROOT_DIR / "client" / "dist"
 
 RECORDINGS_DIR = SERVER_DIR / "recordings"
-SEGMENTS_DIR = SERVER_DIR / "agent" / "segments"
 MODEL_DIR = SERVER_DIR / "model"          # the abandoned tfjs artifact, still served
 MODEL_BACKUP_DIR = MODEL_DIR / "backups"
 # The ONNX artifacts the agent actually loads and runs. Distinct from MODEL_DIR
@@ -28,6 +29,8 @@ LABELS_BACKUP_DIR = SERVER_DIR / "backups"
 SESSIONS_FILE = SERVER_DIR / "sessions.json"
 
 load_dotenv(SERVER_DIR / ".env")
+
+SEGMENTS_DIR = segment_dir()
 
 PORT = int(os.environ.get("PY_PORT", "3002"))
 
