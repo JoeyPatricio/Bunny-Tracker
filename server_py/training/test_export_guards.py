@@ -1,4 +1,4 @@
-"""Regression gate for the Phase 0 export fixes (docs/upgrade-plan.md).
+"""Regression gate for the export guards.
 
 Four things that were silently wrong and would each ship a broken model:
   0.1 head.onnx exported with a STATIC batch axis, so the head could not be

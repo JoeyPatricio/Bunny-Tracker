@@ -1,4 +1,4 @@
-"""Static ROI crop for the `crop` cache view (docs/upgrade-plan.md, Phase 5).
+"""Static ROI crop for the `crop` cache view.
 
 One square box per clip, found from motion against a median background, then
 applied to every frame of that clip's training and eval samples. The box is

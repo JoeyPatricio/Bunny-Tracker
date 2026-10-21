@@ -1,4 +1,4 @@
-"""Regression gate for the Phase 2 coding sidecars (docs/upgrade-plan.md).
+"""Regression gate for the coding sidecars.
 
 Covers labels.meta.json (coder, ethogram version, coded_at, uncertainty flag),
 the frozen reliability sample, and labels.reliability.json. The property that

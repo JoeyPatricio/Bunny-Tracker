@@ -1,5 +1,5 @@
 """Two-stage model: frozen timm backbone (per-frame embedder) + a small
-learned temporal head (window classifier). See docs/provenance.md, python-port-plan.md section 3.1.
+learned temporal head (window classifier).
 
 Two separate nn.Modules, not one end-to-end graph, so they can be exported as
 two ONNX graphs and the agent can embed each frame once and run the cheap head

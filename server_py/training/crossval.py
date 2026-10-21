@@ -1,7 +1,6 @@
 """Repeated, nested, grouped cross-validation over the schema-2 cache.
 
-This is where the project's reported numbers come from (docs/upgrade-plan.md,
-Phase 3). Every arm is evaluated on the identical folds from
+This is where the project's reported numbers come from. Every arm is evaluated on the identical folds from
 training/splits.make_folds, so arms are paired and their per-fold differences
 can be tested directly.
 

@@ -1,4 +1,4 @@
-"""Prospective temporal holdout (docs/upgrade-plan.md Phase 3, docs/ethogram.md).
+"""Prospective temporal holdout (docs/ethogram.md).
 
 The 112 clips coded before the cut are the cross-validation pool. Every clip
 captured on or after HOLDOUT_CUTOFF is a holdout clip: it can be coded, but
