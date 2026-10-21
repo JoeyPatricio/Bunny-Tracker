@@ -1,4 +1,4 @@
-"""Augmentation policies for the embedding cache (docs/upgrade-plan.md, Phase 4).
+"""Augmentation policies for the embedding cache.
 
 A policy turns one clip's raw training frames into a list of variants, k=0
 always the untouched clip. Every transform is sampled ONCE per variant and then

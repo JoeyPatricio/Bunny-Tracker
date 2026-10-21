@@ -1,5 +1,5 @@
-"""Regression gate for the prospective temporal holdout (docs/upgrade-plan.md
-Phase 3, docs/ethogram.md "Prospective temporal holdout").
+"""Regression gate for the prospective temporal holdout
+(docs/ethogram.md "Prospective temporal holdout").
 
 The property that matters: once a cut date is set, a clip captured on or after
 it can be coded but its label never lands in labels.json, which is the only

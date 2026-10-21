@@ -1,4 +1,4 @@
-"""Regression gate for docs/provenance.md, fixes.md, installment 3.
+"""Regression gate for server robustness fixes.
 
 3.1 is checked two ways. The structural check calls the real listing handler
 and asserts the scan ran on a worker thread, never the event-loop thread; that
@@ -98,7 +98,7 @@ async def timer_floor() -> float:
 
 
 async def test_listing_runs_off_the_loop_thread() -> None:
-    """docs/provenance.md, fixes.md 3.1: the directory walk must not run on the event-loop thread."""
+    """The directory walk must not run on the event-loop thread."""
     # The structural form of 3.1, and the one that cannot be flaky: call the
     # real handler and record which thread the scan ran on.
     loop_thread = threading.get_ident()
@@ -119,7 +119,7 @@ async def test_listing_runs_off_the_loop_thread() -> None:
 
 
 async def test_listing_does_not_block_the_loop() -> None:
-    """docs/provenance.md, fixes.md 3.1: and the loop stays responsive while it runs."""
+    """And the loop stays responsive while it runs."""
     floor = await timer_floor()
     target = floor * STALL_FLOORS
 
@@ -224,7 +224,7 @@ async def test_upload_and_grab_in_a_temp_dir() -> None:
 
 
 async def test_config_survives_a_bad_env_value() -> None:
-    """docs/provenance.md, fixes.md 3.2: a typo used to raise at import and take the server down."""
+    """A typo used to raise at import and take the server down."""
     cases = [
         ("not-a-number", "unparseable"),
         ("", "empty"),

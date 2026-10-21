@@ -6,8 +6,8 @@
  * Why it was retired: the tfjs model in server/model/ predicts the five v1
  * classes and physically cannot predict ethogram v2's seven, so comparing a v2
  * retrain against it is meaningless. training/evaluate.py's accuracy gate used
- * to do exactly that. See docs/upgrade-plan.md for what replaced it (a
- * `static_logreg` arm on the same frozen embeddings, retrained per fold).
+ * to do exactly that. It was replaced by a `static_logreg` arm on the same
+ * frozen embeddings, retrained per fold.
  *
  * Reads server/model/ and server/recordings/ read-only, plus a v1-schema
  * manifest. Writes only models/js_baseline.v1.json.

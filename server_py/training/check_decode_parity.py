@@ -1,7 +1,7 @@
 """Byte parity of the single-process decode against the per-frame one, on real footage.
 
 shared.frames.extract_frames moved from one ffmpeg process per frame to one
-per clip (docs/upgrade-plan.md, Phase 3). The motion-parity fixtures and the
+per clip. The motion-parity fixtures and the
 JS-parity story both assume the same timestamps decode to the same bytes, so
 this checks every .webm in server/recordings/ at both sample counts the
 pipeline uses (WINDOW for eval clips, TRAIN_FRAMES for training clips) and

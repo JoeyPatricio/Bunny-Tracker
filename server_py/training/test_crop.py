@@ -1,4 +1,4 @@
-"""Regression gate for the Phase 5 crop view (docs/upgrade-plan.md).
+"""Regression gate for the crop view.
 
 What this pins down:
   - estimate_roi finds a moving object, falls back to full frame for a still

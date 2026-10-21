@@ -1,7 +1,6 @@
 """Grouped, stratified, nested cross-validation folds.
 
-Replaces the single train/val split as the evaluation design (docs/upgrade-plan.md,
-Phase 3). With 112 clips a held-out test set would be ~3 clips per class, too
+Replaces the single train/val split as the evaluation design. With 112 clips a held-out test set would be ~3 clips per class, too
 few to tell a real gain from noise. Repeated grouped k-fold instead gives every
 clip exactly one out-of-fold prediction per repeat, so the pooled OOF confusion
 matrix has the full dataset as its support.

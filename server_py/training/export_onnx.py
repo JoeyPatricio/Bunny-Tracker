@@ -1,6 +1,5 @@
 """Export the frozen backbone + trained head to ONNX, then int8-quantize the
 backbone (the expensive half) with a calibration set of real frames.
-Section 3.4 of docs/provenance.md, python-port-plan.md.
 
 Writes to models/candidate/, never to models/ in place. The agent and the
 server read models/*.onnx directly, so exporting in place WAS the deploy, and
