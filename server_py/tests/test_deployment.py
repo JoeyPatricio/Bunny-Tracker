@@ -1,8 +1,11 @@
 """Promoted window and metadata must drive runtime, independent of later training."""
 import asyncio
+import hashlib
 import json
 import os
+import subprocess
 import sys
+import tarfile
 import tempfile
 from pathlib import Path
 from types import SimpleNamespace
@@ -15,6 +18,48 @@ from app.routers import model
 from inference.deployment import read_promoted
 from shared.labels import LABELS
 from tests.checks import check, finish
+
+
+def exercise_model_bundle(root):
+    source = root / "bundle-source"
+    source.mkdir()
+    artifacts = {"backbone_int8.onnx": b"backbone", "head.onnx": b"head graph",
+                 "head.onnx.data": b"external head weights"}
+    for name, data in artifacts.items():
+        (source / name).write_bytes(data)
+    manifest = {"labels": LABELS, "window": 12, "view": "full", "artifacts": {
+        name: hashlib.sha256(data).hexdigest() for name, data in artifacts.items()
+    }}
+    (source / "promoted.json").write_text(json.dumps({"manifest": manifest}))
+    tool = Path(__file__).resolve().parents[2] / "deploy" / "pi" / "model_bundle.py"
+    archive = root / "model.tar.gz"
+
+    def run(*args):
+        return subprocess.run([sys.executable, str(tool), *map(str, args)],
+                              capture_output=True, text=True, timeout=10)
+
+    result = run("pack", source, archive)
+    check("model bundle packs a promotion and its external weights", result.returncode == 0,
+          result.stderr)
+    if result.returncode != 0:
+        return
+    destination = root / "bundle-destination"
+    destination.mkdir()
+    with tarfile.open(archive) as bundle:
+        check("model bundle includes every manifest artifact and the promotion record",
+              set(bundle.getnames()) == {*artifacts, "promoted.json"})
+        bundle.extractall(destination, filter="data")
+    result = run("verify", destination)
+    check("transferred bundle verifies independently of training files", result.returncode == 0,
+          result.stderr)
+    (destination / "head.onnx.data").unlink()
+    result = run("verify", destination)
+    check("model bundle refuses missing external weights", result.returncode != 0
+          and "missing head.onnx.data" in result.stderr, result.stderr)
+    (destination / "head.onnx.data").write_bytes(b"wrong weights")
+    result = run("verify", destination)
+    check("model bundle refuses changed external weights", result.returncode != 0
+          and "sha256 mismatch for head.onnx.data" in result.stderr, result.stderr)
 
 
 async def exercise(root):
@@ -76,4 +121,5 @@ async def exercise(root):
 if __name__ == "__main__":
     with tempfile.TemporaryDirectory(prefix="bunny-deployment-") as directory:
         asyncio.run(exercise(Path(directory)))
+        exercise_model_bundle(Path(directory))
     finish("deployment")

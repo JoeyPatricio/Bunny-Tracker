@@ -7,7 +7,8 @@
 #   ./run.sh server   server only      (dashboard, no camera)
 #   ./run.sh agent    agent only       (a server must already be running)
 #
-# Output is prefixed [server]/[agent] on screen and appended to logs/.
+# Output is prefixed [server]/[agent] on screen and appended to logs/, with no
+# rotation. For an unattended Raspberry Pi use the systemd units in deploy/pi/.
 
 set -uo pipefail
 
@@ -20,7 +21,7 @@ WHAT="${1:-all}"
 
 if [ ! -x "$PYTHON" ]; then
   echo "No runtime venv at $PYTHON" >&2
-  echo "Create it with:  python -m venv $SERVER_PY/.venv && $SERVER_PY/.venv/bin/pip install -r $SERVER_PY/requirements.txt" >&2
+  echo "Create it with:  (cd $SERVER_PY && uv sync --frozen --python 3.14)" >&2
   exit 1
 fi
 if [ ! -f "$ROOT/server/.env" ]; then

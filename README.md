@@ -58,7 +58,7 @@ cited as accuracy.
 | Capture/ML  | ffmpeg (`imageio-ffmpeg`), ONNX Runtime, pixel-diff motion detection |
 | Training    | PyTorch + `timm`, offline CLI script                                |
 | Alerts      | `smtplib` (Gmail SMTP)                                              |
-| Process mgmt| pm2 (server, agent, tunnel, n8n)                                    |
+| Process mgmt| pm2 on Windows (server, agent, tunnel, n8n), systemd on the Pi       |
 | Deployment  | Cloudflare named tunnel (HTTPS, custom domain)                      |
 
 ---
@@ -126,12 +126,16 @@ Find your camera name (Windows): `ffmpeg -f dshow -list_devices true -i dummy`.
 
 ### 3. Run
 
-Production / 24-7 (server, capture agent, tunnel, and n8n under pm2):
+Production / 24-7 on the Windows PC (server, capture agent, tunnel, and n8n
+under pm2):
 
 ```bash
 pm2 start ecosystem.config.cjs
 pm2 save
 ```
+
+On a Raspberry Pi, use the systemd units in `deploy/pi/` instead. See
+[Raspberry Pi](#raspberry-pi).
 
 The dashboard is at http://localhost:3001. Log in with `ADMIN_PASSWORD` to reach
 the camera, labeling, and training tabs. Without login you see the public demo.
@@ -255,6 +259,7 @@ CAMERA_INPUT=testsrc2=size=640x480:rate=15
 ```
 BunnyTracker/
 ├── ecosystem.config.cjs        # pm2 process definitions (server, agent, tunnel, n8n)
+├── deploy/pi/                  # systemd units and migration guide for the Raspberry Pi
 ├── client/                     # React + Vite frontend
 │   └── src/
 │       └── components/
@@ -289,10 +294,11 @@ BunnyTracker/
 
 ## Deployment
 
-Four processes run under pm2 and auto-start at login: `bunnycam-server`,
-`bunnycam-agent` (both Python), `bunnycam-tunnel` (Cloudflare), and
-`bunnycam-n8n`. The tunnel maps a custom domain to the local server over HTTPS,
-so the camera PC never exposes a port.
+On the Windows PC, four processes run under pm2 and auto-start at login:
+`bunnycam-server`, `bunnycam-agent` (both Python), `bunnycam-tunnel`
+(Cloudflare), and `bunnycam-n8n`. The tunnel serves the custom domain over
+public HTTPS without any router port forwarding. The Windows server still
+binds `0.0.0.0:3001`, so it is reachable from the LAN.
 
 Security: cookie session auth (Secure over HTTPS) for the human login, a
 separate service-token (`AGENT_TOKEN`) for the camera agent so it can never
@@ -301,9 +307,14 @@ a server-enforced private live stream.
 
 ### Raspberry Pi
 
-The capture agent is platform-agnostic in principle - swap two `.env` lines
-(`CAMERA_FORMAT=v4l2`, `CAMERA_INPUT=/dev/video0`) and point `ecosystem.config.cjs`
-at the Pi's own venv/cloudflared/n8n paths.
+[deploy/pi/README.md](deploy/pi/README.md) covers the Pi install and the move
+from the PC. systemd runs the server, agent, and tunnel. The runtime is the
+same `uv sync --frozen --python 3.14` as above, not the OS Python. Rolling
+segments and the live frame go to tmpfs under `/run/bunnycam`. The server
+listens on loopback behind the tunnel, and data, model bundle, and tunnel
+credentials transfer as described there. Email can go straight through SMTP
+with no n8n. None of this has been run on Pi hardware yet. The Pi also has no
+classifier until a seven-class model is promoted (see Model status above).
 
 ---
 

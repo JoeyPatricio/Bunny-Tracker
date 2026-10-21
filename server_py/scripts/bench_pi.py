@@ -1,12 +1,12 @@
-"""Per-step latency benchmark for backbone+head ONNX (section 3.6).
+"""Per-step CPU latency benchmark for the promoted ONNX deployment.
 
-No Raspberry Pi 5 is owned yet (see docs/pipeline.md docs/pipeline.md,), so this runs on
-the dev box as the closest available signal, NOT the real Pi gate. Numbers
-here are reported as dev-box-only until re-run on actual hardware.
+Measures isolated inference on the current host. Camera encoding, streaming,
+and concurrent application load need a separate capture smoke test.
 
-Usage (from server_py/, training or runtime venv, after export_onnx.py):
-    .venv-train/Scripts/python.exe -m scripts.bench_pi
+Usage (from server_py/, runtime venv, after model promotion):
+    .venv/bin/python -m scripts.bench_pi
 """
+import platform
 import sys
 import time
 from pathlib import Path
@@ -15,6 +15,8 @@ import numpy as np
 import onnxruntime as ort
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from inference.deployment import read_promoted
 
 MODELS_DIR = Path(__file__).resolve().parent.parent / "models"
 ITER = 50
@@ -63,14 +65,13 @@ def bench_session(name: str, onnx_path: Path, make_input):
 
 
 def main():
-    window = 8
-    manifest_path = MODELS_DIR / "cache" / "manifest.json"
-    if manifest_path.exists():
-        import json
-        window = json.loads(manifest_path.read_text())["window"]
+    promoted = read_promoted(MODELS_DIR)
+    if promoted is None:
+        raise ValueError("No promoted model metadata. Promote a model before benchmarking inference.")
+    window = promoted["manifest"]["window"]
     embed_dim = embedding_dim(MODELS_DIR / "head.onnx")
 
-    print("DEV-BOX benchmark only — NOT the Raspberry Pi 5 gate (no hardware owned yet).")
+    print(f"CPU inference benchmark on {platform.node()} ({platform.machine()}).")
     print(f"CPU execution provider, window={window}\n")
 
     bench_session(
@@ -89,8 +90,8 @@ def main():
     if backbone_int8_times is not None and head_times is not None:
         per_step = np.median(backbone_int8_times) + np.median(head_times)
         print(f"\nEstimated per-frame step (int8 backbone + head): {per_step:.2f}ms")
-        print("Current agent frame budget: 1500ms (AGENT_FRAME_SECONDS, per docs/pipeline.md docs/pipeline.md,)")
-        print(f"Dev-box headroom: {1500/per_step:.1f}x budget (Pi CPU will be slower than this dev box — re-benchmark on real hardware before relying on this number)")
+        print("Default agent frame budget: 1500ms (AGENT_FRAME_SECONDS)")
+        print(f"Estimated headroom: {1500/per_step:.1f}x default budget (isolated inference only)")
 
 
 if __name__ == "__main__":

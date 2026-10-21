@@ -10,10 +10,13 @@ Usage (from server_py/, runtime venv):
 Uses TestClient, which unquotes the URL path into the ASGI scope exactly as
 uvicorn does, so the %2e%2e traversal cases reproduce here rather than needing
 a live server. Read-only apart from POSTs that touch in-memory state only:
-nothing under server/ is written.
+nothing under server/ is written. The one check that logs in successfully
+repoints auth.SESSIONS_FILE at a temp directory for its own duration.
 """
 import os
+import shutil
 import sys
+import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -23,11 +26,23 @@ os.environ["ADMIN_PASSWORD"] = "security-test-password"
 os.environ["AGENT_TOKEN"] = "security-test-agent-token"
 
 from fastapi.testclient import TestClient
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
-from app.config import AGENT_TOKEN, MODEL_BACKUP_DIR, SERVER_DIR
+from app import auth, rate_limit
+from app.config import ADMIN_PASSWORD, AGENT_TOKEN, MODEL_BACKUP_DIR, SERVER_DIR
 from app.main import app
-from app.security import CSP
+from app.security import CSP, CSP_HTTPS
 from tests.checks import check, finish
+
+LAN_PEER = ("192.168.1.50", 50000)
+LOOPBACK_PEER = ("127.0.0.1", 50000)
+
+
+def proxied_client(peer: tuple[str, int]) -> TestClient:
+    """The app as uvicorn serves it: ProxyHeadersMiddleware in front, trusting
+    only loopback (its default --forwarded-allow-ips), with `peer` as the TCP
+    peer address."""
+    return TestClient(ProxyHeadersMiddleware(app, trusted_hosts="127.0.0.1"), client=peer)
 
 
 def test_spa_traversal(client: TestClient) -> None:
@@ -130,6 +145,89 @@ def test_stream_frame_limits(client: TestClient) -> None:
     check("1.5 valid jpeg accepted", res.status_code == 200, f"got {res.status_code}")
 
 
+def test_forwarded_for_trust() -> None:
+    """Pi review finding 8: any LAN caller could rotate X-Forwarded-For past the login limiter."""
+    wrong = {"password": "wrong-password"}
+    saved_failures = dict(rate_limit._login_failures)
+    rate_limit._login_failures.clear()
+    try:
+        lan = proxied_client(LAN_PEER)
+        codes = [
+            lan.post("/api/auth/login", json=wrong, headers={"X-Forwarded-For": f"10.0.0.{i}"}).status_code
+            for i in range(12)
+        ]
+        check("8 untrusted peer's rotating XFF is ignored", codes[:10] == [401] * 10 and codes[10:] == [429, 429],
+              str(codes))
+        check("8 lockout keyed on the real LAN peer", LAN_PEER[0] in rate_limit._login_failures,
+              str(list(rate_limit._login_failures)))
+
+        # The tunnel path: cloudflared on loopback is trusted, so each visitor
+        # is limited separately rather than all sharing 127.0.0.1.
+        rate_limit._login_failures.clear()
+        tunnel = proxied_client(LOOPBACK_PEER)
+        codes = [
+            tunnel.post("/api/auth/login", json=wrong, headers={"X-Forwarded-For": "203.0.113.7"}).status_code
+            for _ in range(11)
+        ]
+        check("8 trusted proxy's client is locked out", codes[-1] == 429, str(codes))
+        res = tunnel.post("/api/auth/login", json=wrong, headers={"X-Forwarded-For": "198.51.100.9"})
+        check("8 another tunnel client is not locked out", res.status_code == 401, f"got {res.status_code}")
+        check("8 loopback itself is never the limiter key", LOOPBACK_PEER[0] not in rate_limit._login_failures,
+              str(list(rate_limit._login_failures)))
+    finally:
+        rate_limit._login_failures.clear()
+        rate_limit._login_failures.update(saved_failures)
+
+
+def test_https_only_cookie_and_csp() -> None:
+    """Pi review finding 8 and CSP note: forwarded scheme trust, and a plain-HTTP LAN dashboard."""
+    good = {"password": ADMIN_PASSWORD}
+    https = {"X-Forwarded-Proto": "https"}
+    saved_sessions = dict(auth._sessions)
+    saved_failures = dict(rate_limit._login_failures)
+    saved_sessions_file = auth.SESSIONS_FILE
+    tmp = Path(tempfile.mkdtemp(prefix="bunnysessions-"))
+    # These logins succeed, so they persist: only this test's sessions may
+    # reach the file, and the file must be a temp one.
+    auth.SESSIONS_FILE = tmp / "sessions.json"
+    auth._sessions.clear()
+    rate_limit._login_failures.clear()
+    try:
+        tunnel = proxied_client(LOOPBACK_PEER)
+        res = tunnel.post("/api/auth/login", json=good, headers=https)
+        check("8 tunnel login succeeds", res.status_code == 200, f"got {res.status_code}")
+        check("8 tunnel HTTPS cookie is Secure", "Secure" in res.headers.get("set-cookie", ""),
+              res.headers.get("set-cookie", ""))
+        check("CSP upgrades subresources over the tunnel",
+              res.headers.get("content-security-policy") == CSP_HTTPS)
+
+        lan = proxied_client(LAN_PEER)
+        res = lan.post("/api/auth/login", json=good, headers=https)
+        check("8 LAN login succeeds", res.status_code == 200, f"got {res.status_code}")
+        check("8 spoofed X-Forwarded-Proto from LAN does not mark the cookie Secure",
+              "Secure" not in res.headers.get("set-cookie", ""), res.headers.get("set-cookie", ""))
+
+        res = lan.get("/api/health")
+        check("plain-HTTP LAN CSP has no upgrade-insecure-requests",
+              res.headers.get("content-security-policy") == CSP
+              and "upgrade-insecure-requests" not in CSP, res.headers.get("content-security-policy", ""))
+        check("other security headers kept on HTTP",
+              res.headers.get("x-frame-options") == "DENY"
+              and res.headers.get("x-content-type-options") == "nosniff")
+
+        direct = TestClient(app, base_url="https://testserver")
+        res = direct.get("/api/health")
+        check("CSP upgrades subresources on direct HTTPS",
+              res.headers.get("content-security-policy") == CSP_HTTPS)
+    finally:
+        auth._sessions.clear()
+        auth._sessions.update(saved_sessions)
+        rate_limit._login_failures.clear()
+        rate_limit._login_failures.update(saved_failures)
+        auth.SESSIONS_FILE = saved_sessions_file
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def main() -> None:
     # No `with` block: entering the lifespan would start the label-backup task,
     # which writes to server/backups/. These checks need no startup state.
@@ -143,6 +241,10 @@ def main() -> None:
     ):
         print(f"\n{fn.__doc__.splitlines()[0]}")
         fn(client)
+
+    for fn in (test_forwarded_for_trust, test_https_only_cookie_and_csp):
+        print(f"\n{fn.__doc__.splitlines()[0]}")
+        fn()
 
     finish("security regression")
 
