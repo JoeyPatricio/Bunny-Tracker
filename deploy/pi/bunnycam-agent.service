@@ -1,0 +1,28 @@
+[Unit]
+Description=Bunny Tracker capture agent
+Documentation=file:///opt/bunny-tracker/deploy/pi/README.md
+Wants=bunnycam-server.service
+After=bunnycam-server.service
+# The agent exits when the server is not answering yet, or the camera is not
+# enumerated yet, and systemd restarts it. Never stop retrying.
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=bunnycam
+Group=bunnycam
+SupplementaryGroups=video
+WorkingDirectory=/opt/bunny-tracker/server_py
+EnvironmentFile=/opt/bunny-tracker/deploy/pi/bunnycam.env
+ExecStart=/opt/bunny-tracker/server_py/.venv/bin/python -m agent.capture
+Restart=always
+RestartSec=5
+# SIGTERM goes to the agent alone so it can stop its ffmpeg child cleanly.
+# Anything still in the unit after that, or after the timeout, is SIGKILLed,
+# so a restart never meets an orphaned ffmpeg holding /dev/video0.
+KillMode=mixed
+TimeoutStopSec=20
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

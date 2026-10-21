@@ -1,0 +1,4 @@
+# Install as /etc/tmpfiles.d/bunnycam.conf. /run is tmpfs, so these are
+# recreated empty on every boot.
+d /run/bunnycam          0750 bunnycam bunnycam -
+d /run/bunnycam/segments 0750 bunnycam bunnycam -

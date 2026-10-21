@@ -1,0 +1,18 @@
+[Unit]
+Description=Bunny Tracker Cloudflare tunnel
+Documentation=file:///opt/bunny-tracker/deploy/pi/README.md
+Wants=network-online.target bunnycam-server.service
+After=network-online.target bunnycam-server.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=bunnycam
+Group=bunnycam
+ExecStart=/usr/bin/cloudflared --no-autoupdate --config /etc/cloudflared/config.yml tunnel run
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

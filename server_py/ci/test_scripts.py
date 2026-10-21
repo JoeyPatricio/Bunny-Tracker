@@ -44,6 +44,7 @@ PYTHONS = {
 # below, which marks it local_data so CI's `-m "not local_data"` leaves it out.
 SCRIPTS = [
     ("tests/test_capture_loop.py", "runtime"),
+    ("tests/test_agent_runtime.py", "runtime"),
     ("tests/test_clipping_mode.py", "runtime"),
     ("tests/test_motion_parity.py", "runtime"),
     ("tests/test_security_regressions.py", "runtime"),
