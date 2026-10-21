@@ -1,113 +1,70 @@
 # Bunny Tracker ethogram (v2)
 
-Status: **v2 states are in force.** `server_py/shared/labels.py` and
-`client/src/labels.js` declare the seven states plus `out_of_view`, and all 112
-v1 clips were unlabeled on 2026-09-25 for recoding against these definitions.
-The v1 labels are archived in `server/labels.v1.json`.
+This is the coding manual for labeling clips. The seven states plus
+`out_of_view` are declared in `server_py/shared/labels.py` and
+`client/src/labels.js`. All 112 v1 clips were unlabeled on 2026-09-25 for
+recoding under these definitions. The v1 labels are archived in
+`server/labels.v1.json`.
 
-**Scope decision, 2026-09-25:** the state/event split described below was NOT
-implemented. Yawn is folded into `resting_sitting` and binky into
-`locomotion_rapid`, and labels are stored as a flat `{filename: state}` string
-map rather than the `{state, events[], quality}` object. The Events section is
-kept as the upgrade path, not as a description of what ships. What this costs:
-yawn and binky frequencies cannot be reported, and a clip where the rabbit
-yawns while sitting is indistinguishable from one where it only sits. Adding
-events later does not require recoding the states, only a second pass over the
-clips, so this is deferrable without waste.
+Freeze this document before labeling starts. If a definition changes after
+that, bump `ETHOGRAM_VERSION` in both label files, update the definition text
+in `client/src/labels.js`, and recode everything.
 
-This document is the coding manual. It is meant to be frozen before any clip
-is labeled under it, handed to a second observer unchanged, and cited in a
-methods section. If a definition has to change after labeling starts, bump the
-version and re-code everything.
+**Scope decision (2026-09-25).** Only states are coded. Yawn is folded into
+`resting_sitting` and binky into `locomotion_rapid`. Labels are a flat
+`{filename: state}` map. This means yawn and binky counts can't be reported.
+Adding events later only needs a second pass over the clips, not a recode of
+the states. The design is under [Events](#events-not-implemented).
 
-## Source
+## Sources
 
-Definitions are taken, and where noted collapsed, from the **NC3Rs / IAT / RSPCA
-laboratory rabbit ethogram**, itself a compilation of:
+Definitions come from the NC3Rs / IAT / RSPCA laboratory rabbit ethogram,
+which compiles:
 
-- Morton DB et al. (2003). Refinements in rabbit husbandry: Second report of the
-  BVAAWF/FRAME/RSPCA/UFAW joint working group on refinement. *Laboratory Animals*
-  27: 301-329, Appendix 1, pp. 325-7.
+- Morton DB et al. (2003). Refinements in rabbit husbandry. *Laboratory
+  Animals* 27: 301-329, Appendix 1.
 - Held SDE, Turner RJ, Wootton RJ (2001). The behavioural repertoire of
-  non-breeding group-housed female laboratory rabbits (*Oryctolagus cuniculus*).
-  *Animal Welfare* 10(4): 437-443.
+  non-breeding group-housed female laboratory rabbits. *Animal Welfare* 10(4):
+  437-443.
 - Gunn D, Morton DB (1995). Inventory of the behaviour of New Zealand White
-  rabbits in laboratory cages. *Applied Animal Behaviour Science* 45(3-4): 277-92.
+  rabbits in laboratory cages. *Applied Animal Behaviour Science* 45(3-4):
+  277-92.
 
-Quoted definitions below are from the NC3Rs compilation. Deviations are marked
-**[deviation]** with the reason.
+Quotes below are from the NC3Rs compilation. Places where I collapsed or
+dropped a category are marked **[deviation]**.
 
-## Why v1 is not usable as-is
+## Why v1 was replaced
 
 | v1 label | Problem |
 |---|---|
-| `normal` | Not a behaviour. It is a residual class meaning "none of the other four", so it currently absorbs resting, locomotion, feeding, and frames with no rabbit in them. It cannot be defined, so it cannot be coded reliably, so it cannot be reported. |
-| `standing` | Non-standard term. The published category is *rearing*. |
-| `zoomies` | Non-standard term, and conflates a state (rapid locomotion) with an event (the binky/frisky hop that punctuates it). |
-| `yawn` | A sub-second point event competing in the same softmax as multi-second states. It is structurally disadvantaged, which is most of why n=5 performs as badly as it does. |
-| `grooming` | Closest to usable. Needs an explicit onset/offset criterion and a self/allo distinction. |
+| `normal` | Not a behaviour. It meant "none of the others" and soaked up resting, locomotion, feeding and empty frames. It can't be defined, so it can't be coded reliably. |
+| `standing` | The published term is rearing. |
+| `zoomies` | Mixed a state (running) with an event (the binky). |
+| `yawn` | A sub-second event competing against multi-second states in one softmax. |
+| `grooming` | Closest to usable. Needed onset and offset rules. |
 
-The single most important change is that **`normal` is deleted** and replaced by
-the behaviours it was hiding.
+The main change is deleting `normal` and replacing it with the behaviours it
+was hiding.
 
-## Prior art: how the one comparable paper codes rabbit behaviour
+Adedeji et al. (2023), the closest published work, uses seven vernacular
+classes with no operational definitions or reliability measure, overlapping
+categories, and states mixed with events. Two of their classes map here.
+`periscoping` is `rearing`, and `digging` is a real NC3Rs category I left out
+only because there's no diggable substrate in frame.
 
-Adedeji et al. (2023), the closest published work (see the README references),
-classify rabbit behaviour into seven vernacular classes: digging, humping and
-mating, eating, periscoping, jumping and binkying, laying, flopping and
-loafing. Their scheme is worth reading as a counterexample rather than a
-model:
+## Design rules
 
-- No operational definitions, no source ethogram, and no inter-observer
-  reliability. The class names are the whole specification.
-- The categories are not mutually exclusive. "Laying" and "flopping and
-  loafing" describe overlapping postures, and the paper reports its classifier
-  confusing visually similar classes. "Humping and mating" is a social
-  behaviour in an otherwise postural scheme.
-- States and events are mixed in one softmax, the same problem v1 has here.
-  "Jumping and binkying" is a point event sitting alongside "laying", a state.
-
-Two of their classes map onto v2 and are worth keeping in view:
-`periscoping` is the same posture as `rearing` (NC3Rs "Rearing alert"), and
-`digging` is a real NC3Rs category ("prolonged paw-scraping at deep
-substrate") that this ethogram omits only because there is no dig-friendly
-substrate in frame. Add `digging` if that changes.
-
-Their classifier also runs on single still images, so it has no way to express
-the state/event distinction even in principle. Working from video is what
-makes the split below available to this project.
-
-## Design decisions
-
-**1. Two streams, not one softmax.** States and events are coded and modeled
-separately.
-
-- **States** are mutually exclusive and exhaustive. Exactly one applies at any
-  instant. They have meaningful durations.
-- **Events** are brief (under ~2 s), are counted rather than timed, and occur
-  *during* a state. A yawn happens while the rabbit is sitting; both are true.
-
-This is standard ethological practice and it also fixes the modeling mismatch:
-states are a classification problem scored with macro-F1 and a confusion matrix,
-events are a detection problem scored with precision/recall at a temporal
-tolerance. Rare events stop being a broken softmax class and become a
-legitimately hard detection task, which is a better result to report either way.
-
-**2. Granularity is capped by the sensor, and that is stated openly.** The
-NC3Rs ethogram separates `Sleep` from `Dozing` from `Lying` by eye aperture and
-ear position. At 224x224 from a room camera those are not resolvable. Categories
-the camera cannot separate are collapsed, and each collapse is recorded below.
-A reviewer will accept a coarser ethogram that is honestly justified. They will
-not accept fine distinctions that the observer could not actually have made.
-
-**3. `out_of_view` is a coding category, not a behaviour.** Clips where no
-rabbit is visible, or the rabbit is occluded for the majority of the clip, get
-this code and are excluded from training. Right now they are almost certainly
-sitting in `normal`.
+1. **The camera limits granularity.** At 224x224 from across the room I can't
+   see eye aperture or reliably see ear position. Categories that depend on
+   them are merged, and each merge is listed below.
+2. **`out_of_view` is a coding category, not a behaviour.** It is excluded
+   from training but counted, because the share of unusable footage is a real
+   result.
+3. **States are mutually exclusive.** Exactly one applies at any instant.
 
 ## States
 
-Exactly one per coded interval. Ordered as they should appear in `LABELS`.
+Listed in the order they appear in `LABELS`.
 
 ### `resting_lying`
 Trunk on the ground. Includes limbs tucked under, limbs outstretched, and
@@ -118,10 +75,8 @@ contact-lying with a conspecific.
 > body. Lying, limbs outstretched: resting with body trunk on ground, all four
 > limbs outstretched and belly exposed."
 
-**[deviation]** NC3Rs `Sleep` ("lying or sitting with both eyes closed") and
-`Dozing` ("eyes slightly to half open and one or both ears erect") are merged
-into `resting_lying` / `resting_sitting`. Eye aperture is not resolvable at this
-camera resolution and distance. Consequence: this study cannot report sleep.
+**[deviation]** NC3Rs `Sleep` and `Dozing` are merged into the two resting
+states because they depend on eye aperture. This study can't report sleep.
 
 - **Onset:** trunk contacts ground and forward motion ceases.
 - **Offset:** trunk lifts off the ground, or locomotion begins.
@@ -134,11 +89,8 @@ ground.
 > NC3Rs *Resting*: "Sitting: in upright stationary position, with rear end and
 > forepaws on ground and ears down. Sitting alert: as above, but with ears erect."
 
-**[deviation]** `Sitting` and `Sitting alert` are merged. Ear position is the
-only discriminator and it is unreliable at this resolution. **Decide this from
-your own footage before freezing:** if ear orientation is in fact legible in
-your camera's frames, split them, because the alert posture is welfare-relevant
-(it indicates vigilance and therefore possible stressors).
+**[deviation]** `Sitting` and `Sitting alert` are merged because ear position
+isn't reliable at this resolution.
 
 - **Onset:** forepaws contact ground with trunk raised, motion ceases.
 - **Offset:** forepaws leave the ground (becomes `rearing`), trunk lowers
@@ -148,13 +100,13 @@ your camera's frames, split them, because the alert posture is welfare-relevant
   the posture and ignore the yawn.
 
 ### `rearing`
-Sitting up on the hindlimbs with **both** forepaws off the ground.
+Sitting up on the hindlimbs with **both** forepaws off the ground. Replaces
+v1 `standing`.
 
 > NC3Rs *Rearing*: "Sitting up on hind-limbs with both forepaws off the ground;
 > ears partly or fully down." *Rearing alert*: "As above but with ears erect."
 
-**[deviation]** `Rearing` and `Rearing alert` merged, same reason as above.
-Replaces v1 `standing`.
+**[deviation]** `Rearing` and `Rearing alert` are merged for the same reason.
 
 - **Onset:** the second forepaw leaves the ground.
 - **Offset:** either forepaw returns to the ground.
@@ -173,18 +125,12 @@ Ordinary forward movement: hopping or walking.
 - **Offset:** 1 s with no net displacement.
 - **Not:** rapid running, which is `locomotion_rapid`.
 
-This class does not exist in v1. It is currently inside `normal`, and it is
-almost certainly a large part of why `normal` and `zoomies` confuse.
-
 ### `locomotion_rapid`
 Running: sustained rapid forward movement, typically a circuit of the room.
+Replaces v1 `zoomies`.
 
 > NC3Rs *Locomotory*: "Running: rapid forward movement achieved by alternate,
 > fully-stretched extension of fore and hindlimbs."
-
-Replaces the state half of v1 `zoomies`. In the literature a bout of this
-interspersed with binkies is a frenetic random activity period (FRAP). Binkies
-within it are coded separately as events (see `binky`).
 
 - **Onset:** gait changes from hopping to fully-stretched running.
 - **Offset:** 1 s at hopping pace or slower.
@@ -220,9 +166,7 @@ Ingestion of food or water.
 > *Nibbling litter*: "Picking up and nibbling litter, with or without ingestion."
 
 **[deviation]** Feeding, drinking, and nibbling litter are merged unless the
-food and water stations are separately identifiable in frame. If they are,
-split into `feeding` and `drinking`, because drinking frequency is directly
-relevant to the water-intake stretch goal in the roadmap.
+food and water stations are separately identifiable in frame.
 
 **[deviation]** NC3Rs `Coprophagy/re-ingestion` is not coded. It is a normal and
 welfare-relevant behaviour but it is not distinguishable from grooming the
@@ -237,164 +181,93 @@ interval. Not a behaviour. Excluded from training; counted and reported, because
 the proportion of unusable footage is a real property of the deployment and
 belongs in the results.
 
-## Events (not implemented, upgrade path)
+## Events (not implemented)
 
-Counted, not timed. Coded independently of the concurrent state. More than one
-may occur in a clip. **None of this is in the codebase**; see the scope
-decision at the top. It is kept because the argument for it does not go away,
-and because adding it later is additive rather than a recode.
+Nothing here is in the code. Events would be brief (under about 2 s), counted
+rather than timed, and coded alongside whatever state is happening. They'd be
+scored as detection (precision/recall at a time tolerance) instead of
+classification.
 
-### `yawn`
-Wide opening of the mouth with the head raised, jaw fully extended, typically
-1 to 2 s, usually from a sitting or lying posture.
-
-**Not in the NC3Rs compilation.** Yawning is conventionally grouped with
-stretching as a comfort behaviour; the likely source in this lineage is the
-Gunn & Morton (1995) inventory, which I have not verified directly. **Before
-freezing this document, check Gunn & Morton (1995) and either cite it or mark
-`yawn` as a locally defined category.** A locally defined category is
-acceptable if it is declared as such.
-
-- **Count:** one per mouth opening. A double yawn within 2 s counts as two.
-
-### `binky`
-The frisky hop or play gambol.
-
-> NC3Rs *Play*: "Play gambolling or 'frisky hop': forward hopping/jumping
-> accompanied by sideways tossing of the head/ears, shaking/twisting the body or
-> kicking out with the feet."
-
-- **Count:** one per airborne twist or kick-out. A running circuit containing
-  three twists is `locomotion_rapid` with three `binky` events.
-
-### `thumping` (optional)
-> NC3Rs *Thumping*: "Loud thumping of the ground with the hind-foot (feet),
-> usually when alarmed."
-
-Include only if the capture pipeline records audio. It currently does not, and
-thumping is much easier to score from audio than from video. Listed here so the
-decision is recorded rather than silently skipped.
-
-### `head_flick` and `scratching` (optional)
-> NC3Rs *Play*: "Head flicking: flicking head sideways."
-> NC3Rs *Scratching*: "Scratching at own body with a hindfoot."
-
-Low priority. Add only if they turn out to be frequent enough to score
-reliably.
+- `yawn`: wide mouth opening with the head raised, 1 to 2 s, usually while
+  sitting or lying. Not in the NC3Rs compilation. Check Gunn & Morton (1995)
+  before using it, or mark it as locally defined.
+- `binky`: NC3Rs "frisky hop". One count per airborne twist or kick-out.
+- `thumping`: only worth adding if capture records audio, which it doesn't.
+- `head_flick`, `scratching`: only if they turn out to be common.
 
 ## Annotation protocol
 
-**Unit of coding.** Clips are 8 s (clipping mode) or 12 s (alert mode). The
-rabbit can change state mid-clip, so a single label per clip is a weak label and
-must be defined as such.
+**Unit of coding.** Clips are 8 s (clipping mode) or 12 s (alert mode). Code
+the predominant state, meaning the one that covers the most of the clip, and
+only if it covers at least 50%. If nothing reaches 50%, leave the clip
+unlabeled and flag it uncertain. There is no `mixed` code.
 
-*Rule for v2:* code the **predominant state**, defined as the state occupying
-the largest share of the clip, and only if that share is **at least 50%** of the
-clip duration. The studio has no `mixed` code. If no state reaches 50%, leave
-the clip unlabeled and flag it uncertain for review. Decide how these clips
-will be excluded before freezing the coding protocol. Events are not recorded
-in the current flat schema.
+Interval coding in [BORIS](https://www.boris.unito.it/), with onset and offset
+per bout, would give frame-level labels. It's more work. Decide before
+recoding the 112 clips so they only get recoded once.
 
-*Upgrade path:* true interval coding, with onset and offset timestamps per bout,
-scored in [BORIS](https://www.boris.unito.it/) (the standard open-source
-event-logging tool for ethology). That turns weak clip labels into frame-level
-ground truth and makes the state stream a temporal segmentation problem rather
-than a clip classification problem. It is strictly better and it is also
-strictly more work. Decide before recoding the 112 existing clips, because
-recoding twice is the expensive outcome.
+**Focal animal.** If more than one rabbit is in frame, code the one nearest
+the centre at clip onset. If the rabbits can't be told apart, code at group
+level and say so.
 
-**Focal animal.** If more than one rabbit can be in frame, a focal rule is
-required. Default: code the rabbit nearest the frame centre at clip onset, and
-record its identity. If the individuals are not visually distinguishable, say so
-and code at the group level, which weakens but does not invalidate the design.
-
-**Uncertainty.** The studio records an `uncertain` boolean in
-`server/labels.meta.json`. It does not record a `quality` enum, focal identity,
-event list or free-text notes. An uncertain label stays in training, and the
-reliability report also computes agreement with uncertain clips excluded.
-Leave a clip unlabeled when a state cannot be assigned. Never guess a label to
-avoid leaving a clip uncoded.
+**Uncertainty.** The studio stores an `uncertain` flag in
+`server/labels.meta.json`. Uncertain labels stay in training. The reliability
+report also computes agreement without them. If no state fits, leave the clip
+unlabeled. Don't guess.
 
 ## Reliability protocol
 
-The implemented protocol measures intra-observer repeatability. It does not
-measure agreement between independent observers.
+This measures how consistently I code (intra-observer), not agreement between
+two people.
 
-1. Freeze this document. No edits after step 2 begins.
-2. Complete the first pass over the CV pool. Resolve the ambiguous definitions
-   and the handling of mixed or unusable clips before drawing a sample.
-3. Draw the studio's fixed 25% sample, seed 0, rounded up. It is a uniform
-   random sample, not stratified by label. For a pool of 112 clips it has 28.
-4. Use reliability mode for the blind re-code. The studio hides first-pass
-   labels, suggestions, filenames and metadata. Re-codes go to
-   `server/labels.reliability.json` and do not replace the first pass.
-5. Run `training.reliability` after every sampled clip has a re-code. Report
-   overall unweighted Cohen's kappa, one-vs-rest per-code kappa, raw agreement
-   and uncertainty counts from `server_py/models/reliability.json`.
+1. Freeze this document.
+2. Finish the first pass over the CV pool.
+3. The studio draws a fixed 25% uniform sample (seed 0, rounded up). For 112
+   clips that's 28.
+4. Re-code them blind in reliability mode. First-pass labels, suggestions,
+   filenames and metadata are hidden. Re-codes go to
+   `server/labels.reliability.json`.
+5. Run `training.reliability`. It writes overall and per-class Cohen's kappa,
+   raw agreement and uncertainty counts to `server_py/models/reliability.json`.
 
-No kappa has been measured in this checkout. A second observer would require
-a separately documented independent coding pass. Human re-code agreement and
-classifier OOF kappa use different samples and can use different coding
-vocabularies because the classifier excludes `out_of_view`. Re-code kappa is
-not a mathematical upper bound on classifier performance.
-
-Before coding, resolve the supported-forepaw wording under `rearing`, the
-unavailable `allo` modifier and notes field, and the exclusion rule for clips
-without a predominant state. The operational definition text in
-`client/src/labels.js` must change with any definition revision.
+No kappa has been measured yet. Re-code kappa is not an upper bound on
+classifier kappa because the samples and vocabularies differ (the classifier
+excludes `out_of_view`).
 
 ## Prospective temporal holdout
 
-**Cut date: TBD (placeholder).** Set `HOLDOUT_CUTOFF` in `server/.env` to a
-date (`YYYY-MM-DD`, midnight UTC) or a full ISO-8601 timestamp, then restart
-the server. Until it is set, every label goes to `labels.json` exactly as
-before, and the server says so once at startup.
+**Cut date: not set yet.** Set `HOLDOUT_CUTOFF` in `server/.env` to a date
+(`YYYY-MM-DD`, midnight UTC) or an ISO-8601 timestamp and restart the server.
+Until then every label goes to `labels.json`.
 
-The rule, once set:
+Once set:
 
-- Clips captured **before** the cut form the cross-validation pool. Their labels
-  go to `server/labels.json`, as today.
-- Clips captured **on or after** the cut are the holdout. They can be coded in
-  the studio, which badges them HOLDOUT, but their labels go to
-  `server/labels.holdout.json` (same flat `{filename: label}` schema) and never
-  to `labels.json`. Nothing that trains, selects hyperparameters or calibrates
-  the alert threshold reads that file.
-- The boundary is inclusive: a clip captured exactly at the cut is holdout.
-- Capture time is the UTC timestamp in the filename. A name without one falls
-  back to the file's mtime. A clip with neither is treated as holdout, because
-  losing one training clip is cheaper than contaminating the only test of drift.
-- Setting the cut moves nothing. Labels already in `labels.json` stay there. An
-  explicit re-label of a post-cut clip moves that one clip to the holdout file.
-- Holdout clips do not count toward the reliability re-code pool or the
-  clipping backlog cap.
-- The holdout file is opened once, at paper freeze, to measure how a model
-  selected on the pool holds up on footage captured later in a room that
-  changes. It is backed up daily with the other label files.
+- Clips captured before the cut are the CV pool. Labels go to
+  `server/labels.json`.
+- Clips captured on or after the cut are holdout. The studio badges them
+  HOLDOUT and saves their labels to `server/labels.holdout.json`. Nothing that
+  trains, tunes or calibrates reads that file.
+- Capture time comes from the UTC timestamp in the filename, then the file
+  mtime. A clip with neither counts as holdout.
+- Setting the cut doesn't move existing labels. Re-labeling a post-cut clip
+  moves just that clip.
+- Holdout clips don't count toward the reliability sample or the clipping
+  backlog cap.
+- The holdout file gets opened once, at paper freeze, to measure drift.
 
-Implementation: `server_py/app/lib/holdout.py`; regression gate:
+Code is in `server_py/app/lib/holdout.py`, tested by
 `server_py/tests/test_holdout.py`.
 
-## Migrating the 112 existing clips
+## Migrating the 112 v1 clips
 
-Current v1 distribution: `normal` 45, `zoomies` 26, `grooming` 25,
-`standing` 11, `yawn` 5.
+v1 counts: `normal` 45, `zoomies` 26, `grooming` 25, `standing` 11, `yawn` 5.
 
-| v1 | v2 | Can it be mapped automatically? |
-|---|---|---|
-| `grooming` | `grooming` | Probably, but verify each. |
-| `standing` | `rearing` | Probably, but verify each. |
-| `yawn` | state unknown + `yawn` event | **No.** The state was never recorded. |
-| `zoomies` | `locomotion_rapid` + `binky` events | **No.** Event counts were never recorded, and some may be ordinary `locomotion`. |
-| `normal` | `resting_lying` / `resting_sitting` / `locomotion` / `feeding` / `out_of_view` | **No.** This is the whole point. |
+`grooming` and `standing` mostly map to `grooming` and `rearing`. The others
+can't be mapped because the information was never recorded. Don't write a
+migration script. Re-watch all 112 clips under v2 (about an hour) so the whole
+dataset is coded under one protocol.
 
-**Do not write a migration script.** A scripted mapping would preserve exactly
-the residual-class error the redesign exists to remove. Re-view all 112 clips
-under the frozen v2 definitions. At roughly 30 s each that is about an hour, and
-it buys the ability to state in a methods section that the entire dataset was
-coded under one protocol by a trained observer, which a partial migration cannot.
-
-**Keep v1.** The archive is `server/labels.v1.json`, with its labels nested
-under `labels`. The current schema in `server/labels.json` stays flat:
+`server/labels.json` stays flat:
 
 ```json
 {
@@ -402,51 +275,31 @@ under `labels`. The current schema in `server/labels.json` stays flat:
 }
 ```
 
-Coder, coding time, ethogram version and uncertainty live in
-`server/labels.meta.json`. `training.recoding_report` reads the archive and
-the current flat map to report the migration without automatic relabeling.
+Coder, time, ethogram version and uncertainty go in `server/labels.meta.json`.
+`training.recoding_report` cross-tabs v1 against v2.
 
-## Code touchpoints when v2 goes in force
+## Where the vocabulary lives
 
-The label vocabulary is declared in five places and consumed in several more.
-`LABELS` order is load-bearing: it maps classifier output indices to names.
+`LABELS` order matters because it maps classifier output indices to names.
 
-- `server_py/shared/labels.py:8` (`LABELS`, `LABEL_PHRASE`)
-- `client/src/labels.js:7` (`LABELS`, `LABEL_COLOR`, `LABEL_PHRASE`)
-- `server_py/app/lib/valid_labels.py:3` (`VALID_LABELS`, server-side validation)
-- `server_py/app/routers/notify.py:25` (alert email phrasing)
-- `server/model/labels.json` (retired tfjs artifact, read-only)
-- `client/src/components/LabelingStudio.jsx` (keybindings, filters, count chips,
-  progress bar segments)
-- `client/src/components/RecordingGallery.jsx:16` (filter list)
-- `server_py/agent/capture.py` (`interest_score` treats index `normal` as the
-  uninteresting class; with two resting states plus `out_of_view` it needs to
-  treat a **set** of indices as uninteresting)
+- `server_py/shared/labels.py` (`LABELS`, `LABEL_PHRASE`)
+- `client/src/labels.js` (`LABELS`, `LABEL_COLOR`, `LABEL_PHRASE`, `LABEL_DEFINITION`)
+- `server_py/app/lib/valid_labels.py` (server-side validation)
+- `server_py/app/routers/notify.py` (alert email wording)
+- `client/src/components/LabelingStudio.jsx` and `RecordingGallery.jsx`
+- `server_py/agent/capture.py` (`interest_score` treats the resting states as
+  uninteresting)
 
-Consequences to accept up front:
-
-- **The deployed ONNX head is a 5-class model and becomes incompatible.** v2 has
-  7 states. A retrain is mandatory, not optional.
-- The keybindings need reassigning. Seven states no longer fit one intuitive
-  letter each; suggest number keys 1-7 for states plus letter keys for toggling
-  events, since events are now independent of the state choice.
-- `interest_score` and `AGENT_INTEREST_THRESHOLD` need recalibrating against the
-  new class set. `training/calibrate_gate.py` already does exactly this and will
-  work unchanged once the labels file and head are v2.
+The old five-class ONNX head can't serve v2, so a retrain is required.
+`training/calibrate_gate.py` recalibrates `AGENT_INTEREST_THRESHOLD` for the
+new classes.
 
 ## Open questions
 
-Settled 2026-09-25: the optional splits (`sitting` / `sitting alert`, `feeding`
-/ `drinking`, `digging`) are all **out**. The class list is the seven states
-plus `out_of_view`. Adding any of them later means recoding, so revisit before
-the dataset gets large rather than after.
+Decided 2026-09-25: no `sitting alert`, `drinking` or `digging` splits. Adding
+one later means recoding.
 
-Still open:
-
-1. How many individual rabbits, and are they visually distinguishable on
-   camera? This determines whether a focal-animal rule is possible, and it is
-   the question a reviewer will ask first.
-2. Clip-level predominant-state coding, or full interval coding in BORIS? The
-   50% predominant-state rule above is what is in force; BORIS is the upgrade.
-3. When will the blind intra-observer re-code happen, and will a separate
-   second-observer study also be collected?
+1. How many rabbits are on camera, and can I tell them apart?
+2. Stick with predominant-state clip labels, or move to BORIS interval coding?
+3. When does the blind re-code happen, and will a second observer code a
+   sample?

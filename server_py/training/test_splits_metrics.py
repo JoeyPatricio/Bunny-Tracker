@@ -1,4 +1,4 @@
-"""Regression gate for training/splits.py and training/metrics.py (docs/upgrade-plan.md, Phase 3).
+"""Regression gate for training/splits.py and training/metrics.py.
 
 The fold checks are the leakage guarantees the whole evaluation rests on: a
 clip evaluated in a fold it also trained in, or a source group on both sides

@@ -1,4 +1,4 @@
-# Two jobs, per Phase 1 of docs/upgrade-plan.md.
+# Two jobs.
 #
 # hermetic: builds both venvs from uv.lock (the training group uses the CPU
 # torch index), builds the client because

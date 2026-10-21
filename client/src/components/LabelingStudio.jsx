@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import { ALL_CODES, LABELS, LABEL_META, KEY_TO_LABEL } from "../labels";
 
 // A model class below this many clips cannot appear in every fold of the
-// 5-fold grouped CV in upgrade-plan Phase 3, which refuses to run. The
+// 5-fold grouped CV, which refuses to run. The
 // per-class progress flags it while a targeted Clipping Mode harvest is still
 // cheap, instead of after recoding is done.
 const MIN_CLASS_CLIPS = 5;

@@ -1,4 +1,4 @@
-"""Embedding cache v2: split-agnostic, two tiers (docs/upgrade-plan.md, Phase 3).
+"""Embedding cache v2: split-agnostic, two tiers.
 
 Layout under the cache dir (default models/cache/):
 

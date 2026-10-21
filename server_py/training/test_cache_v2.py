@@ -1,5 +1,4 @@
-"""Regression gate for the schema-2 embedding cache and the single-process decode
-(docs/upgrade-plan.md, Phase 3).
+"""Regression gate for the schema-2 embedding cache and the single-process decode.
 
 Hermetic: synthesises short VP8 .webm clips with the bundled ffmpeg into a temp
 dir, writes a temp labels.json, and builds the cache into a temp cache dir with

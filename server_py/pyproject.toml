@@ -70,7 +70,7 @@ quote-style = "preserve"
 # module-level `async def test_*` functions; if pytest collected those without
 # an async plugin it would report them as skips that read like passes, which is
 # worse than not collecting them at all. ci/test_scripts.py runs them as
-# subprocesses instead. See Phase 1 of docs/upgrade-plan.md.
+# subprocesses instead.
 testpaths = ["ci"]
 markers = [
     "local_data: needs real recordings or a trained model on disk; not run in CI",
