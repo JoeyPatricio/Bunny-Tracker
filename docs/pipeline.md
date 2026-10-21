@@ -1,7 +1,7 @@
 # The training pipeline
 
-Commands run from `server_py/`. Producing real results needs recoded clips in
-`server/recordings/` and `server/labels.json`. Without them only the hermetic
+Commands run from `server/`. Producing real results needs recoded clips in
+`data/recordings/` and `data/labels.json`. Without them only the hermetic
 tests run.
 
 ## The two-venv rule

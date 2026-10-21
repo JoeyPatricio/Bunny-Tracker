@@ -20,7 +20,7 @@ const SPARK_W = 320
 const SPARK_H = 64
 const POLL_MS = 1000
 
-// Mirrors SENSITIVITY_THRESHOLDS in server_py/app/routers/monitor.py. Shown as
+// Mirrors SENSITIVITY_THRESHOLDS in server/app/routers/monitor.py. Shown as
 // a hint only; the server is authoritative and returns the mapped threshold.
 const PRESET_HINT = [8.0, 6.0, 4.5, 3.5, 2.5, 2.0, 1.5, 1.0, 0.7, 0.4]
 

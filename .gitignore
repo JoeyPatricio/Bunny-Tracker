@@ -13,50 +13,50 @@ client/dist/
 notes/
 
 # Media: recorded clips and rolling capture segments
-server/recordings/
-server/tmp/
+data/recordings/
+data/tmp/
 segments/
-server/agent/segments/
+data/agent/segments/
 
 # Data stores, plus their temp and backup copies
-server/labels.json*
-server/autolabels.json*
-server/labels.meta.json*
-server/labels.reliability.json*
-server/labels.reliability_sample.json*
-server/labels.holdout.json*
-server/backups/
-server/activity-log.json*
-server/monitor.json*
-server/hidden.json*
+data/labels.json*
+data/autolabels.json*
+data/labels.meta.json*
+data/labels.reliability.json*
+data/labels.reliability_sample.json*
+data/labels.holdout.json*
+data/backups/
+data/activity-log.json*
+data/monitor.json*
+data/hidden.json*
 
 # MobileNet backbone (fetch with scripts/download-mobilenet.mjs)
-server/model/mobilenet/
+data/model/mobilenet/
 
-# Python port (server_py)
-server_py/.venv/
-server_py/.venv-train/
-server_py/models/cache/
-# Archived caches too. `server_py/models/cache/` above covers only that exact
+# Python backend (server)
+server/.venv/
+server/.venv-train/
+server/models/cache/
+# Archived caches too. `server/models/cache/` above covers only that exact
 # path, so moving a cache anywhere else (e.g. archiving it under a versioned
 # directory during an ethogram migration) silently makes ~14 MB of embedding
 # .npy files trackable again. Match the cache by name at any depth instead.
-server_py/models/**/cache/
+server/models/**/cache/
 # Loose embedding/probability arrays, wherever they land. These are derived
 # from the owner's own footage and have no business in a public repo.
-server_py/models/**/*.npy
-server_py/models/**/*.npz
-server_py/agent/live_frame.jpg
+server/models/**/*.npy
+server/models/**/*.npz
+server/agent/live_frame.jpg
 __pycache__/
 *.pyc
 
 # Raw-bytes copy of the motion fixture, same frames as the .npy next to it.
 # Only scripts/js_motion_ground_truth.mjs reads it; scripts/dump_agent_frames.py
 # writes both, so regenerate it there rather than carrying 9.6 MB twice.
-server_py/tests/fixtures/motion_fixture_frames.bin
+server/tests/fixtures/motion_fixture_frames.bin
 
 # run.sh process logs
 logs/
 
 # Admin session tokens (bearer-equivalent secrets), written by app/auth.py
-server/sessions.json*
+data/sessions.json*
