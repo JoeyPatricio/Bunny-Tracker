@@ -1,0 +1,98 @@
+"""pytest as a runner over the check-scripts, not a rewrite of them.
+
+Each script in tests/ and training/ stays independently runnable with plain
+`python`, exits 1 on any FAIL, and prints its own PASS/FAIL/SKIP lines. This
+file runs each one as a subprocess under the venv it belongs to and asserts
+exit 0, so there is one green/red signal without collecting the scripts
+themselves. That matters: tests/ defines module-level `async def test_*`
+functions, and pytest collecting those without an async plugin would report
+them as skips that read like passes. pyproject.toml's `testpaths = ["ci"]`
+keeps pytest out of tests/ for the same reason.
+
+Usage (from server/, after uv sync --frozen --group dev):
+    .venv/bin/python -m pytest                       # everything
+    .venv/bin/python -m pytest -m "not local_data"   # what CI runs
+
+Interpreters default to the two venvs beside this directory. Override with
+BT_RUNTIME_PYTHON / BT_TRAIN_PYTHON to point at others.
+"""
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+
+SERVER_DIR = Path(__file__).resolve().parent.parent
+
+
+def _venv_python(venv: str) -> Path:
+    bindir = "Scripts" if sys.platform == "win32" else "bin"
+    exe = "python.exe" if sys.platform == "win32" else "python"
+    return SERVER_DIR / venv / bindir / exe
+
+
+PYTHONS = {
+    "runtime": Path(os.environ.get("BT_RUNTIME_PYTHON") or _venv_python(".venv")),
+    "train": Path(os.environ.get("BT_TRAIN_PYTHON") or _venv_python(".venv-train")),
+}
+
+# (script, venv). All hermetic today: each one seeds its own temp dirs or uses
+# tests/fixtures/. test_security_regressions.py does need client/dist/, which a
+# clean clone does not have, so build the client first (CI does). A script that
+# genuinely needs real recordings or a trained model goes in LOCAL_DATA_SCRIPTS
+# below, which marks it local_data so CI's `-m "not local_data"` leaves it out.
+SCRIPTS = [
+    ("tests/test_capture_loop.py", "runtime"),
+    ("tests/test_agent_runtime.py", "runtime"),
+    ("tests/test_clipping_mode.py", "runtime"),
+    ("tests/test_motion_parity.py", "runtime"),
+    ("tests/test_security_regressions.py", "runtime"),
+    ("tests/test_server_robustness.py", "runtime"),
+    ("tests/test_labeling_sidecars.py", "runtime"),
+    ("tests/test_holdout.py", "runtime"),
+    ("tests/test_deployment.py", "runtime"),
+    ("training/test_export_guards.py", "train"),
+    ("training/test_train_guards.py", "train"),
+    ("training/test_splits_metrics.py", "train"),
+    ("training/test_promote_reports.py", "runtime"),
+    ("training/test_cache_v2.py", "train"),
+    ("training/test_crossval_guards.py", "train"),
+    ("training/test_evaluate_gates.py", "train"),
+    ("training/test_augment.py", "train"),
+    ("training/test_pose_features.py", "train"),
+    ("training/test_figures.py", "train"),
+    ("training/test_learning_curve.py", "train"),
+    ("training/test_crop.py", "train"),
+]
+
+# Scripts that need real recordings or a trained model on disk.
+LOCAL_DATA_SCRIPTS = [
+    ("training/check_decode_parity.py", "train"),  # every .webm in data/recordings/
+]
+
+
+@pytest.mark.parametrize(
+    ("script", "venv"),
+    [pytest.param(s, v, id=Path(s).stem) for s, v in SCRIPTS]
+    + [pytest.param(s, v, id=Path(s).stem, marks=pytest.mark.local_data) for s, v in LOCAL_DATA_SCRIPTS],
+)
+def test_script(script: str, venv: str) -> None:
+    python = PYTHONS[venv]
+    # A missing interpreter fails rather than skips. A skip here would turn
+    # "the training venv was never built" into a green run.
+    assert python.is_file(), (
+        f"{venv} interpreter not found at {python}. Build it per docs/pipeline.md, "
+        f"or set BT_{venv.upper()}_PYTHON."
+    )
+    result = subprocess.run(
+        [str(python), script],
+        cwd=SERVER_DIR,
+        capture_output=True,
+        text=True,
+        timeout=600,
+    )
+    assert result.returncode == 0, (
+        f"{script} exited {result.returncode}\n"
+        f"--- stdout ---\n{result.stdout}\n--- stderr ---\n{result.stderr}"
+    )

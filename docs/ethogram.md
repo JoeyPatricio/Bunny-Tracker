@@ -1,10 +1,10 @@
 # Bunny Tracker ethogram (v2)
 
 This is the coding manual for labeling clips. The seven states plus
-`out_of_view` are declared in `server_py/shared/labels.py` and
+`out_of_view` are declared in `server/shared/labels.py` and
 `client/src/labels.js`. All 112 v1 clips were unlabeled on 2026-09-25 for
 recoding under these definitions. The v1 labels are archived in
-`server/labels.v1.json`.
+`data/labels.v1.json`.
 
 Freeze this document before labeling starts. If a definition changes after
 that, bump `ETHOGRAM_VERSION` in both label files, update the definition text
@@ -211,7 +211,7 @@ the centre at clip onset. If the rabbits can't be told apart, code at group
 level and say so.
 
 **Uncertainty.** The studio stores an `uncertain` flag in
-`server/labels.meta.json`. Uncertain labels stay in training. The reliability
+`data/labels.meta.json`. Uncertain labels stay in training. The reliability
 report also computes agreement without them. If no state fits, leave the clip
 unlabeled. Don't guess.
 
@@ -226,9 +226,9 @@ two people.
    clips that's 28.
 4. Re-code them blind in reliability mode. First-pass labels, suggestions,
    filenames and metadata are hidden. Re-codes go to
-   `server/labels.reliability.json`.
+   `data/labels.reliability.json`.
 5. Run `training.reliability`. It writes overall and per-class Cohen's kappa,
-   raw agreement and uncertainty counts to `server_py/models/reliability.json`.
+   raw agreement and uncertainty counts to `server/models/reliability.json`.
 
 No kappa has been measured yet. Re-code kappa is not an upper bound on
 classifier kappa because the samples and vocabularies differ (the classifier
@@ -236,16 +236,16 @@ excludes `out_of_view`).
 
 ## Prospective temporal holdout
 
-**Cut date: not set yet.** Set `HOLDOUT_CUTOFF` in `server/.env` to a date
+**Cut date: not set yet.** Set `HOLDOUT_CUTOFF` in `data/.env` to a date
 (`YYYY-MM-DD`, midnight UTC) or an ISO-8601 timestamp and restart the server.
 Until then every label goes to `labels.json`.
 
 Once set:
 
 - Clips captured before the cut are the CV pool. Labels go to
-  `server/labels.json`.
+  `data/labels.json`.
 - Clips captured on or after the cut are holdout. The studio badges them
-  HOLDOUT and saves their labels to `server/labels.holdout.json`. Nothing that
+  HOLDOUT and saves their labels to `data/labels.holdout.json`. Nothing that
   trains, tunes or calibrates reads that file.
 - Capture time comes from the UTC timestamp in the filename, then the file
   mtime. A clip with neither counts as holdout.
@@ -255,8 +255,8 @@ Once set:
   backlog cap.
 - The holdout file gets opened once, at paper freeze, to measure drift.
 
-Code is in `server_py/app/lib/holdout.py`, tested by
-`server_py/tests/test_holdout.py`.
+Code is in `server/app/lib/holdout.py`, tested by
+`server/tests/test_holdout.py`.
 
 ## Migrating the 112 v1 clips
 
@@ -267,7 +267,7 @@ can't be mapped because the information was never recorded. Don't write a
 migration script. Re-watch all 112 clips under v2 (about an hour) so the whole
 dataset is coded under one protocol.
 
-`server/labels.json` stays flat:
+`data/labels.json` stays flat:
 
 ```json
 {
@@ -275,19 +275,19 @@ dataset is coded under one protocol.
 }
 ```
 
-Coder, time, ethogram version and uncertainty go in `server/labels.meta.json`.
+Coder, time, ethogram version and uncertainty go in `data/labels.meta.json`.
 `training.recoding_report` cross-tabs v1 against v2.
 
 ## Where the vocabulary lives
 
 `LABELS` order matters because it maps classifier output indices to names.
 
-- `server_py/shared/labels.py` (`LABELS`, `LABEL_PHRASE`)
+- `server/shared/labels.py` (`LABELS`, `LABEL_PHRASE`)
 - `client/src/labels.js` (`LABELS`, `LABEL_COLOR`, `LABEL_PHRASE`, `LABEL_DEFINITION`)
-- `server_py/app/lib/valid_labels.py` (server-side validation)
-- `server_py/app/routers/notify.py` (alert email wording)
+- `server/app/lib/valid_labels.py` (server-side validation)
+- `server/app/routers/notify.py` (alert email wording)
 - `client/src/components/LabelingStudio.jsx` and `RecordingGallery.jsx`
-- `server_py/agent/capture.py` (`interest_score` treats the resting states as
+- `server/agent/capture.py` (`interest_score` treats the resting states as
   uninteresting)
 
 The old five-class ONNX head can't serve v2, so a retrain is required.
