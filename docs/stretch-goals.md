@@ -1,7 +1,11 @@
 # Stretch goals: Pi migration, water tracking, and the paper
 
-Status (2026-10-19): the Phase A deployment files are in `deploy/pi/` and the
-agent's transient paths are configurable. None of it has run on a Pi yet.
+Status (2026-10-29): Phase A is deployed. The server, agent, and tunnel run
+on the Pi under systemd, survive a reboot, and serve
+https://bunny-tracker.app. The Windows PC is gone, replaced by a Linux PC
+that keeps the clip archive and trains. n8n was dropped. What goal 1 still
+lacks is an alert email, which needs a promoted model and the `EMAIL_*` keys,
+plus `bench_pi` latency and the week of burn-in.
 [deploy/pi/README.md](../deploy/pi/README.md) is the install procedure. If
 this plan and that guide disagree, the guide wins.
 
@@ -42,7 +46,8 @@ start any time.
 - 5kg load cell, HX711 board and jumper wires
 - BME280 I2C sensor with 30cm+ of wire so it sits away from the Pi's heat
 - A heavy ceramic bowl, two rigid plates and M4/M5 standoffs for the load cell
-- The existing onn 4K USB webcam
+- The existing onn 4K USB webcam. Deployed with an Arducam B0590 1080P
+  Day/Night USB camera instead, for IR night footage.
 
 **Storage writes are the real constraint.** The rolling 12s segments write
 about 10GB/day and the live-view JPEG gets rewritten 12 times a second (about
@@ -86,6 +91,8 @@ uncompressed 4K and motion detection sees a frozen scene.
   weight.
 
 **Tunnel** is migrated, not recreated, so DNS and the tunnel ID don't change.
+In the event the Windows install was wiped with the credentials file on it, so
+the Pi runs a new tunnel, `bunnycam-pi`, and the CNAME was repointed.
 
 **n8n is optional.** With `ALERT_WEBHOOK_URL` unset, the agent sends mail
 through the server's `POST /api/notify` using `smtplib`.
