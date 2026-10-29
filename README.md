@@ -58,7 +58,7 @@ cited as accuracy.
 | Capture/ML  | ffmpeg (`imageio-ffmpeg`), ONNX Runtime, pixel-diff motion detection |
 | Training    | PyTorch + `timm`, offline CLI script                                |
 | Alerts      | `smtplib` (Gmail SMTP)                                              |
-| Process mgmt| pm2 on Windows (server, agent, tunnel, n8n), systemd on the Pi       |
+| Process mgmt| systemd on the Raspberry Pi (server, agent, tunnel), `run.sh` for dev |
 | Deployment  | Cloudflare named tunnel (HTTPS, custom domain)                      |
 
 ---
@@ -98,16 +98,18 @@ EMAIL_PASS=xxxx xxxx xxxx xxxx
 NOTIFY_TO=you@example.com
 NOTIFY_COOLDOWN_MINUTES=10
 
-# Dashboard login (wrap in quotes if it contains a # )
+# Dashboard login. Double quotes, and no " or \ inside: python-dotenv skips a
+# line it can't parse, and the login then reports the password as not set.
 ADMIN_PASSWORD="your-password"
 
 # Camera agent's own service credential (not the human login) — any random
 # 64-char hex string, e.g. `python -c "import secrets; print(secrets.token_hex(32))"`
 AGENT_TOKEN="generate-your-own-random-token"
 
-# Camera agent, PC defaults shown; for a Raspberry Pi use v4l2 / /dev/video0
-CAMERA_FORMAT=dshow
-CAMERA_INPUT=video=Your Webcam Name
+# Camera agent, Linux / Raspberry Pi shown; on Windows use dshow and
+# video=Your Webcam Name
+CAMERA_FORMAT=v4l2
+CAMERA_INPUT=/dev/v4l/by-id/usb-Your_Camera-video-index0
 AGENT_INTEREST_THRESHOLD=60         # 0-100; how far from "resting" before it's worth an email
 AGENT_MOTION_FLOOR=4
 AGENT_ALERT_STREAK=3
@@ -122,20 +124,17 @@ CLIPPING_MAX_UNLABELED=500          # auto-stop at this many unlabeled clips
 CLIPPING_MIN_FREE_GB=10             # auto-stop below this much free disk
 ```
 
-Find your camera name (Windows): `ffmpeg -f dshow -list_devices true -i dummy`.
+Find your camera on Linux with `ls -l /dev/v4l/by-id/` (use the
+`video-index0` entry), or on Windows with
+`ffmpeg -f dshow -list_devices true -i dummy`.
 
 ### 3. Run
 
-Production / 24-7 on the Windows PC (server, capture agent, tunnel, and n8n
-under pm2):
+Production runs 24/7 on a Raspberry Pi under the systemd units in
+`deploy/pi/`. See [Raspberry Pi](#raspberry-pi).
 
-```bash
-pm2 start ecosystem.config.cjs
-pm2 save
-```
-
-On a Raspberry Pi, use the systemd units in `deploy/pi/` instead. See
-[Raspberry Pi](#raspberry-pi).
+For local development, `./run.sh` starts the server and agent in the
+foreground (`./run.sh server` for the dashboard without a camera).
 
 The dashboard is at http://localhost:3001. Log in with `ADMIN_PASSWORD` to reach
 the camera, labeling, and training tabs. Without login you see the public demo.
@@ -258,8 +257,8 @@ CAMERA_INPUT=testsrc2=size=640x480:rate=15
 
 ```
 BunnyTracker/
-├── ecosystem.config.cjs        # pm2 process definitions (server, agent, tunnel, n8n)
-├── deploy/pi/                  # systemd units and migration guide for the Raspberry Pi
+├── run.sh                      # Foreground dev launcher (server + agent)
+├── deploy/pi/                  # systemd units, install guide, and PC sync for the Raspberry Pi
 ├── client/                     # React + Vite frontend
 │   └── src/
 │       └── components/
@@ -294,11 +293,12 @@ BunnyTracker/
 
 ## Deployment
 
-On the Windows PC, four processes run under pm2 and auto-start at login:
-`bunnycam-server`, `bunnycam-agent` (both Python), `bunnycam-tunnel`
-(Cloudflare), and `bunnycam-n8n`. The tunnel serves the custom domain over
-public HTTPS without any router port forwarding. The Windows server still
-binds `0.0.0.0:3001`, so it is reachable from the LAN.
+Production is a Raspberry Pi 5, where systemd runs three services:
+`bunnycam-server`, `bunnycam-agent` (both Python), and `bunnycam-tunnel`
+(Cloudflare). The tunnel serves the custom domain over public HTTPS without
+any router port forwarding. The server listens on loopback only, behind the
+tunnel. A Linux PC holds the clip archive and does the training, and the
+finished model goes back to the Pi.
 
 Security: cookie session auth (Secure over HTTPS) for the human login, a
 separate service-token (`AGENT_TOKEN`) for the camera agent so it can never
@@ -307,13 +307,13 @@ a server-enforced private live stream.
 
 ### Raspberry Pi
 
-[deploy/pi/README.md](deploy/pi/README.md) covers the Pi install and the move
-from the PC. systemd runs the server, agent, and tunnel. The runtime is the
-same `uv sync --frozen --python 3.14` as above, not the OS Python. Rolling
-segments and the live frame go to tmpfs under `/run/bunnycam`. The server
-listens on loopback behind the tunnel, and data, model bundle, and tunnel
-credentials transfer as described there. Email can go straight through SMTP
-with no n8n. None of this has been run on Pi hardware yet. The Pi also has no
+[deploy/pi/README.md](deploy/pi/README.md) covers the Pi install, updating
+it, and the PC side. The runtime is the same `uv sync --frozen --python 3.14`
+as above, not the OS Python. Rolling segments and the live frame go to tmpfs
+under `/run/bunnycam`. The Pi has no Node, so `client/dist` is built on the
+PC and copied over. Labeling happens on the Pi in the dashboard, and
+`deploy/pi/pull-data.sh` copies clips and labels to the PC before training.
+Email goes straight through SMTP, n8n is no longer used. The Pi has no
 classifier until a seven-class model is promoted (see Model status above).
 
 ---
@@ -323,8 +323,6 @@ classifier until a seven-class model is promoted (see Model status above).
 Planned stretch goals (see [docs/stretch-goals.md](docs/stretch-goals.md) for
 the full plan):
 
-- **Permanent hardware**: move the whole stack (server, agent, tunnel, n8n)
-  to a Raspberry Pi 5 so it runs 24/7 without the PC.
 - **Water intake tracking**: a load cell under the water bowl measures
   drinking in ml, with low-level and low-intake alerts.
 - **Room environment**: a BME280 on the same Pi tracks temperature and

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Start Bunny Tracker without pm2: the FastAPI server and the capture agent,
 # both on the runtime venv's own interpreter (server/.venv), the same two
-# processes ecosystem.config.cjs defines. Ctrl+C stops both.
+# processes the Pi's systemd units run. Ctrl+C stops both.
 #
 #   ./run.sh          server + agent   (dashboard on http://localhost:3001)
 #   ./run.sh server   server only      (dashboard, no camera)
