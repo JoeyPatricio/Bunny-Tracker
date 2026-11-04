@@ -274,6 +274,24 @@ export default function AgentFeed({ onClipSaved }) {
           .agent-fs-btn,
           .agent-record-btn { padding: 7px 10px; }
         }
+        .agent-feed:is(.css-full, :fullscreen) .agent-badge {
+          top: max(12px, env(safe-area-inset-top));
+          left: max(12px, env(safe-area-inset-left));
+        }
+        .agent-feed:is(.css-full, :fullscreen) .agent-record-btn {
+          top: max(12px, env(safe-area-inset-top));
+          right: max(12px, env(safe-area-inset-right));
+        }
+        .agent-feed:is(.css-full, :fullscreen) .agent-fs-btn {
+          bottom: max(12px, env(safe-area-inset-bottom));
+          right: max(12px, env(safe-area-inset-right));
+        }
+        @media (max-width: 640px), (pointer: coarse) {
+          .agent-record-btn, .agent-fs-btn { min-height: 44px; min-width: 44px; }
+          .agent-pred { max-width: calc(100% - 80px); flex-wrap: wrap; gap: 2px 8px; }
+          .agent-pred-label { font-size: 12px; overflow-wrap: anywhere; }
+          .agent-flash { top: 60px; max-width: calc(100% - 24px); }
+        }
       `}</style>
     </div>
   )

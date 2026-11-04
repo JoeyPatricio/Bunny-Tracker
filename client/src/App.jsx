@@ -343,7 +343,7 @@ export default function App() {
         /* Layout */
         .app-main {
           display: grid;
-          grid-template-columns: 1fr 320px;
+          grid-template-columns: minmax(0, 1fr) 320px;
           gap: 20px;
           padding: 20px 28px 0;
           flex: 1;
@@ -375,8 +375,8 @@ export default function App() {
           }
         }
 
-        /* Mobile — stack the header into rows so nothing overflows */
-        @media (max-width: 640px) {
+        /* Stack the header before its controls run out of room. */
+        @media (max-width: 1200px) {
           .app-header {
             height: auto;
             flex-direction: column;
@@ -392,16 +392,17 @@ export default function App() {
           .header-tabs {
             margin-left: 0;
             width: 100%;
-            height: 42px;
+            height: 46px;
             border: 1px solid var(--border);
             border-radius: var(--radius);
             overflow-x: auto;
             -webkit-overflow-scrolling: touch;
           }
           .header-tab {
-            flex: 1 0 auto;
+            flex: 1 0 0;
+            min-width: 0;
             text-align: center;
-            padding: 0 14px;
+            padding: 0 6px;
             font-size: 11px;
             white-space: nowrap;
             border-bottom: none;
@@ -421,6 +422,16 @@ export default function App() {
           }
 
           .app-main { padding: 14px 12px 0; gap: 14px; }
+        }
+        @media (max-width: 420px) {
+          .header-tabs { display: grid; grid-template-columns: 1fr 1fr; height: auto; }
+          .header-tab { min-height: 44px; }
+          .header-tab:nth-child(2) { border-right: none; }
+          .header-tab:nth-child(-n+2) { border-bottom: 1px solid var(--border); }
+        }
+        .col-main, .col-side { min-width: 0; }
+        @media (max-width: 1200px) {
+          .monitor-toggle, .logout-btn { min-height: 44px; }
         }
       `}</style>
     </div>

@@ -159,6 +159,8 @@ export default function TrainingStudio() {
           color: var(--accent);
         }
         .ts-metric-label { font-size: 10px; color: var(--text-muted); margin-top: 2px; }
+        .ts-header { flex-wrap: wrap; }
+        .training-studio { width: 100%; }
       `}</style>
     </div>
   )

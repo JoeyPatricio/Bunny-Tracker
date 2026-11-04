@@ -12,7 +12,7 @@ export default function DemoView({ onLogin }) {
   const [loginError, setLoginError] = useState('')
 
   // Load curated highlight clips from the public endpoint. The server returns
-  // only non-normal labeled clips, so the full archive is never exposed here.
+  // only owner-approved, non-normal labeled clips, so the full archive is never exposed here.
   useEffect(() => {
     fetch('/api/recordings/highlights')
       .then(r => r.json())
@@ -141,7 +141,7 @@ export default function DemoView({ onLogin }) {
             const base = baseOf(clip.label)
             return (
               <div key={clip.filename} className="demo-clip">
-                <video controls muted preload="metadata" src={`/recordings/${clip.filename}`} />
+                <video controls playsInline muted preload="metadata" src={`/recordings/${clip.filename}`} />
                 <span
                   className="demo-clip-label"
                   style={{ color: BASE_COLOR[base], borderColor: BASE_COLOR[base] }}
@@ -345,6 +345,14 @@ export default function DemoView({ onLogin }) {
           cursor: pointer;
         }
         .demo-login-error { color: #ff6b6b; font-size: 11px; }
+        .demo-login-form { max-width: 100%; flex-wrap: wrap; justify-content: center; }
+        .demo-login-form input { min-width: 0; max-width: 100%; }
+        .demo-login-error { flex-basis: 100%; }
+        @media (max-width: 640px) {
+          .demo { padding: 24px 12px 40px; }
+          .demo-login-form input { font-size: 16px; }
+          .demo-login-form input, .demo-login-form button, .demo-login-link { min-height: 44px; }
+        }
       `}</style>
     </div>
   )

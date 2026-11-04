@@ -125,7 +125,7 @@ export default function RecordingGallery({ refreshTrigger }) {
           return (
             <div key={recording.filename} className="recording-item">
               <div className="recording-thumb" style={{ borderColor: lbl ? color + '66' : 'var(--border)' }}>
-                <video controls muted preload="none" src={`/recordings/${recording.filename}`} />
+                <video controls playsInline muted preload="none" src={`/recordings/${recording.filename}`} />
                 {lbl && (
                   <div className="recording-label-badge" style={{ color, borderColor: color + '88' }}>
                     {labelDisplay(lbl)}
@@ -271,6 +271,12 @@ export default function RecordingGallery({ refreshTrigger }) {
           transition: color 0.15s;
         }
         .delete-btn:hover { color: var(--red); }
+        @media (max-width: 640px), (pointer: coarse) {
+          .recordings-header { flex-wrap: wrap; }
+          .recordings-header-right { min-width: 0; flex-wrap: wrap; }
+          .recordings .filter-select { min-height: 44px; max-width: 100%; }
+          .recordings .delete-btn { min-width: 44px; min-height: 44px; }
+        }
       `}</style>
     </div>
   )

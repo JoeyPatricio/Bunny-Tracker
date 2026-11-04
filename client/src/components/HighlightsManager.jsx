@@ -7,8 +7,8 @@ const fmtDate = (iso) =>
 
 /**
  * HighlightsManager
- * Owner-only tool to curate the public front page. The homepage auto-features
- * every non-normal clip; here the owner can hide any they don't want shown.
+ * Owner-only tool to curate the public front page. Clips stay private until
+ * the owner explicitly selects Show, and Hide removes them from the homepage.
  */
 export default function HighlightsManager() {
   const [items, setItems]   = useState([])
@@ -59,10 +59,10 @@ export default function HighlightsManager() {
         <div>
           <div className="hl-title">Homepage Highlights</div>
           <p className="hl-sub">
-            These are the clips shown on your public front page
+            Choose which clips appear on your public front page
             (<a href="/" target="_blank" rel="noreferrer">bunny-tracker.app</a>).
-            Every non-normal clip is featured automatically — hide any you don't
-            want the public to see.
+            Clips are hidden by default. Select Show to make a clip public,
+            or Hide to remove it from the public page.
           </p>
         </div>
         <div className="hl-stats">
@@ -198,6 +198,10 @@ export default function HighlightsManager() {
         @media (max-width: 640px) {
           .hl { padding: 16px 14px; }
           .hl-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+        }
+        @media (max-width: 640px), (pointer: coarse) {
+          .hl-meta, .hl-stats { flex-wrap: wrap; }
+          .hl-toggle { min-height: 44px; }
         }
       `}</style>
     </div>

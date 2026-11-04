@@ -6,7 +6,7 @@ first, each annotated with its current demo-page visibility.
 import asyncio
 
 from app.config import RECORDINGS_DIR
-from app.lib.hidden_store import read_hidden
+from app.lib.hidden_store import read_approved
 from app.lib.iso_time import to_iso_millis
 from app.lib.label_store import read_labels
 from shared.labels import NON_HIGHLIGHT
@@ -17,10 +17,7 @@ async def list_highlights(include_hidden: bool) -> list[dict]:
         labels = await read_labels()
     except Exception:
         labels = {}
-    try:
-        hidden = await read_hidden()
-    except Exception:
-        hidden = set()
+    approved = await read_approved()
 
     files = [f.name for f in await asyncio.to_thread(lambda: list(RECORDINGS_DIR.iterdir())) if f.name.endswith(".webm")]
 
@@ -29,7 +26,7 @@ async def list_highlights(include_hidden: bool) -> list[dict]:
         label = labels.get(filename)
         if not label or label in NON_HIGHLIGHT:
             continue
-        if not include_hidden and filename in hidden:
+        if not include_hidden and filename not in approved:
             continue
         stat = await asyncio.to_thread((RECORDINGS_DIR / filename).stat)
         items.append({
@@ -37,7 +34,7 @@ async def list_highlights(include_hidden: bool) -> list[dict]:
             "label": label,
             "createdAt": to_iso_millis(stat.st_mtime),
             "size": stat.st_size,
-            "hidden": filename in hidden,
+            "hidden": filename not in approved,
         })
 
     items.sort(key=lambda item: item["createdAt"], reverse=True)

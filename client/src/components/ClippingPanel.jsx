@@ -404,6 +404,11 @@ export default function ClippingPanel({ clippingOn, onToggle, onClipSaved }) {
         .clip-bar-fill.ok     { background: var(--green); }
         .clip-bar-fill.warn   { background: #ffb347; }
         .clip-bar-fill.danger { background: var(--red); }
+        @media (max-width: 640px) {
+          .clip-head, .clip-label, .clip-banner { flex-wrap: wrap; }
+          .clip-label { gap: 4px 12px; }
+          .clip-field input[type="range"], .clip-check, .clip-rearm { min-height: 44px; }
+        }
       `}</style>
     </div>
   )

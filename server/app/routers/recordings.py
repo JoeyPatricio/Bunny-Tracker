@@ -98,7 +98,7 @@ async def _current_usage() -> dict:
 
 @router.get("/highlights")
 async def get_highlights():
-    """PUBLIC: only non-normal labeled clips the owner has not hidden, for the
+    """PUBLIC: only non-normal labeled clips the owner has explicitly approved, for the
     demo page. Never exposes the full archive or unlabeled/resting footage."""
     try:
         items = await list_highlights(include_hidden=False)

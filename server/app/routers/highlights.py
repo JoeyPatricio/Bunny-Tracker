@@ -1,7 +1,7 @@
 """Port of server/routes/highlights.js."""
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, StrictBool
 
 from app.auth import is_authed
 from app.lib.hidden_store import set_hidden
@@ -12,7 +12,7 @@ router = APIRouter()
 
 
 class HighlightBody(BaseModel):
-    hidden: bool = False
+    hidden: StrictBool
 
 
 @router.get("")

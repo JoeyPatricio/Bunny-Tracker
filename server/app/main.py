@@ -20,7 +20,7 @@ from app.config import (
 )
 from app.lib import holdout
 from app.lib.backup_labels import start_label_backups
-from app.lib.hidden_store import read_hidden
+from app.lib.hidden_store import read_approved
 from app.lib.label_store import read_labels
 from app.lib.recording_name import is_recording_filename
 from app.rate_limit import public_limiter
@@ -69,7 +69,7 @@ app.add_middleware(SecurityHeadersMiddleware)
 
 # Guarded recording file access. Logged-in admin gets the full archive;
 # logged-out demo visitors may only fetch curated non-normal highlight clips
-# that the owner has not hidden. is_recording_filename (no slashes) blocks
+# that the owner has explicitly approved. is_recording_filename (no slashes) blocks
 # path traversal regardless of how a %2F sequence is decoded by the router.
 @app.get("/recordings/{filename:path}")
 async def get_recording(filename: str, request: Request):
@@ -81,13 +81,13 @@ async def get_recording(filename: str, request: Request):
         except Exception:
             labels_map = {}
         try:
-            hidden = await read_hidden()
-        except Exception:
-            hidden = set()
+            approved = await read_approved()
+        except (OSError, ValueError):
+            return JSONResponse(status_code=503, content={"error": "Highlight visibility unavailable"})
         label = labels_map.get(filename)
         # A hidden clip must not be reachable by guessing its URL, or "hide
         # from the demo" would only hide it from the listing.
-        if not label or label in NON_HIGHLIGHT or filename in hidden:
+        if not label or label in NON_HIGHLIGHT or filename not in approved:
             return JSONResponse(status_code=403, content={"error": "Private. Log in to view this clip."})
     target = RECORDINGS_DIR / filename
     if not target.is_file():

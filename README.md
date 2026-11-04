@@ -34,7 +34,9 @@ private to the owner).
 - **Web app**: Camera (live feed + predictions), Label Studio (label clips),
   and Training (a read-only panel showing the deployed model's metadata). A
   separate public demo page shows highlights and a live behavior feed without
-  exposing the camera.
+  exposing the camera. Labeling a clip does not publish it. Select Show in
+  Highlights to make it public. After upgrading, previously auto-shown clips
+  also require Show before they appear publicly.
 
 **Model status:** there is currently no usable classifier. The behavior
 vocabulary moved to ethogram v2 (7 classes, see
@@ -275,7 +277,7 @@ BunnyTracker/
 │   ├── model/                  # Retired tfjs artifacts. No Python code path
 │   │                           #   can run them; still served read-only at
 │   │                           #   /model/* and covered by the traversal tests
-│   ├── labels.json, hidden.json, monitor.json, activity-log.json, ...
+│   ├── labels.json, approved_highlights.json, monitor.json, activity-log.json, ...
 │   └── agent/segments/         # Rolling capture segments
 │
 └── server/                     # Python backend + agent + training

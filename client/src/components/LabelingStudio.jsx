@@ -280,6 +280,169 @@ function ImportPanel({ onImportDone }) {
           )}
         </div>
       )}
+      <style>{`
+        /* Import panel */
+        .import-panel {
+          border: 1px solid var(--border);
+          border-radius: var(--radius-lg);
+          overflow: hidden;
+          background: var(--bg-card);
+        }
+
+        .import-toggle {
+          width: 100%;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 10px 16px;
+          background: none;
+          border: none;
+          color: var(--text-secondary);
+          font-family: var(--font-mono);
+          font-size: 12px;
+          cursor: pointer;
+          text-align: left;
+          transition: color 0.15s;
+        }
+
+        .import-toggle:hover { color: var(--text-primary); }
+
+        .import-toggle-sub {
+          font-size: 10px;
+          color: var(--text-muted);
+          letter-spacing: 0.05em;
+        }
+
+        .import-body {
+          padding: 12px 16px 16px;
+          border-top: 1px solid var(--border);
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+        }
+
+        .drop-zone {
+          border: 2px dashed var(--border);
+          border-radius: var(--radius-lg);
+          padding: 28px 20px;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 6px;
+          cursor: pointer;
+          transition: all 0.2s;
+          text-align: center;
+        }
+
+        .drop-zone:hover,
+        .drop-zone-active {
+          border-color: var(--accent-soft);
+          background: rgba(200, 169, 110, 0.04);
+        }
+
+        .drop-icon { font-size: 28px; }
+
+        .drop-text {
+          font-size: 13px;
+          color: var(--text-secondary);
+        }
+
+        .drop-sub {
+          font-size: 10px;
+          color: var(--text-muted);
+        }
+
+        /* File list */
+        .import-file-list {
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+          max-height: 180px;
+          overflow-y: auto;
+        }
+
+        .import-file-row {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 5px 8px;
+          border-radius: var(--radius);
+          background: var(--bg-surface);
+          font-size: 11px;
+          font-family: var(--font-mono);
+        }
+
+        .import-file-icon { width: 16px; text-align: center; flex-shrink: 0; }
+        .import-file-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-secondary); }
+        .import-file-size { color: var(--text-muted); flex-shrink: 0; }
+        .import-file-err  { color: var(--red); font-size: 10px; flex-shrink: 0; }
+
+        .status-ok         { opacity: 0.6; }
+        .status-converting { opacity: 0.8; }
+        .status-error      .import-file-name { color: var(--red); }
+
+        .import-file-remove {
+          background: none;
+          border: none;
+          color: var(--text-muted);
+          font-size: 10px;
+          cursor: pointer;
+          padding: 0 2px;
+          flex-shrink: 0;
+          transition: color 0.15s;
+        }
+
+        .import-file-remove:hover { color: var(--red); }
+
+        /* Import actions */
+        .import-actions {
+          display: flex;
+          justify-content: flex-end;
+          gap: 8px;
+        }
+
+        .import-clear-btn {
+          font-size: 11px;
+          padding: 5px 12px;
+          border-radius: var(--radius);
+          background: none;
+          border: 1px solid var(--border);
+          color: var(--text-muted);
+          font-family: var(--font-mono);
+          cursor: pointer;
+          transition: all 0.15s;
+        }
+
+        .import-clear-btn:hover { color: var(--text-secondary); border-color: var(--border-light); }
+
+        .import-upload-btn {
+          font-size: 11px;
+          padding: 5px 16px;
+          border-radius: var(--radius);
+          background: var(--accent);
+          border: 1px solid var(--accent);
+          color: var(--bg-deep);
+          font-family: var(--font-mono);
+          font-weight: 600;
+          cursor: pointer;
+          transition: all 0.15s;
+        }
+
+        .import-upload-btn:hover:not(:disabled) {
+          background: color-mix(in srgb, var(--accent) 85%, white);
+        }
+
+        .import-upload-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+        .import-toggle { flex-wrap: wrap; gap: 6px; }
+        .import-file-row { flex-wrap: wrap; }
+        .import-file-err { flex-shrink: 1; overflow-wrap: anywhere; }
+        .import-actions { flex-wrap: wrap; }
+        @media (max-width: 640px), (pointer: coarse) {
+          .import-panel button { min-height: 44px; }
+          .import-file-remove { min-width: 44px; }
+        }
+      `}</style>
     </div>
   );
 }
@@ -785,9 +948,11 @@ export default function LabelingStudio() {
         <ImportPanel onImportDone={loadData} />
         <style>{`
           .studio-empty { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; min-height:400px; color:var(--text-muted); }
-          .studio-empty span { font-size:48px; }
-          .studio-empty p { font-size:14px; }
+          .studio-empty > span { font-size:48px; }
+          .studio-empty > p { font-size:14px; }
           .studio-empty .sub { font-size:12px; }
+          .studio-empty { padding: 20px 12px; text-align: center; }
+          .studio-empty .import-panel { width: 100%; max-width: 640px; }
         `}</style>
       </div>
     );
@@ -1129,7 +1294,7 @@ export default function LabelingStudio() {
           </div>
 
           {/* ── Filmstrip ─────────────────────────────────────────────────── */}
-          <div className="filmstrip">
+          <div className={`filmstrip${openMenu ? " has-menu" : ""}`}>
             {filtered.map((r, i) => {
               const lbl = activeLabels[r.filename];
               const unsure = Boolean(activeMeta[r.filename]?.uncertain);
@@ -1180,6 +1345,8 @@ export default function LabelingStudio() {
                         setOpenMenu(menuOpen ? null : r.filename);
                       }}
                       title="Options"
+                      aria-label={`Options for clip ${i + 1}`}
+                      aria-expanded={menuOpen}
                     >
                       ⋯
                     </button>
@@ -1388,7 +1555,7 @@ export default function LabelingStudio() {
         /* Body layout */
         .studio-body {
           display: grid;
-          grid-template-columns: 1fr 180px;
+          grid-template-columns: minmax(0, 1fr) 180px;
           gap: 16px;
           align-items: start;
         }
@@ -1520,7 +1687,7 @@ export default function LabelingStudio() {
 
         .label-buttons {
           display: grid;
-          grid-template-columns: 1fr 1fr;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
           gap: 10px;
         }
 
@@ -1749,7 +1916,8 @@ export default function LabelingStudio() {
         }
 
         .strip-thumb:hover        { border-color: var(--border-light); }
-        .strip-thumb:hover .strip-menu-btn { opacity: 1; }
+        .strip-thumb:hover .strip-menu-btn,
+        .strip-thumb:focus-within .strip-menu-btn { opacity: 1; }
 
         /* Three-dot button */
         .strip-menu-btn {
@@ -1846,159 +2014,6 @@ export default function LabelingStudio() {
         }
 
 
-        /* Import panel */
-        .import-panel {
-          border: 1px solid var(--border);
-          border-radius: var(--radius-lg);
-          overflow: hidden;
-          background: var(--bg-card);
-        }
-
-        .import-toggle {
-          width: 100%;
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          padding: 10px 16px;
-          background: none;
-          border: none;
-          color: var(--text-secondary);
-          font-family: var(--font-mono);
-          font-size: 12px;
-          cursor: pointer;
-          text-align: left;
-          transition: color 0.15s;
-        }
-
-        .import-toggle:hover { color: var(--text-primary); }
-
-        .import-toggle-sub {
-          font-size: 10px;
-          color: var(--text-muted);
-          letter-spacing: 0.05em;
-        }
-
-        .import-body {
-          padding: 12px 16px 16px;
-          border-top: 1px solid var(--border);
-          display: flex;
-          flex-direction: column;
-          gap: 10px;
-        }
-
-        .drop-zone {
-          border: 2px dashed var(--border);
-          border-radius: var(--radius-lg);
-          padding: 28px 20px;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          gap: 6px;
-          cursor: pointer;
-          transition: all 0.2s;
-          text-align: center;
-        }
-
-        .drop-zone:hover,
-        .drop-zone-active {
-          border-color: var(--accent-soft);
-          background: rgba(200, 169, 110, 0.04);
-        }
-
-        .drop-icon { font-size: 28px; }
-
-        .drop-text {
-          font-size: 13px;
-          color: var(--text-secondary);
-        }
-
-        .drop-sub {
-          font-size: 10px;
-          color: var(--text-muted);
-        }
-
-        /* File list */
-        .import-file-list {
-          display: flex;
-          flex-direction: column;
-          gap: 4px;
-          max-height: 180px;
-          overflow-y: auto;
-        }
-
-        .import-file-row {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          padding: 5px 8px;
-          border-radius: var(--radius);
-          background: var(--bg-surface);
-          font-size: 11px;
-          font-family: var(--font-mono);
-        }
-
-        .import-file-icon { width: 16px; text-align: center; flex-shrink: 0; }
-        .import-file-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-secondary); }
-        .import-file-size { color: var(--text-muted); flex-shrink: 0; }
-        .import-file-err  { color: var(--red); font-size: 10px; flex-shrink: 0; }
-
-        .status-ok         { opacity: 0.6; }
-        .status-converting { opacity: 0.8; }
-        .status-error      .import-file-name { color: var(--red); }
-
-        .import-file-remove {
-          background: none;
-          border: none;
-          color: var(--text-muted);
-          font-size: 10px;
-          cursor: pointer;
-          padding: 0 2px;
-          flex-shrink: 0;
-          transition: color 0.15s;
-        }
-
-        .import-file-remove:hover { color: var(--red); }
-
-        /* Import actions */
-        .import-actions {
-          display: flex;
-          justify-content: flex-end;
-          gap: 8px;
-        }
-
-        .import-clear-btn {
-          font-size: 11px;
-          padding: 5px 12px;
-          border-radius: var(--radius);
-          background: none;
-          border: 1px solid var(--border);
-          color: var(--text-muted);
-          font-family: var(--font-mono);
-          cursor: pointer;
-          transition: all 0.15s;
-        }
-
-        .import-clear-btn:hover { color: var(--text-secondary); border-color: var(--border-light); }
-
-        .import-upload-btn {
-          font-size: 11px;
-          padding: 5px 16px;
-          border-radius: var(--radius);
-          background: var(--accent);
-          border: 1px solid var(--accent);
-          color: var(--bg-deep);
-          font-family: var(--font-mono);
-          font-weight: 600;
-          cursor: pointer;
-          transition: all 0.15s;
-        }
-
-        .import-upload-btn:hover:not(:disabled) {
-          background: color-mix(in srgb, var(--accent) 85%, white);
-        }
-
-        .import-upload-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-
         /* Responsive */
         @media (max-width: 900px) {
           .studio-body {
@@ -2016,6 +2031,25 @@ export default function LabelingStudio() {
 
           .label-area { grid-template-columns: 1fr; }
           .def-panel { position: static; }
+        }
+        .player-section, .filmstrip, .label-btn-text { min-width: 0; }
+        .filter-tabs { overflow-x: auto; }
+        .filter-tab { flex-shrink: 0; white-space: nowrap; }
+        .clip-actions { flex-wrap: wrap; }
+        @media (max-width: 900px) {
+          .filmstrip.has-menu { padding-bottom: 110px; }
+        }
+        @media (max-width: 640px) {
+          .studio { padding: 14px 12px; }
+          .label-buttons { grid-template-columns: minmax(0, 1fr); }
+          .studio button { min-height: 44px; }
+          .coder-field input { min-height: 44px; font-size: 16px; }
+          .no-clips { padding: 32px 12px; }
+        }
+        @media (max-width: 640px), (hover: none), (pointer: coarse) {
+          .strip-menu-btn { opacity: 1; width: 44px; height: 44px; }
+          .strip-menu { top: 49px; }
+          .strip-menu-item { min-height: 44px; }
         }
       `}</style>
     </div>

@@ -29,6 +29,7 @@ data/backups/
 data/activity-log.json*
 data/monitor.json*
 data/hidden.json*
+data/approved_highlights.json*
 
 # MobileNet backbone (fetch with scripts/download-mobilenet.mjs)
 data/model/mobilenet/

@@ -48,6 +48,7 @@ SCRIPTS = [
     ("tests/test_clipping_mode.py", "runtime"),
     ("tests/test_motion_parity.py", "runtime"),
     ("tests/test_security_regressions.py", "runtime"),
+    ("tests/test_highlight_visibility.py", "runtime"),
     ("tests/test_server_robustness.py", "runtime"),
     ("tests/test_labeling_sidecars.py", "runtime"),
     ("tests/test_holdout.py", "runtime"),
