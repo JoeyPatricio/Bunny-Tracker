@@ -5,8 +5,6 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from shared.paths import segment_dir
-
 APP_DIR = Path(__file__).resolve().parent
 SERVER_DIR = APP_DIR.parent
 ROOT_DIR = SERVER_DIR.parent  # BunnyTracker/
@@ -22,7 +20,9 @@ SESSIONS_FILE = DATA_DIR / "sessions.json"
 
 load_dotenv(DATA_DIR / ".env")
 
-SEGMENTS_DIR = segment_dir()
+# Read after load_dotenv, and with the same default as agent/src/main.cpp, so
+# the Record endpoint finds the segments the agent writes.
+SEGMENTS_DIR = Path(os.environ.get("AGENT_SEGMENT_DIR", DATA_DIR / "agent" / "segments"))
 
 PORT = int(os.environ.get("PY_PORT", "3002"))
 

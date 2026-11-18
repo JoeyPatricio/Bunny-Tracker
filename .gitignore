@@ -41,7 +41,6 @@ server/models/**/cache/
 # from the owner's own footage and have no business in a public repo.
 server/models/**/*.npy
 server/models/**/*.npz
-server/agent/live_frame.jpg
 __pycache__/
 *.pyc
 .pytest_cache/

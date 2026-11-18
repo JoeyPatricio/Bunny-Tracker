@@ -67,7 +67,7 @@ echo 'deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudf
 sudo apt update && sudo apt install -y cloudflared
 ```
 
-## 2. Python runtime
+## 2. Server runtime and agent build
 
 The project requires Python 3.12 to 3.14, and the lock pins NumPy and ONNX
 Runtime builds that have no cp311 wheels. Don't build the venv from the OS
@@ -87,6 +87,22 @@ ships with the package and is unused. uv installs the interpreter under
 don't delete that directory. Runtime installs leave out the `dev` and `train`
 groups. The installer's advice to add `~/.local/bin` to `PATH` doesn't apply:
 the commands call uv by its full path, and `bunnycam` has no login shell.
+
+The capture agent is C++. cpp-httplib is vendored in the repo, ONNX Runtime
+comes from Microsoft's NuGet package, and the rest comes from apt:
+
+```bash
+sudo apt install -y cmake g++ libssl-dev nlohmann-json3-dev catch2 unzip
+cd /opt/bunny-tracker/agent
+sudo -u bunnycam -H scripts/fetch-onnxruntime.sh
+sudo -u bunnycam -H cmake --preset default
+sudo -u bunnycam -H cmake --build --preset default -j4
+sudo -u bunnycam -H ctest --preset default
+```
+
+Every test must pass, including the ONNX parity tests and the real-ffmpeg
+lavfi test. The agent unit runs `agent/build/bunnycam-agent`. The binary finds
+the repo from its own path, so leave it inside the checkout.
 
 ## 3. Camera
 
@@ -129,11 +145,10 @@ Check with `sudo ls -ld /run/bunnycam /run/bunnycam/segments`. Both are
 `Permission denied`, which is intended.
 
 `/run` is tmpfs. tmpfiles recreates `/run/bunnycam/segments` at every boot,
-before any service starts. `bunnycam.env` points both `AGENT_SEGMENT_DIR` and
-`AGENT_LIVE_FRAME_PATH` there. The server reads the same file, so the manual
-Record endpoint finds the segments the agent wrote. The agent prunes segments
-older than 10 minutes once a minute, so the directory holds up to about 11
-minutes of video. That's roughly 80 MB at the nominal 1 Mbit/s, which fits
+before any service starts. `bunnycam.env` points `AGENT_SEGMENT_DIR` there.
+The server reads the same file, so the manual Record endpoint finds the
+segments the agent wrote. The agent prunes segments older than 10 minutes
+once a minute, so the directory holds up to about 11 minutes of video. That's roughly 80 MB at the nominal 1 Mbit/s, which fits
 in `/run`'s default tmpfs on a Pi 5. Check with `df -h /run` during burn-in.
 
 Logs go to the journal (`journalctl -u bunnycam-agent`). The journald drop-in
@@ -195,8 +210,8 @@ sudoedit data/.env
   `AGENT_TOKEN` from `python3 -c "import secrets; print(secrets.token_hex(32))"`.
 - `EMAIL_USER`, `EMAIL_PASS`, and `NOTIFY_TO` for alerts. The agent posts to
   `/api/notify`, which sends through `smtplib`.
-- Leave out `PY_PORT`, `AGENT_SERVER_URL`, `FFMPEG_PATH`, and the two tmpfs
-  paths. `bunnycam.env` sets them, and process environment wins over
+- Leave out `PY_PORT`, `AGENT_SERVER_URL`, `FFMPEG_PATH`, and
+  `AGENT_SEGMENT_DIR`. `bunnycam.env` sets them, and process environment wins over
   `data/.env`.
 
 python-dotenv skips a line it can't parse with only a warning, so a broken
@@ -365,7 +380,9 @@ Then, depending on what the pull changed:
 
 - `server/uv.lock`: rerun the `uv sync` line from step 2.
 - `deploy/pi/*.service`: copy the units again and run `sudo systemctl daemon-reload`.
-- Anything under `server/`: `sudo systemctl restart bunnycam-server bunnycam-agent`.
+- Anything under `server/`: `sudo systemctl restart bunnycam-server`.
+- Anything under `agent/`: rerun the `cmake --build` and `ctest` lines from
+  step 2, then `sudo systemctl restart bunnycam-agent`.
 - Anything under `client/`: rebuild `client/dist` on the PC and copy it over
   as in step 5. The server reads it per request, so no restart is needed.
 

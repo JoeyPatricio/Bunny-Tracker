@@ -9,7 +9,7 @@ ever apply to the exact files it evaluated.
 
 The gates:
 
-G1  head.onnx output width equals len(LABELS). agent/capture.py keeps its own
+G1  head.onnx output width equals len(LABELS). The agent keeps its own
     runtime guard as defence in depth; this one fires at build time, before a
     stale head can reach the agent at all, rather than at 3am when the agent
     restarts and quietly falls back to motion-only.

@@ -12,9 +12,10 @@ the average is too).
 It never loads an ONNX model. That also means it no longer measures int8
 quantization; training/evaluate.py's deployment gates own that question.
 
-It imports interest_score rather than reimplementing it, so changing the alert
-policy automatically changes what this measures. Runs on the RUNTIME venv
-(numpy only, no sklearn, no torch).
+It scores with shared.labels.interest_score, the Python copy of the agent's
+gate in agent/src/decision.cpp. Keep the two in step, or this measures a
+policy that doesn't ship. Runs on the RUNTIME venv (numpy only, no sklearn,
+no torch).
 
 The unit here is one clip = one window = one candidate decision. The live gate
 additionally requires AGENT_ALERT_STREAK consecutive candidate frames and a
@@ -32,8 +33,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from agent.capture import interest_score
-from shared.labels import LABELS, RESTING_INDICES
+from shared.labels import LABELS, RESTING_INDICES, interest_score
 from training.metrics import check_degenerate
 
 MODELS_DIR = Path(__file__).resolve().parent.parent / "models"
@@ -105,7 +105,7 @@ def main() -> None:
           f"false alarms {int(old[resting].sum())}/{int(resting.sum())}\n")
 
     deployed = np.array([interest_score(p) for p in P], dtype=float)
-    report("agent/capture.py interest_score()  <-- what ships", deployed, interesting, resting)
+    report("interest_score()  <-- what ships", deployed, interesting, resting)
 
     # Two reference policies, for comparison against whatever is deployed.
     report("1 - P(resting)  (maximum recall)",

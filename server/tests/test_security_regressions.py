@@ -136,7 +136,7 @@ def test_stream_frame_limits(client: TestClient) -> None:
     res = client.post("/api/stream/frame", content=oversized, headers={**hdr, "Content-Type": "image/jpeg"})
     check("1.5 oversized body is 413", res.status_code == 413, f"got {res.status_code}")
 
-    # The agent's real call shape must still work (capture.py:305).
+    # The agent posts each JPEG with exactly this shape (agent/src/server.cpp).
     res = client.post("/api/stream/frame", content=b"\xff\xd8\xff\xd9", headers={**hdr, "Content-Type": "image/jpeg"})
     check("1.5 valid jpeg accepted", res.status_code == 200, f"got {res.status_code}")
 

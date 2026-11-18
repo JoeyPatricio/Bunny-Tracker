@@ -266,14 +266,14 @@ struct FfmpegCapture::Impl {
         posix_spawn_file_actions_adddup2(&actions, out.write.get(), 1);
         posix_spawn_file_actions_adddup2(&actions, err.write.get(), 2);
         posix_spawn_file_actions_adddup2(&actions, mjpeg.write.get(), 3);
-        // Python's close_fds=True: an inheritable fd from elsewhere in the
-        // agent, such as an HTTP socket, must not stay open in ffmpeg.
+        // An inheritable fd from elsewhere in the agent, such as an HTTP
+        // socket, must not stay open in ffmpeg.
         posix_spawn_file_actions_addclosefrom_np(&actions, 4);
 
         // The child inherits the spawning thread's signal mask, and the agent
         // blocks SIGTERM for its sigwait thread. A blocked SIGTERM would make
         // every stop wait out stop_timeout and SIGKILL ffmpeg mid-segment.
-        // SIGPIPE goes back to default, as Python's restore_signals does.
+        // SIGPIPE goes back to default too.
         posix_spawnattr_t attr;
         posix_spawnattr_init(&attr);
         sigset_t empty;
@@ -477,8 +477,8 @@ struct FfmpegCapture::Impl {
                 try {
                     proc = spawn_locked();
                 } catch (const std::system_error& err) {
-                    // Python left capture dead here until the next monitor
-                    // toggle. Retrying keeps a transient failure transient.
+                    // Keep retrying so a transient failure doesn't leave
+                    // capture dead until the next monitor toggle.
                     log(std::format("ffmpeg restart failed: {}", err.what()));
                 }
             }

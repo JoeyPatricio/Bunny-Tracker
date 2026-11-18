@@ -158,8 +158,9 @@ records why. Restart the agent afterwards.
 $TRAIN -m training.verify_predictor_parity
 ```
 
-Checks that the agent's frame-by-frame ring buffer gives the same
-probabilities as a batched run (within 1e-5).
+Checks that `inference/predictor.py`, fed one frame at a time, gives the
+same probabilities as a batched run (within 1e-5). The agent's C++ ring
+buffer matches `predictor.py` in `agent/tests/test_inference.cpp`.
 
 ### 8. Calibrate the alert threshold
 
@@ -203,14 +204,13 @@ live in `tests/training/`. Most training checks need the training venv, while
 own:
 
 ```bash
-.venv/bin/python tests/test_capture_loop.py
+.venv/bin/python tests/test_clipping_mode.py
 .venv-train/bin/python tests/training/test_evaluate_gates.py
 ```
 
 Scripts print `PASS`, `FAIL` or `SKIP` per check. `SKIP` means the machine
 couldn't make the measurement, not a regression. `check_decode_parity.py`
-needs local recordings. `scripts/smoke_capture_offline.py` is a smoke harness
-and isn't in the runner.
+needs local recordings.
 
 See the [development guide](development.md#tests) for setup, manual smoke
 checks, and the C++ test suite. CI (`.github/workflows/ci.yml`) builds both

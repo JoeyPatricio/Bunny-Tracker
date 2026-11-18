@@ -1,5 +1,6 @@
-// Port of AgentDecisionLoop and interest_score from server/agent/capture.py.
-// Pure logic: the caller passes `now`, so tests replay golden traces.
+// The per-frame decision loop and interest_score, the alert gate that
+// server/shared/labels.py copies for training/calibrate_gate.py. Pure logic:
+// the caller passes `now`, so tests replay golden traces.
 #pragma once
 
 #include <cstdint>

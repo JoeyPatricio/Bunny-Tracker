@@ -50,10 +50,10 @@ start any time.
   Day/Night USB camera instead, for IR night footage.
 
 **Storage writes are the real constraint.** The rolling 12s segments write
-about 10GB/day and the live-view JPEG gets rewritten 12 times a second (about
-30GB/day). Neither is kept. `deploy/pi/bunnycam.env` points
-`AGENT_SEGMENT_DIR` and `AGENT_LIVE_FRAME_PATH` at `/run/bunnycam/`, a tmpfs
-created by `deploy/pi/bunnycam.tmpfiles`.
+about 10GB/day and aren't kept. `deploy/pi/bunnycam.env` points
+`AGENT_SEGMENT_DIR` at `/run/bunnycam/`, a tmpfs created by
+`deploy/pi/bunnycam.tmpfiles`. The live view goes from ffmpeg to the agent
+over a pipe and never touches disk.
 
 **OS and Python.** Raspberry Pi OS Lite 64-bit. onnxruntime has no 32-bit ARM
 wheels. Don't use the system Python (3.11). The lock has no cp311 wheels, so
@@ -66,12 +66,12 @@ and ONNX Runtime, but nobody has installed them on hardware yet.
 systemd handles restarts, boot order, and stopping the agent's ffmpeg child.
 Node is only needed on the PC to build the client.
 
-**ffmpeg** comes from apt. `agent/capture.py` already checks `FFMPEG_PATH`
-first.
+**ffmpeg** comes from apt. The agent reads `FFMPEG_PATH` and falls back to
+`ffmpeg` on `PATH`.
 
-**Camera.** `agent/ffmpeg_io.py` now pins MJPEG, size and framerate under v4l2
-the same way it does under dshow. Without pinning, the webcam defaults to
-uncompressed 4K and motion detection sees a frozen scene.
+**Camera.** `agent/src/ffmpeg.cpp` pins MJPEG, size and framerate under
+v4l2. Without pinning, the webcam defaults to uncompressed 4K and motion
+detection sees a frozen scene.
 
 **Water sensor design:**
 

@@ -1,5 +1,5 @@
-// HTTP to the FastAPI server (client.py and the HTTP half of capture.py's
-// Agent), plus the clip harvesting and alert uploads built on it.
+// HTTP to the FastAPI server, plus the clip harvesting and alert uploads
+// built on it.
 #pragma once
 
 #include <filesystem>
@@ -60,11 +60,10 @@ struct ClipOptions {
     double clip_segment_secs = 8;
 };
 
-// Agent's segment queue and uploads (_upload_segment, _upload_and_alert,
-// _upload_motion_clip, _queue_clip,
-// _drain_pending_clips_once, _prune_segments_loop). Thread-safe: the frame
-// thread queues and alerts while the drain thread uploads. `now` is wall
-// clock seconds, injected for tests.
+// The segment queue and uploads: alert clips, motion clips, queued Clipping
+// Mode clips and segment pruning. Thread-safe: the frame thread queues and
+// alerts while the drain thread uploads. `now` is wall clock seconds,
+// injected for tests.
 class Clips {
 public:
     Clips(ClipOptions options, ServerClient& client);

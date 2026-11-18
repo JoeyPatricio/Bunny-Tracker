@@ -1,6 +1,6 @@
-// Port of the Agent class and main() from server/agent/capture.py: boot,
-// model loading, the monitor state machine, the frame handler, background
-// loops, and shutdown on SIGTERM/SIGINT.
+// The agent process: configuration, boot, model loading, the monitor state
+// machine, the frame handler, background loops, and shutdown on
+// SIGTERM/SIGINT.
 #include <signal.h>
 #include <unistd.h>
 
@@ -446,7 +446,7 @@ private:
     Clips clips_;
     std::unique_ptr<OnnxPredictor> predictor_;
     std::unique_ptr<DecisionLoop> loop_;
-    std::mutex decision_mu_;  // capture.py's _decision_lock
+    std::mutex decision_mu_;
     std::mutex capture_mu_;
     std::unique_ptr<FfmpegCapture> capture_;
     bool shutting_down_ = false;  // guarded by capture_mu_
@@ -477,8 +477,7 @@ int main() {
         return 1;
     }
 
-    // A crash in a loop ends the process so systemd restarts it, as an
-    // uncaught exception in capture.py's run() did.
+    // A crash in a loop ends the process so systemd restarts it.
     auto guarded = [&](auto body) {
         return [&, body](std::stop_token stop) {
             try {

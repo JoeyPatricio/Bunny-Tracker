@@ -7,7 +7,7 @@ import { ALL_CODES, LABELS, LABEL_META, KEY_TO_LABEL } from "../labels";
 // cheap, instead of after recoding is done.
 const MIN_CLASS_CLIPS = 5;
 
-// Recorded segments are a constant 15 fps (agent/ffmpeg_io.py SEGMENT_FPS).
+// Recorded segments are a constant 15 fps (kSegmentFps in agent/src/ffmpeg.cpp).
 // Imported footage can differ, so on those a step is "about one frame".
 const FRAME_STEP_SEC = 1 / 15;
 const PLAYBACK_RATES = [0.25, 0.5, 1];

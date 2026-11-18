@@ -23,29 +23,27 @@ Bunny-Tracker/
 │   │   ├── main.py                FastAPI entry point and route registration
 │   │   ├── routers/               HTTP endpoints grouped by resource
 │   │   └── lib/                   Storage, labels, clip budgets, and time helpers
-│   ├── agent/                     Python reference capture agent
-│   ├── inference/                 ONNX backbone, temporal head, and predictor
-│   ├── shared/                    Frame processing, motion, labels, and paths
+│   ├── inference/                 Python ONNX predictor and promotion checks
+│   ├── shared/                    Frame processing, motion, and labels
 │   ├── training/                  Offline training and model promotion commands
 │   ├── tests/
 │   │   ├── test_scripts.py         Pytest runner for the standalone check scripts
-│   │   ├── test_*.py               Backend and Python agent checks
+│   │   ├── test_*.py               Backend checks
 │   │   ├── training/              Training checks, including decode parity
 │   │   ├── checks.py              Shared PASS/FAIL/SKIP reporting
 │   │   └── fixtures/              Motion frames and expected results
-│   ├── scripts/                   Benchmarks, fixture generators, camera smoke tools
+│   ├── scripts/                   Pi benchmark and motion fixture generators
 │   ├── models/                    ONNX artifacts, candidates, and archived models
 │   └── pyproject.toml             Dependencies, pytest selection, and Ruff rules
 ├── data/                          Runtime stores, recordings, and shared .env
 ├── deploy/pi/                     systemd units, install guide, and data sync
 ├── docs/                          Development and user guides, research references
-└── run.sh                         Local Python server and agent launcher
+└── run.sh                         Local server and agent launcher
 ```
 
-The C++ agent in `agent/` and the Python reference in `server/agent/` share
-the server API, `data/.env`, and `server/models/`. The launcher and base Pi
-service use Python until cutover. See the [agent guide](../agent/README.md)
-for C++ builds, parity fixtures, and Pi cutover steps.
+The agent in `agent/` talks to the server over HTTP and shares `data/.env`
+and `server/models/` with it. See the [agent guide](../agent/README.md) for
+builds, fixtures, and switching the Pi over.
 
 ## Where to make changes
 
@@ -55,8 +53,7 @@ for C++ builds, parity fixtures, and Pi cutover steps.
 | API endpoint | [app/routers/](../server/app/routers/), registered in [app/main.py](../server/app/main.py) |
 | Authentication or configuration | [auth.py](../server/app/auth.py), [security.py](../server/app/security.py), and [config.py](../server/app/config.py) |
 | Label storage or clip selection | [app/lib/](../server/app/lib/) |
-| C++ capture behavior | [agent/src/](../agent/src/) and [agent/tests/](../agent/tests/) |
-| Python reference behavior | [server/agent/](../server/agent/) and [server/tests/](../server/tests/) |
+| Capture, motion, or alert behavior | [agent/src/](../agent/src/) and [agent/tests/](../agent/tests/) |
 | Behavior vocabulary | [shared/labels.py](../server/shared/labels.py), [client/src/labels.js](../client/src/labels.js), and [ethogram](ethogram.md#where-the-vocabulary-lives) |
 | Training or evaluation | [server/training/](../server/training/) and [server/tests/training/](../server/tests/training/) |
 
@@ -78,7 +75,7 @@ so running pytest directly on the entire `tests/` directory bypasses those
 drivers. Each script can also run on its own:
 
 ```bash
-.venv/bin/python tests/test_capture_loop.py
+.venv/bin/python tests/test_clipping_mode.py
 .venv/bin/python tests/test_security_regressions.py
 .venv/bin/python tests/training/test_promote_reports.py
 .venv-train/bin/python tests/training/test_train_guards.py
@@ -100,19 +97,10 @@ presets. See [C++ build and test commands](../agent/README.md#build-and-test).
 
 ## Manual camera checks
 
-These tools run from `server/` and aren't part of the automated suite:
-
-```bash
-# Replay fixture frames through a promoted ONNX model.
-.venv/bin/python scripts/smoke_capture_offline.py
-
-# Run the real Python agent for 60 seconds, then shut down ffmpeg.
-.venv/bin/python scripts/smoke_capture_live.py 60
-```
-
-The live tool needs a running server and the agent configuration in
-`data/.env`. It uses the normal capture, recording, and notification behavior.
-To exercise capture without a webcam, use a synthetic source:
+Build the agent, then `./run.sh` from the repo root starts the server and
+agent with the configuration in `data/.env`. Capture, recording, and
+notifications behave as in production, and Ctrl+C stops both. To exercise
+capture without a webcam, use a synthetic source:
 
 ```ini
 CAMERA_FORMAT=lavfi
@@ -131,14 +119,15 @@ whose labels match the current ethogram. Model files are read from disk.
 The dashboard reads their metadata through `/api/model`.
 
 Model candidates, promoted artifacts, and archives have paths shared by the
-server, both agents, training commands, and deployment tools. Use the
+server, the agent, training commands, and deployment tools. Use the
 [training pipeline](pipeline.md) to export and promote models. Its
 [dependency instructions](pipeline.md#the-two-venv-rule) also cover regenerating
 `uv.lock` and the requirements files from `pyproject.toml`.
 
-`server/scripts/dump_agent_frames.py` generates Python motion fixtures, and
-`server/scripts/dump_agent_golden.py` generates C++ parity fixtures. Update the
-generator when the expected behavior changes.
+`server/scripts/dump_agent_frames.py` generates the motion fixture frames.
+The agent's fixtures in `agent/tests/fixtures/` were recorded from the
+retired Python agent and have no generator. Edit them by hand when the
+expected behavior changes.
 
 Builds, Python caches, `client-dist.tgz`, recordings, and runtime stores are
 ignored by Git.

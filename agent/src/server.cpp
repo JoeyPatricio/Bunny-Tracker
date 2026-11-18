@@ -189,7 +189,7 @@ void Clips::upload_and_alert(const Alert& a, double now) {
     try {
         client_.post_json("/api/labels/" + *f + "/suggest", {{"label", a.label}});
     } catch (const std::exception&) {
-    }  // Suggestions are best effort in the Python agent.
+    }  // Suggestions are best effort.
     auto result =
         client_
             .post_json("/api/notify",
@@ -272,7 +272,7 @@ void Clips::prune(double now, double age) {
         for (const auto& s : segments_by_mtime(options_.seg_dir))
             if (now - s.mtime > age) std::filesystem::remove(options_.seg_dir / s.name);
     } catch (const std::system_error&) {
-        // Pruning is best effort, as in the Python background loop.
+        // Pruning is best effort. The next pass retries.
     }
 }
 

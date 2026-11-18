@@ -287,8 +287,10 @@ Coder, time, ethogram version and uncertainty go in `data/labels.meta.json`.
 - `server/app/lib/valid_labels.py` (server-side validation)
 - `server/app/routers/notify.py` (alert email wording)
 - `client/src/components/LabelingStudio.jsx` and `RecordingGallery.jsx`
-- `server/agent/capture.py` (`interest_score` treats the resting states as
-  uninteresting)
+- `agent/src/inference.hpp` (`kLabels`, `kRestingLabels`, checked against
+  `labels.py` by `agent/tests/test_labels.cpp`)
+- `agent/src/decision.cpp` and `server/shared/labels.py` (`interest_score`
+  treats the resting states as uninteresting)
 
 The old five-class ONNX head can't serve v2, so a retrain is required.
 `training/calibrate_gate.py` recalibrates `AGENT_INTEREST_THRESHOLD` for the

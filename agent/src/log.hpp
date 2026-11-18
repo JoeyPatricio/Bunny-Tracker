@@ -1,4 +1,4 @@
-// capture.py's log(): local time as "%I:%M:%S %p", then the message. One
+// Log line: local time as "%I:%M:%S %p", then the message. One
 // write per line so threads never interleave inside a line.
 #pragma once
 

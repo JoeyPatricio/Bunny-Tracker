@@ -3,27 +3,27 @@
 Back to the [project overview](../README.md) or the
 [source map](../docs/development.md#source-map).
 
-`bunnycam-agent` is a C++20 port of `server/agent/` (the Python capture
-agent). It reads the same `data/.env` and environment variables, loads the
-same `server/models/` files, and talks to the same FastAPI endpoints. The
-difference you can see is the live view: ffmpeg writes MJPEG to fd 3 and the
-agent POSTs each JPEG as it arrives, instead of polling a JPEG file. Linux
+`bunnycam-agent` reads the camera through one ffmpeg process, runs motion
+detection and the promoted ONNX model on sampled frames, and talks to the
+FastAPI server: live view, predictions, clip uploads and alerts. It reads
+`data/.env` and the process environment, and loads `server/models/`. Linux
 only (`CAMERA_FORMAT` is `v4l2` or `lavfi`).
 
-| Module | Ports |
+| Module | Does |
 |---|---|
-| `src/motion` | `shared/motion.py` |
-| `src/decision` | `AgentDecisionLoop`, `interest_score` |
-| `src/inference` | `inference/*.py`, `shared/frames.normalize` |
-| `src/ffmpeg` | `agent/ffmpeg_io.py` |
-| `src/server` | `agent/client.py`, uploads and the clip queue |
-| `src/main.cpp` | `Agent`, `main()` |
+| `src/motion` | Pixel-diff motion level, hot cells and lighting changes |
+| `src/inference` | Frame normalize, ONNX backbone and temporal head, `promoted.json` checks |
+| `src/decision` | Per-frame decision: alert, motion capture or clip, with streaks and cooldowns |
+| `src/ffmpeg` | ffmpeg arguments, process lifecycle, raw frames and the MJPEG live view on fd 3 |
+| `src/server` | HTTP client, uploads, the pending-clip queue and segment pruning |
+| `src/main.cpp` | Configuration, the monitor state machine, threads and signals |
 
-The Python agent is the reference until cutover.
-`server/scripts/dump_agent_golden.py` records its behaviour into
-`tests/fixtures/`, and the tests require the C++ to reproduce it: motion
-levels to 1e-9, every decision exactly, embeddings and probabilities to 1e-5,
-ffmpeg arguments exactly.
+The agent replaced a Python agent that used to live in `server/agent/`. The
+fixtures in `tests/fixtures/` were recorded from it, and the tests still
+require the same behaviour: motion levels to 1e-9, every decision exactly,
+embeddings and probabilities to 1e-5, and ffmpeg arguments exactly. The
+recorder is gone, so a deliberate behaviour change means editing the
+fixtures by hand alongside the code.
 
 ## Build and test
 
@@ -41,7 +41,8 @@ The `asan` (ASan+UBSan) and `tsan` presets build into `build-asan/` and
 `build-tsan/`. CI runs all three. Run `clang-format -i` on anything you touch.
 
 The binary finds the repo from its own path (`<repo>/agent/<build>/`), so
-it must stay inside the checkout.
+it must stay inside the checkout. `./run.sh` and the Pi's
+`bunnycam-agent.service` both run `agent/build/bunnycam-agent`.
 
 ## Latency
 
@@ -57,15 +58,15 @@ With no promoted model the agent runs motion-only, so `t=` measures motion
 alone. Rerun after a 7-class model is promoted to get the full
 capture-to-prediction figure.
 
-## Pi burn-in
+## Switching the Pi over
 
-The Pi is production and there is no second machine, so the swap is a
-systemd drop-in and rollback is one command. The Python agent stays in the
-checkout until cutover.
+This is a one-time step while the Pi still runs the Python agent from
+`main`. The Pi is production and there is no second machine, so take the
+baseline first, and keep `main` as the rollback.
 
 ### 1. Baseline the Python agent
 
-Do this before the swap, and record the C++ run over the same hours of day.
+Record the C++ run later over the same hours of day.
 
 ```bash
 PID=$(systemctl show -p MainPID --value bunnycam-agent)
@@ -84,50 +85,40 @@ seconds. Also record:
 - Clips per hour: `journalctl -u bunnycam-agent --since today | grep -c 'saved unlabeled'`,
   divided by the hours covered.
 
-### 2. Build on the Pi
+### 2. Build and swap
 
 The branch has to be on GitHub for the Pi to fetch it.
 
 ```bash
-sudo apt install -y cmake g++ libssl-dev nlohmann-json3-dev catch2 unzip
 cd /opt/bunny-tracker
 sudo -H -u bunnycam git fetch origin capture-agent
 sudo -H -u bunnycam git checkout capture-agent
-cd agent
-sudo -H -u bunnycam scripts/fetch-onnxruntime.sh
-sudo -H -u bunnycam cmake --preset default
-sudo -H -u bunnycam cmake --build --preset default -j4
-sudo -H -u bunnycam ctest --preset default
 ```
 
-All tests must pass on the Pi before the swap, including the real-ffmpeg
-lavfi test and the ONNX parity tests on aarch64.
-
-### 3. Swap
+Build and test as in step 2 of the [Pi guide](../deploy/pi/README.md), then
+install the new unit. The server restarts too, to pick up its side of the
+branch:
 
 ```bash
-sudo systemctl edit bunnycam-agent
+sudo cp deploy/pi/bunnycam-agent.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl restart bunnycam-server bunnycam-agent
+journalctl -u bunnycam-agent -f       # expect "BunnyCam Agent starting..."
 ```
 
-Add:
-
-```ini
-[Service]
-ExecStart=
-ExecStart=/opt/bunny-tracker/agent/build/bunnycam-agent
-```
-
-Then `sudo systemctl restart bunnycam-agent` and check
-`journalctl -u bunnycam-agent -f` for `🐇 BunnyCam Agent starting...`. The
-Python agent logs `BunnyCam Python Agent starting...` instead.
+The Python agent logged `BunnyCam Python Agent starting...` instead.
 
 Rollback:
 
 ```bash
-sudo systemctl revert bunnycam-agent && sudo systemctl restart bunnycam-agent
+cd /opt/bunny-tracker
+sudo -H -u bunnycam git checkout main
+sudo cp deploy/pi/bunnycam-agent.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl restart bunnycam-server bunnycam-agent
 ```
 
-### 4. Burn-in, 72 h
+### 3. Burn-in, 72 h
 
 - No unrecovered crash. `systemctl show -p NRestarts bunnycam-agent` stays
   at 0, and `journalctl -u bunnycam-agent | grep -E 'failed to start|loop failed'`
@@ -141,5 +132,4 @@ sudo systemctl revert bunnycam-agent && sudo systemctl restart bunnycam-agent
   live-view latency, clips per hour, and `latency_summary.sh` p50 and p95.
   Put them next to the baseline.
 
-Cutover to `main` (deleting the Python agent, updating `deploy/pi/`, `run.sh`
-and the docs) happens after the burn-in passes.
+Merge `capture-agent` into `main` once the burn-in passes.

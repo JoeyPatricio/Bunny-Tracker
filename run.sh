@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Start the FastAPI server and Python capture agent,
-# both on the runtime venv's own interpreter (server/.venv), the same two
-# processes the Pi's systemd units run. Ctrl+C stops both.
+# Start the FastAPI server (on the runtime venv, server/.venv) and the capture
+# agent (agent/build/bunnycam-agent), the same two processes the Pi's systemd
+# units run. Ctrl+C stops both.
 #
 #   ./run.sh          server + agent   (dashboard on http://localhost:3001)
 #   ./run.sh server   server only      (dashboard, no camera)
@@ -15,13 +15,19 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SERVER_DIR="$ROOT/server"
 PYTHON="$SERVER_DIR/.venv/bin/python"
+AGENT="$ROOT/agent/build/bunnycam-agent"
 PORT="${PY_PORT:-3001}"
 LOGS="$ROOT/logs"
 WHAT="${1:-all}"
 
-if [ ! -x "$PYTHON" ]; then
+if [ "$WHAT" != agent ] && [ ! -x "$PYTHON" ]; then
   echo "No runtime venv at $PYTHON" >&2
   echo "Create it with:  (cd $SERVER_DIR && uv sync --frozen --python 3.14)" >&2
+  exit 1
+fi
+if [ "$WHAT" != server ] && [ ! -x "$AGENT" ]; then
+  echo "No agent binary at $AGENT" >&2
+  echo "Build it as described in agent/README.md#build-and-test" >&2
   exit 1
 fi
 if [ ! -f "$ROOT/data/.env" ]; then
@@ -41,12 +47,12 @@ cleanup() {
 }
 trap cleanup INT TERM EXIT
 
-# Launch $1 (label) running the rest of the args under the venv python, from
-# server. Piping through a process substitution keeps $! as the python PID
-# itself, so cleanup signals the process and not a tee in front of it.
+# Launch $1 (label) running the rest of the args as a command, from server/.
+# Piping through a process substitution keeps $! as the command's own PID, so
+# cleanup signals the process and not a tee in front of it.
 start() {
   local name="$1"; shift
-  ( cd "$SERVER_DIR" && exec "$PYTHON" "$@" ) \
+  ( cd "$SERVER_DIR" && exec "$@" ) \
     > >(sed -u "s/^/[$name] /" | tee -a "$LOGS/$name.log") 2>&1 &
   pids+=($!)
   echo "[run.sh] $name started (pid ${pids[-1]}, log $LOGS/$name.log)"
@@ -57,7 +63,7 @@ if [ "$WHAT" = all ] || [ "$WHAT" = server ]; then
     echo "Port $PORT is already in use — is Bunny Tracker already running?" >&2
     exit 1
   fi
-  start server -m uvicorn app.main:app --host 0.0.0.0 --port "$PORT"
+  start server "$PYTHON" -m uvicorn app.main:app --host 0.0.0.0 --port "$PORT"
   # The agent's first call fails outright if the server isn't listening yet.
   for _ in $(seq 40); do
     (exec 3<>/dev/tcp/127.0.0.1/"$PORT") 2>/dev/null && break
@@ -67,7 +73,7 @@ if [ "$WHAT" = all ] || [ "$WHAT" = server ]; then
 fi
 
 if [ "$WHAT" = all ] || [ "$WHAT" = agent ]; then
-  start agent -m agent.capture
+  start agent "$AGENT"
 fi
 
 if [ ${#pids[@]} -eq 0 ]; then

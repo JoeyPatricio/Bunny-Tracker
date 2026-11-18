@@ -43,6 +43,30 @@ ALL_CODES = LABELS + CODING_ONLY
 RESTING_LABELS = ["resting_lying", "resting_sitting"]
 RESTING_INDICES = frozenset(LABELS.index(label) for label in RESTING_LABELS)
 
+
+def interest_score(probs) -> float:
+    """Score one softmax window 0-100: how much is this worth an email?
+
+    The agent compares this against AGENT_INTEREST_THRESHOLD for every
+    classified frame. The live copy is interest_score in
+    agent/src/decision.cpp, and training/calibrate_gate.py measures this one,
+    so change both together. `probs` is the full class distribution in LABELS
+    order.
+
+    Why this is not argmax: the head can be torn between grooming and rearing
+    while still being confident it is not resting. Argmax throws that
+    agreement away and reads the frame as boring. On the v1 model's val set
+    that cost 10 of 26 real events. Two resting classes make argmax easier to
+    fool, since resting mass is split across both.
+    """
+    # Seed with 0.0, not a resting probability. Seeding with an excluded value
+    # turns "ignore rest" into "must beat rest", which is max(probs).
+    res = 0.0
+    for i, p in enumerate(probs):
+        if i not in RESTING_INDICES and p > res:
+            res = p
+    return res * 100.0
+
 # Codes that must never surface on the public demo page. v1 excluded the single
 # `normal` label; a rabbit sitting still is no more of a highlight than one
 # lying down, and a clip with no rabbit in it is not a highlight at all.

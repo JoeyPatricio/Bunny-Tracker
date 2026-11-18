@@ -1,7 +1,7 @@
 """Port of server/routes/monitor.js, plus the Clipping Mode control surface.
 
 monitor.json is the one place dashboard-toggled agent state lives; the agent
-polls GET /api/monitor every 5s (agent/capture.py::_poll_monitor_loop), so
+polls GET /api/monitor every 5s (poll_monitor_loop in agent/src/main.cpp), so
 everything here is live-tunable without a pm2 restart.
 """
 from fastapi import APIRouter, Request

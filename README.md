@@ -13,23 +13,20 @@ private to the owner).
 
 | Location | Contents |
 |---|---|
-| [agent/](agent/) | C++20 capture agent, CMake builds, tests, and vendored dependencies |
+| [agent/](agent/) | Capture agent (C++20), CMake builds, tests, and vendored dependencies |
 | [client/](client/) | React dashboard and Vite build |
-| [server/](server/) | FastAPI backend, Python reference agent, inference, training, and tests |
+| [server/](server/) | FastAPI backend, inference checks, training, and tests |
 | [data/](data/) | Runtime stores, recordings, and shared `.env` |
 | [deploy/pi/](deploy/pi/) | Raspberry Pi services, installation, and data sync |
 | [docs/](docs/) | Development, labeling, training, and research guides |
-| [run.sh](run.sh) | Local launcher for the server and Python agent |
-
-The C++ agent in `agent/` is being prepared for cutover. `run.sh` and the base
-Pi service still launch the Python reference agent in `server/agent/`.
+| [run.sh](run.sh) | Local launcher for the server and agent |
 
 ## Guides
 
 | Task | Guide |
 |---|---|
 | Find code or run checks | [Development](docs/development.md) |
-| Build or run the C++ agent | [Capture agent](agent/README.md) |
+| Build or run the agent | [Capture agent](agent/README.md) |
 | Collect clips | [Clipping Mode](docs/clipping.md) |
 | Label behavior | [Ethogram](docs/ethogram.md) |
 | Train and promote a model | [Training pipeline](docs/pipeline.md) |
@@ -46,12 +43,11 @@ Pi service still launch the Python reference agent in `server/agent/`.
                   └──► MJPEG live stream ──► dashboard                         └──► public text feed
 ```
 
-- **Capture agent**: the Python reference (`server/agent/capture.py`) is a service
-  that reads the camera with one `ffmpeg` process, sampling a frame every few
-  seconds for inference, recording rolling clips, and pushing a live view to
-  the dashboard. Runs the same on a PC (`dshow`) or a Raspberry Pi (`v4l2`),
-  only two `.env` lines change. The [C++ port](agent/README.md) uses the same
-  configuration and models on Linux.
+- **Capture agent**: a C++ service ([agent/](agent/README.md)) that reads the
+  camera with one `ffmpeg` process, sampling a frame every few seconds for
+  inference, recording rolling clips, and pushing a live view to the
+  dashboard. Runs on Linux, `v4l2` for a real camera or `lavfi` for a
+  synthetic test source.
 - **Classifier**: a frozen `timm` edge backbone (`mobilenetv4_conv_small`) plus
   a small learned temporal head, exported to ONNX and run via ONNX Runtime.
   Retraining is now an offline CLI script (`server/training/train.py`), not
@@ -85,7 +81,7 @@ cited as accuracy.
 |-------------|--------------------------------------------------------------------|
 | Frontend    | React + Vite                                                       |
 | Backend     | Python (FastAPI + uvicorn)                                          |
-| Capture/ML  | ffmpeg (`imageio-ffmpeg`), ONNX Runtime, pixel-diff motion detection |
+| Capture/ML  | C++ agent: ffmpeg, ONNX Runtime, pixel-diff motion detection |
 | Training    | PyTorch + `timm`, offline CLI script                                |
 | Alerts      | `smtplib` (Gmail SMTP)                                              |
 | Process mgmt| systemd on the Raspberry Pi (server, agent, tunnel), `run.sh` for dev |
@@ -105,7 +101,7 @@ optional training environment uses CPU PyTorch. Both resolve from
 cd client && npm install && npm run build
 cd ../server
 
-# Runtime (server + agent), plus the test runner and linter. No torch.
+# Server runtime, plus the test runner and linter. No torch.
 uv sync --frozen --python 3.14 --group dev
 
 # Only if you're retraining the model. CPU-only, also used by CI.
@@ -116,6 +112,15 @@ Production runtime installs can omit `--group dev`. Update dependencies in
 `pyproject.toml` and regenerate with `uv lock`. On Windows, set
 `UV_PROJECT_ENVIRONMENT` using your shell's environment syntax, and use
 `.venv\Scripts\python.exe` rather than `.venv/bin/python`.
+
+The capture agent is C++ and Linux only. Its packages and build are in
+[agent/README.md](agent/README.md#build-and-test):
+
+```bash
+cd agent
+scripts/fetch-onnxruntime.sh
+cmake --preset default && cmake --build --preset default -j
+```
 
 ### 2. Configure the environment
 
@@ -136,8 +141,8 @@ ADMIN_PASSWORD="your-password"
 # 64-char hex string, e.g. `python -c "import secrets; print(secrets.token_hex(32))"`
 AGENT_TOKEN="generate-your-own-random-token"
 
-# Camera agent, Linux / Raspberry Pi shown; on Windows use dshow and
-# video=Your Webcam Name
+# Camera agent. v4l2 for a real camera, or lavfi with
+# CAMERA_INPUT=testsrc2=size=640x480:rate=15 for a synthetic source.
 CAMERA_FORMAT=v4l2
 CAMERA_INPUT=/dev/v4l/by-id/usb-Your_Camera-video-index0
 AGENT_INTEREST_THRESHOLD=60         # 0-100; how far from "resting" before it's worth an email
@@ -154,9 +159,8 @@ CLIPPING_MAX_UNLABELED=500          # auto-stop at this many unlabeled clips
 CLIPPING_MIN_FREE_GB=10             # auto-stop below this much free disk
 ```
 
-Find your camera on Linux with `ls -l /dev/v4l/by-id/` (use the
-`video-index0` entry), or on Windows with
-`ffmpeg -f dshow -list_devices true -i dummy`.
+Find your camera with `ls -l /dev/v4l/by-id/` (use the `video-index0`
+entry).
 
 ### 3. Run
 
@@ -219,7 +223,7 @@ For the C++ build and tests, see [agent/README.md](agent/README.md#build-and-tes
 ## Deployment
 
 Production is a Raspberry Pi 5, where systemd runs three services:
-`bunnycam-server`, `bunnycam-agent` (both Python), and `bunnycam-tunnel`
+`bunnycam-server` (Python), `bunnycam-agent` (C++), and `bunnycam-tunnel`
 (Cloudflare). The tunnel serves the custom domain over public HTTPS without
 any router port forwarding. The server listens on loopback only, behind the
 tunnel. A Linux PC holds the clip archive and does the training, and the

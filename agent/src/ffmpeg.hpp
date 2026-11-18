@@ -1,6 +1,6 @@
-// Port of server/agent/ffmpeg_io.py: one ffmpeg process with three outputs
-// (raw 224x224 frames on stdout, rolling WebM segments, MJPEG live view on
-// fd 3), supervised and restarted after an unexpected exit.
+// One ffmpeg process with three outputs (raw 224x224 frames on stdout,
+// rolling WebM segments, MJPEG live view on fd 3), supervised and restarted
+// after an unexpected exit.
 #pragma once
 
 #include <atomic>
@@ -37,8 +37,8 @@ class FfmpegCapture {
 public:
     using Clock = std::chrono::steady_clock;
     // Runs on the frame consumer thread, one call at a time. Frames that
-    // arrive while it runs are dropped except the newest (ffmpeg_io.py
-    // _read_frames). demuxed_at is when the reader finished the frame.
+    // arrive while it runs are dropped except the newest. demuxed_at is when
+    // the reader finished the frame.
     using FrameHandler =
         std::function<void(std::vector<std::uint8_t> frame, Clock::time_point demuxed_at)>;
     // Runs on the live-view thread, once per complete JPEG from fd 3.
