@@ -21,9 +21,14 @@ only (`CAMERA_FORMAT` is `v4l2` or `lavfi`).
 The agent replaced a Python agent that used to live in `server/agent/`. The
 fixtures in `tests/fixtures/` were recorded from it, and the tests still
 require the same behaviour: motion levels to 1e-9, every decision exactly,
-embeddings and probabilities to 1e-5, and ffmpeg arguments exactly. The
+embeddings and probabilities to 1e-4, and ffmpeg arguments exactly. The
 recorder is gone, so a deliberate behaviour change means editing the
 fixtures by hand alongside the code.
+
+The inference fixture uses `backbone_fp32.onnx`, not the deployed int8
+backbone. ONNX Runtime's int8 kernels saturate on x86 CPUs without VNNI, so
+int8 output depends on the machine. The tests only check that the int8 model
+loads and gives a finite 1280-wide embedding.
 
 ## Build and test
 

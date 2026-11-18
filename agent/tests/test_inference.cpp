@@ -17,7 +17,9 @@ extern "C" const char* __lsan_default_suppressions() { return "leak:libonnxrunti
 namespace {
 
 constexpr std::size_t kFrameBytes = 224 * 224 * 3;
-constexpr double kTolerance = 1e-5;
+// fp32 kernels sum in a different order per CPU (AVX2, AVX-512, NEON), so
+// allow more than float rounding.
+constexpr double kTolerance = 1e-4;
 
 const json& fixture() {
     static const json data = test::read_json(test::kFixtures / "inference.json");
@@ -33,9 +35,13 @@ std::span<const std::uint8_t> frame(std::size_t i) {
     return std::span(frames().data).subspan(i * kFrameBytes, kFrameBytes);
 }
 
+// The fixture uses the fp32 backbone. ORT's int8 kernels give different
+// answers per CPU: on x86 without VNNI, u8s8 products saturate, and the int8
+// embeddings drift to cosine 0.73 of fp32 on an i7-8750H while a VNNI machine
+// stays close. A recording from one CPU would fail on another.
 OnnxPredictor make_predictor(int window) {
-    return OnnxPredictor(test::kModelsDir / "backbone_int8.onnx", test::kModelsDir / "head.onnx",
-                         window);
+    return OnnxPredictor(test::kModelsDir / fixture()["backbone"].get<std::string>(),
+                         test::kModelsDir / fixture()["head"].get<std::string>(), window);
 }
 
 void require_close(const std::vector<float>& actual, const json& expected) {
@@ -140,6 +146,13 @@ TEST_CASE("classify matches the Python head logits") {
         }
         require_close(predictor.classify(window), records[end - 1]["logits"]);
     }
+}
+
+TEST_CASE("the deployed int8 backbone loads and gives a 1280-wide finite embedding") {
+    OnnxPredictor int8(test::kModelsDir / "backbone_int8.onnx", test::kModelsDir / "head.onnx", 8);
+    const auto embedding = int8.embed(normalize(frame(0)));
+    REQUIRE(embedding.size() == 1280);
+    for (const float v : embedding) CHECK(std::isfinite(v));
 }
 
 TEST_CASE("num_classes reads the on-disk head's output width") {
