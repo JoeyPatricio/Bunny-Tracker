@@ -48,5 +48,12 @@ foreach(name motion decision inference ffmpeg server labels)
   add_executable(test_${name} tests/test_${name}.cpp)
   target_link_libraries(test_${name} PRIVATE agent_core Catch2::Catch2WithMain)
   target_compile_definitions(test_${name} PRIVATE BUNNYCAM_REPO_DIR="${CMAKE_SOURCE_DIR}/..")
-  catch_discover_tests(test_${name})
+  if(name STREQUAL "inference")
+    # ORT's prebuilt library is not built with TSan. Its suppressions apply
+    # to these tests only, so they cannot hide lock misuse in our threads.
+    catch_discover_tests(test_${name} PROPERTIES
+      ENVIRONMENT "TSAN_OPTIONS=suppressions=${CMAKE_SOURCE_DIR}/tests/tsan.supp")
+  else()
+    catch_discover_tests(test_${name})
+  endif()
 endforeach()

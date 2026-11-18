@@ -31,11 +31,6 @@
   "testPresets": [
     { "name": "default", "configurePreset": "default", "output": { "outputOnFailure": true } },
     { "name": "asan", "configurePreset": "asan", "output": { "outputOnFailure": true } },
-    {
-      "name": "tsan",
-      "configurePreset": "tsan",
-      "output": { "outputOnFailure": true },
-      "environment": { "TSAN_OPTIONS": "suppressions=${sourceDir}/tests/tsan.supp" }
-    }
+    { "name": "tsan", "configurePreset": "tsan", "output": { "outputOnFailure": true } }
   ]
 }
