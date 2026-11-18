@@ -95,26 +95,39 @@ TEST_CASE("embeddings match the Python backbone") {
     }
 }
 
-TEST_CASE("push_frame waits for a full window, then returns the Python probabilities") {
-    const int window = fixture()["window"].get<int>();
-    REQUIRE(window == 8);
-    auto predictor = make_predictor(window);
+// Pushes every fixture frame through a fresh predictor and checks warmup,
+// eviction and probabilities against fixture key `probs_key`.
+void check_push_frames(OnnxPredictor& predictor, std::size_t window, const char* probs_key) {
     for (std::size_t i = 0; i < fixture()["frames"].size(); ++i) {
         const auto probs = predictor.push_frame(frame(i));
-        const auto& expected = fixture()["frames"][i]["probs"];
-        if (i + 1 < static_cast<std::size_t>(window)) {
+        const auto& expected = fixture()["frames"][i][probs_key];
+        if (i + 1 < window) {
             CHECK_FALSE(probs.has_value());
             CHECK(expected.is_null());
             CHECK(predictor.window_fill() == i + 1);
         } else {
             REQUIRE(probs.has_value());
             require_close(*probs, expected);
-            CHECK(predictor.window_fill() == static_cast<std::size_t>(window));
+            CHECK(predictor.window_fill() == window);
         }
     }
+}
+
+TEST_CASE("push_frame waits for a full window, then returns the Python probabilities") {
+    const int window = fixture()["window"].get<int>();
+    REQUIRE(window == 8);
+    auto predictor = make_predictor(window);
+    check_push_frames(predictor, static_cast<std::size_t>(window), "probs");
     predictor.clear();
     CHECK(predictor.window_fill() == 0);
     CHECK_FALSE(predictor.push_frame(frame(0)).has_value());
+}
+
+TEST_CASE("push_frame matches the Python probabilities at a three-frame window") {
+    const int window = fixture()["altWindow"].get<int>();
+    REQUIRE(window == 3);
+    auto predictor = make_predictor(window);
+    check_push_frames(predictor, static_cast<std::size_t>(window), "probsAltWindow");
 }
 
 TEST_CASE("classify matches the Python head logits") {
@@ -132,6 +145,10 @@ TEST_CASE("classify matches the Python head logits") {
 TEST_CASE("num_classes reads the on-disk head's output width") {
     CHECK(make_predictor(8).num_classes() == 5);
     CHECK(fixture()["numClasses"] == 5);
+    // The backbone's [1,1280] output stands in for a head of another width.
+    const OnnxPredictor wide(test::kModelsDir / "backbone_int8.onnx",
+                             test::kModelsDir / "backbone_int8.onnx", 8);
+    CHECK(wide.num_classes() == 1280);
 }
 
 TEST_CASE("softmax sums to one and ignores a constant shift") {
