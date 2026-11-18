@@ -7,7 +7,9 @@
 #include <catch2/catch_test_macros.hpp>
 #include <format>
 #include <fstream>
+#include <iostream>
 #include <mutex>
+#include <sstream>
 #include <stdexcept>
 #include <thread>
 
@@ -372,4 +374,72 @@ TEST_CASE("real ffmpeg delivers raw frames and JPEGs") {
         CHECK(jpeg.starts_with("\xFF\xD8"));
         CHECK(jpeg.ends_with("\xFF\xD9"));
     }
+}
+
+TEST_CASE("a second start while running is a no-op") {
+    TempDir tmp;
+    Seen seen;
+    FfmpegCapture capture(fake_config("ready.sh", tmp.path), seen.on_frame(), seen.on_jpeg(),
+                          kFast);
+    capture.start();
+    capture.start();
+    REQUIRE(eventually([&] { return seen.jpeg_count() == 1; }));
+    std::this_thread::sleep_for(300ms);
+    CHECK(seen.jpeg_count() == 1);  // One ready JPEG per spawned process.
+    capture.stop_and_wait();
+    CHECK(no_children());
+}
+
+TEST_CASE("inheritable fds from the agent do not reach ffmpeg") {
+    // No FD_CLOEXEC, like a socket some library opened without it.
+    const int sentinel = fcntl(STDERR_FILENO, F_DUPFD, 100);
+    REQUIRE(sentinel != -1);
+    TempDir tmp;
+    Seen seen;
+    FfmpegCapture capture(fake_config("fds.sh", tmp.path), seen.on_frame(), seen.on_jpeg(), kFast);
+    capture.start();
+    REQUIRE(eventually([&] { return seen.jpeg_count() == 1; }));
+    capture.stop_and_wait();
+    close(sentinel);
+    INFO("child fds:" << seen.jpegs[0]);
+    CHECK(seen.jpegs[0].find(" 3 ") != std::string::npos);
+    CHECK(seen.jpegs[0].find(std::format(" {} ", sentinel)) == std::string::npos);
+}
+
+TEST_CASE("stderr with no newline is logged in 4 KiB pieces") {
+    // log() writes to stdout, so point fd 1 at a file for the test.
+    TempDir tmp;
+    const fs::path out_path = tmp.path / "stdout.txt";
+    std::cout.flush();
+    const int saved_stdout = dup(STDOUT_FILENO);
+    const int out_fd = open(out_path.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0600);
+    REQUIRE(out_fd != -1);
+    dup2(out_fd, STDOUT_FILENO);
+    close(out_fd);
+
+    auto logged_runs = [&] {
+        std::vector<std::size_t> runs;
+        std::istringstream lines(bunnycam::test::read_file(out_path));
+        for (std::string line; std::getline(lines, line);) {
+            const auto at = line.find("ffmpeg: x");
+            if (at != std::string::npos) runs.push_back(line.size() - at - 8);
+        }
+        return runs;
+    };
+    Seen seen;
+    std::vector<std::size_t> while_running;
+    {
+        FfmpegCapture capture(fake_config("long_stderr.sh", tmp.path), seen.on_frame(),
+                              seen.on_jpeg(), kFast);
+        capture.start();
+        eventually([&] { return logged_runs().size() >= 2; });
+        while_running = logged_runs();
+    }
+    const std::vector<std::size_t> after_stop = logged_runs();
+    std::cout.flush();
+    dup2(saved_stdout, STDOUT_FILENO);
+    close(saved_stdout);
+
+    CHECK(while_running == std::vector<std::size_t>{4096, 4096});
+    CHECK(after_stop == std::vector<std::size_t>{4096, 4096, 1808});  // the rest at EOF
 }

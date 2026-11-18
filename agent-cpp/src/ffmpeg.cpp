@@ -41,6 +41,9 @@ constexpr std::size_t kMaxJpegBytes = 2 * 1024 * 1024;
 constexpr std::string_view kSoi = "\xFF\xD8";
 constexpr std::string_view kEoi = "\xFF\xD9";
 
+// ffmpeg stderr with no newline would otherwise buffer forever.
+constexpr std::size_t kMaxStderrLine = 4096;
+
 std::system_error errno_error(const char* what) {
     return std::system_error(errno, std::generic_category(), what);
 }
@@ -141,13 +144,11 @@ std::size_t read_some(const std::stop_token& stop, Process& proc, int fd, void* 
 }  // namespace
 
 std::vector<std::string> build_args(const CaptureConfig& config) {
-    // -y: the Python agent needed it because its live-view JPEG file survived
-    // a restart, and without -y ffmpeg asked on stdin before overwriting it.
-    // The live view is now pipe:3. The segment muxer overwrites existing
-    // segments without asking: with seg-00000.webm already present and no
-    // -y, ffmpeg n9.0.2 replaced it and exited 0. A plain file output in the
-    // same test did prompt and refuse. -y stays because the golden args,
-    // generated from the Python, include it.
+    // -y: the segment muxer does not need it. With seg-00000.webm already
+    // present and no -y, ffmpeg n9.0.2 replaced it without asking. A plain
+    // file output in the same test asked to overwrite, read EOF from stdin
+    // (/dev/null), and refused to write. -y keeps any future plain-file
+    // output from failing on that prompt.
     std::vector<std::string> args = {config.ffmpeg_path, "-y", "-hide_banner", "-loglevel",
                                      "error"};
     if (config.camera_format == "lavfi") {
@@ -265,6 +266,9 @@ struct FfmpegCapture::Impl {
         posix_spawn_file_actions_adddup2(&actions, out.write.get(), 1);
         posix_spawn_file_actions_adddup2(&actions, err.write.get(), 2);
         posix_spawn_file_actions_adddup2(&actions, mjpeg.write.get(), 3);
+        // Python's close_fds=True: an inheritable fd from elsewhere in the
+        // agent, such as an HTTP socket, must not stay open in ffmpeg.
+        posix_spawn_file_actions_addclosefrom_np(&actions, 4);
 
         // The child inherits the spawning thread's signal mask, and the agent
         // blocks SIGTERM for its sigwait thread. A blocked SIGTERM would make
@@ -287,24 +291,37 @@ struct FfmpegCapture::Impl {
         posix_spawn_file_actions_destroy(&actions);
         if (rc != 0) throw std::system_error(rc, std::generic_category(), "posix_spawn " + args[0]);
 
-        auto proc = std::make_unique<Process>();
-        proc->pid = pid;
         live_pid = pid;
-        proc->stdout_fd = std::move(out.read);
-        proc->stderr_fd = std::move(err.read);
-        proc->mjpeg_fd = std::move(mjpeg.read);
-        proc->wake = std::move(wake);
-        // Each reader gets its own process's streams, never the current one:
-        // a reader that followed a restart would split the new stream with
-        // the new reader and hand inference misaligned frames.
-        Process& p = *proc;
-        p.stdout_reader = std::jthread([this, &p](std::stop_token st) { read_frames(st, p); });
-        p.mjpeg_reader = std::jthread([this, &p](std::stop_token st) { read_mjpeg(st, p); });
-        p.stderr_reader = std::jthread([this, &p](std::stop_token st) { read_stderr(st, p); });
-        p.consumer = std::jthread([this, &p](std::stop_token st) { process_frames(st, p); });
-        log(std::format("✓ Camera capture started ({}: {})", config.camera_format,
-                        config.camera_input));
-        return proc;
+        try {
+            auto proc = std::make_unique<Process>();
+            proc->pid = pid;
+            proc->stdout_fd = std::move(out.read);
+            proc->stderr_fd = std::move(err.read);
+            proc->mjpeg_fd = std::move(mjpeg.read);
+            proc->wake = std::move(wake);
+            // Each reader gets its own process's streams, never the current
+            // one: a reader that followed a restart would split the new
+            // stream with the new reader and hand inference misaligned frames.
+            Process& p = *proc;
+            p.stdout_reader = std::jthread([this, &p](std::stop_token st) { read_frames(st, p); });
+            p.mjpeg_reader = std::jthread([this, &p](std::stop_token st) { read_mjpeg(st, p); });
+            p.stderr_reader = std::jthread([this, &p](std::stop_token st) { read_stderr(st, p); });
+            p.consumer = std::jthread([this, &p](std::stop_token st) { process_frames(st, p); });
+            log(std::format("✓ Camera capture started ({}: {})", config.camera_format,
+                            config.camera_input));
+            return proc;
+        } catch (...) {
+            abandon_locked(pid);
+            throw;
+        }
+    }
+
+    // Kills and reaps a child that no supervisor took over. Caller holds mu.
+    void abandon_locked(pid_t pid) {
+        kill(pid, SIGKILL);
+        while (waitpid(pid, nullptr, 0) == -1 && errno == EINTR) {
+        }
+        live_pid = -1;
     }
 
     // Drains stdout continuously and hands off only the newest frame.
@@ -414,6 +431,10 @@ struct FfmpegCapture::Impl {
                 start = nl + 1;
             }
             pending.erase(0, start);
+            while (pending.size() >= kMaxStderrLine) {
+                emit(std::string_view(pending).substr(0, kMaxStderrLine));
+                pending.erase(0, kMaxStderrLine);
+            }
         }
         emit(pending);
     }
@@ -479,14 +500,18 @@ FfmpegCapture::~FfmpegCapture() { stop_and_wait(); }
 void FfmpegCapture::start() {
     Impl& impl = *impl_;
     std::lock_guard lifecycle(impl.lifecycle_mu);
-    std::unique_ptr<Process> proc;
-    {
-        std::lock_guard lock(impl.mu);
-        if (impl.stopped) return;
-        proc = impl.spawn_locked();
+    if (impl.supervisor.joinable()) return;  // Already running.
+    std::lock_guard lock(impl.mu);
+    if (impl.stopped) return;
+    std::unique_ptr<Process> proc = impl.spawn_locked();
+    const pid_t pid = proc->pid;
+    try {
+        impl.supervisor = std::jthread(
+            [&impl, proc = std::move(proc)]() mutable { impl.supervise(std::move(proc)); });
+    } catch (...) {
+        impl.abandon_locked(pid);
+        throw;
     }
-    impl.supervisor = std::jthread(
-        [&impl, proc = std::move(proc)]() mutable { impl.supervise(std::move(proc)); });
 }
 
 void FfmpegCapture::stop_and_wait() {
