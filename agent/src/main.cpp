@@ -30,7 +30,7 @@ namespace {
 namespace fs = std::filesystem;
 using nlohmann::json;
 
-// The binary lives at <repo>/agent-cpp/<build dir>/bunnycam-agent.
+// The binary lives at <repo>/agent/<build dir>/bunnycam-agent.
 fs::path repo_root() { return fs::read_symlink("/proc/self/exe").parent_path() / ".." / ".."; }
 
 std::string_view trim(std::string_view s) {
@@ -181,7 +181,7 @@ public:
                  clips_client_) {}
 
     void boot() {
-        log("\U0001f407 BunnyCam C++ Agent starting...");
+        log("\U0001f407 BunnyCam Agent starting...");
         fs::create_directories(config_.seg_dir);
         client_.verify();
         log("✓ AGENT_TOKEN verified");

@@ -4,7 +4,7 @@
 # onnxruntime pin. GitHub's release tarballs returned 404 when this was
 # written (2026-11-17), and the nupkg carries the same C/C++ API.
 #
-#   agent-cpp/scripts/fetch-onnxruntime.sh [dest]
+#   agent/scripts/fetch-onnxruntime.sh [dest]
 #
 # dest defaults to ~/.cache/bunnycam/onnxruntime-1.29.0, which is also
 # CMake's default ONNXRUNTIME_ROOT. Needs curl and unzip.

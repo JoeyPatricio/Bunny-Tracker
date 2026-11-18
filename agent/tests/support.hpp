@@ -13,7 +13,7 @@
 namespace bunnycam::test {
 
 inline const std::filesystem::path kRepoDir = BUNNYCAM_REPO_DIR;
-inline const std::filesystem::path kFixtures = kRepoDir / "agent-cpp" / "tests" / "fixtures";
+inline const std::filesystem::path kFixtures = kRepoDir / "agent" / "tests" / "fixtures";
 inline const std::filesystem::path kModelsDir = kRepoDir / "server" / "models";
 inline const std::filesystem::path kMotionFrames =
     kRepoDir / "server" / "tests" / "fixtures" / "motion_fixture_frames.npy";

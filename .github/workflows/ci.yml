@@ -65,14 +65,14 @@ jobs:
       - name: ruff check
         run: .venv/bin/ruff check .
 
-  # The C++ capture agent: format check, then the test suite under the
+  # The capture agent in agent/: format check, then the test suite under the
   # plain, ASan+UBSan and TSan presets. ffmpeg is installed so the real
   # lavfi capture test runs instead of skipping.
-  cpp:
+  agent:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: agent-cpp
+        working-directory: agent
     steps:
       - uses: actions/checkout@v4
       - name: Packages

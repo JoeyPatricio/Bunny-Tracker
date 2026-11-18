@@ -1,7 +1,7 @@
-"""Golden data for the C++ capture agent in agent-cpp/.
+"""Golden data for the capture agent in agent/.
 
 Records what the Python agent does today so the port can be checked against
-it, written to agent-cpp/tests/fixtures/:
+it, written to agent/tests/fixtures/:
 
 - motion.json: MotionDetector over the 67 motion fixture frames as one
   stream. Levels are float64 reprs, not the JS ground truth's 0.1 tolerance,
@@ -42,7 +42,7 @@ from shared.motion import MotionDetector
 SERVER_DIR = Path(__file__).resolve().parent.parent
 FRAMES = SERVER_DIR / "tests" / "fixtures" / "motion_fixture_frames.npy"
 MODELS_DIR = SERVER_DIR / "models"
-OUT_DIR = SERVER_DIR.parent / "agent-cpp" / "tests" / "fixtures"
+OUT_DIR = SERVER_DIR.parent / "agent" / "tests" / "fixtures"
 
 INFERENCE_FRAMES = 12
 INFERENCE_WINDOW = 8

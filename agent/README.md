@@ -1,4 +1,4 @@
-# C++ capture agent
+# Capture agent
 
 `bunnycam-agent` is a C++20 port of `server/agent/` (the Python capture
 agent). It reads the same `data/.env` and environment variables, loads the
@@ -29,7 +29,7 @@ Packages: `cmake g++ libssl-dev nlohmann-json3-dev catch2 unzip` on Debian
 `third_party/`. ONNX Runtime 1.29.0 comes from Microsoft's NuGet package:
 
 ```bash
-cd agent-cpp
+cd agent
 scripts/fetch-onnxruntime.sh          # into ~/.cache/bunnycam/onnxruntime-1.29.0
 cmake --preset default && cmake --build --preset default -j && ctest --preset default
 ```
@@ -37,7 +37,7 @@ cmake --preset default && cmake --build --preset default -j && ctest --preset de
 The `asan` (ASan+UBSan) and `tsan` presets build into `build-asan/` and
 `build-tsan/`. CI runs all three. Run `clang-format -i` on anything you touch.
 
-The binary finds the repo from its own path (`<repo>/agent-cpp/<build>/`), so
+The binary finds the repo from its own path (`<repo>/agent/<build>/`), so
 it must stay inside the checkout.
 
 ## Latency
@@ -47,7 +47,7 @@ has a whole raw frame to the moment the decision returns. That covers motion,
 normalize, backbone, head and decision, not uploads.
 
 ```bash
-journalctl -u bunnycam-agent --since "1 hour ago" | agent-cpp/scripts/latency_summary.sh
+journalctl -u bunnycam-agent --since "1 hour ago" | agent/scripts/latency_summary.sh
 ```
 
 With no promoted model the agent runs motion-only, so `t=` measures motion
@@ -88,9 +88,9 @@ The branch has to be on GitHub for the Pi to fetch it.
 ```bash
 sudo apt install -y cmake g++ libssl-dev nlohmann-json3-dev catch2 unzip
 cd /opt/bunny-tracker
-sudo -H -u bunnycam git fetch origin cpp/capture-agent
-sudo -H -u bunnycam git checkout cpp/capture-agent
-cd agent-cpp
+sudo -H -u bunnycam git fetch origin capture-agent
+sudo -H -u bunnycam git checkout capture-agent
+cd agent
 sudo -H -u bunnycam scripts/fetch-onnxruntime.sh
 sudo -H -u bunnycam cmake --preset default
 sudo -H -u bunnycam cmake --build --preset default -j4
@@ -111,11 +111,12 @@ Add:
 ```ini
 [Service]
 ExecStart=
-ExecStart=/opt/bunny-tracker/agent-cpp/build/bunnycam-agent
+ExecStart=/opt/bunny-tracker/agent/build/bunnycam-agent
 ```
 
 Then `sudo systemctl restart bunnycam-agent` and check
-`journalctl -u bunnycam-agent -f` for `🐇 BunnyCam C++ Agent starting...`.
+`journalctl -u bunnycam-agent -f` for `🐇 BunnyCam Agent starting...`. The
+Python agent logs `BunnyCam Python Agent starting...` instead.
 
 Rollback:
 
@@ -133,7 +134,7 @@ sudo systemctl revert bunnycam-agent && sudo systemctl restart bunnycam-agent
   `pgrep -c -x ffmpeg` prints 1.
 - Toggle monitoring and Clipping Mode from the dashboard a few times. The
   live view comes back each time, and clips land in Label Studio.
-- Record RSS and CPU with the step 1 loop (into `~/burnin-cpp.txt`), plus
+- Record RSS and CPU with the step 1 loop (into `~/burnin-agent.txt`), plus
   live-view latency, clips per hour, and `latency_summary.sh` p50 and p95.
   Put them next to the baseline.
 

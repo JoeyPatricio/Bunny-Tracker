@@ -3,8 +3,8 @@
 # from the reader finishing a raw frame to the decision returning (motion,
 # normalize, backbone, head, decision; uploads excluded).
 #
-#   journalctl -u bunnycam-agent --since "1 hour ago" | agent-cpp/scripts/latency_summary.sh
-#   agent-cpp/scripts/latency_summary.sh < agent.log
+#   journalctl -u bunnycam-agent --since "1 hour ago" | agent/scripts/latency_summary.sh
+#   agent/scripts/latency_summary.sh < agent.log
 set -euo pipefail
 
 grep -o 'frame  t=[0-9.]*ms' | sed 's/.*t=//; s/ms$//' | sort -n | awk '

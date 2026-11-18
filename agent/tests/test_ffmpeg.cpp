@@ -40,8 +40,7 @@ struct TempDir {
 // path and seg_dir matter.
 CaptureConfig fake_config(const char* script, const fs::path& seg_dir) {
     CaptureConfig config;
-    config.ffmpeg_path =
-        (bunnycam::test::kRepoDir / "agent-cpp/tests/fake_ffmpeg" / script).string();
+    config.ffmpeg_path = (bunnycam::test::kRepoDir / "agent/tests/fake_ffmpeg" / script).string();
     config.camera_format = "lavfi";
     config.camera_input = "unused";
     config.seg_dir = seg_dir;
