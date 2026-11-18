@@ -13,6 +13,7 @@
 #include <fstream>
 #include <memory>
 #include <mutex>
+#include <regex>
 #include <stop_token>
 #include <string>
 #include <thread>
@@ -32,31 +33,55 @@ using nlohmann::json;
 // The binary lives at <repo>/agent-cpp/<build dir>/bunnycam-agent.
 fs::path repo_root() { return fs::read_symlink("/proc/self/exe").parent_path() / ".." / ".."; }
 
-// python-dotenv's load_dotenv() for the subset data/.env uses: KEY=VALUE
-// lines, optional `export `, # comments, optional matching quotes. Like
-// load_dotenv, it never overrides a variable already in the environment.
+std::string_view trim(std::string_view s) {
+    const auto first = s.find_first_not_of(" \t");
+    if (first == std::string_view::npos) return {};
+    return s.substr(first, s.find_last_not_of(" \t") - first + 1);
+}
+
+// ${NAME} and ${NAME:-default}, which python-dotenv expands in unquoted and
+// double-quoted values. Earlier lines are already in the environment, and a
+// variable the process was started with wins over the file, as with
+// load_dotenv(override=False).
+std::string expand(const std::string& value) {
+    static const std::regex var(R"(\$\{([^}:]+)(?::-([^}]*))?\})");
+    std::string out;
+    auto it = value.cbegin();
+    for (std::smatch m; std::regex_search(it, value.cend(), m, var); it = m[0].second) {
+        out.append(it, m[0].first);
+        const char* set = std::getenv(m[1].str().c_str());
+        out += set ? set : m[2].str();
+    }
+    out.append(it, value.cend());
+    return out;
+}
+
+// python-dotenv's load_dotenv() for what data/.env uses: KEY=VALUE lines,
+// optional `export `, # comments, single or double quotes, CRLF endings,
+// variable expansion. Never overrides a variable already in the environment.
 void load_dotenv(const fs::path& path) {
     std::ifstream in(path);
     for (std::string line; std::getline(in, line);) {
-        const auto start = line.find_first_not_of(" \t");
-        if (start == std::string::npos || line[start] == '#') continue;
-        line.erase(0, start);
-        if (line.starts_with("export ")) line.erase(0, 7);
-        const auto eq = line.find('=');
-        if (eq == std::string::npos) continue;
-        std::string key = line.substr(0, eq);
-        std::string value = line.substr(eq + 1);
-        key.erase(key.find_last_not_of(" \t") + 1);
-        value.erase(0, value.find_first_not_of(" \t") == std::string::npos
-                           ? value.size()
-                           : value.find_first_not_of(" \t"));
-        if (value.size() >= 2 && (value.front() == '"' || value.front() == '\'') &&
-            value.back() == value.front()) {
-            value = value.substr(1, value.size() - 2);
-        } else if (const auto hash = value.find(" #"); hash != std::string::npos) {
-            value.erase(hash);
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        std::string_view rest = trim(line);
+        if (rest.empty() || rest.front() == '#') continue;
+        if (rest.starts_with("export ")) rest = trim(rest.substr(7));
+        const auto eq = rest.find('=');
+        if (eq == std::string_view::npos) continue;
+        const std::string key(trim(rest.substr(0, eq)));
+        std::string_view raw = trim(rest.substr(eq + 1));
+        std::string value;
+        if (!raw.empty() && (raw.front() == '"' || raw.front() == '\'')) {
+            // Anything after the closing quote, such as a comment, is dropped.
+            const auto close = raw.find(raw.front(), 1);
+            value = raw.substr(1, close == std::string_view::npos ? close : close - 1);
+            if (raw.front() == '"') value = expand(value);
+        } else {
+            if (const auto hash = raw.find(" #"); hash != std::string_view::npos) {
+                raw = trim(raw.substr(0, hash));
+            }
+            value = expand(std::string(raw));
         }
-        value.erase(value.find_last_not_of(" \t\r") + 1);
         setenv(key.c_str(), value.c_str(), 0);
     }
 }
@@ -205,6 +230,17 @@ public:
         }
     }
 
+    // Stops ffmpeg now, before the loops are joined (an in-flight upload can
+    // hold one for its full timeout), and keeps the monitor thread from
+    // starting another capture meanwhile.
+    void begin_shutdown() {
+        {
+            std::lock_guard lock(capture_mu_);
+            shutting_down_ = true;
+        }
+        stop_capture();
+    }
+
     void stop_capture() {
         std::unique_ptr<FfmpegCapture> capture;
         {
@@ -257,6 +293,10 @@ private:
 
     void start_capture() {
         stop_capture();
+        {
+            std::lock_guard lock(capture_mu_);
+            if (shutting_down_) return;
+        }
         // frame_interval and segment_secs are baked into ffmpeg's args, so
         // Clipping Mode's cadence only takes effect across a restart.
         const bool clipping = loop_->clipping();
@@ -282,8 +322,14 @@ private:
                 }
             });
         capture->start();
-        std::lock_guard lock(capture_mu_);
-        capture_ = std::move(capture);
+        {
+            std::lock_guard lock(capture_mu_);
+            if (!shutting_down_) {
+                capture_ = std::move(capture);
+                return;
+            }
+        }
+        capture->stop_and_wait();  // shutdown began while this one started
     }
 
     void apply_monitor_state(const json& state) {
@@ -409,7 +455,8 @@ private:
     std::mutex decision_mu_;  // capture.py's _decision_lock
     std::mutex capture_mu_;
     std::unique_ptr<FfmpegCapture> capture_;
-    bool paused_ = false;  // monitor thread only
+    bool shutting_down_ = false;  // guarded by capture_mu_
+    bool paused_ = false;         // monitor thread only
 };
 
 }  // namespace
@@ -456,12 +503,12 @@ int main() {
     int sig = 0;
     sigwait(&signals, &sig);
     if (exit_code == 0) log("Shutdown signal received — stopping ffmpeg child before exit");
+    agent->begin_shutdown();
     monitor.request_stop();
     prune.request_stop();
     drain.request_stop();
     monitor.join();
     prune.join();
     drain.join();
-    agent->stop_capture();
     return exit_code;
 }
