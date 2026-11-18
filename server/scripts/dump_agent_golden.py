@@ -46,6 +46,8 @@ OUT_DIR = SERVER_DIR.parent / "agent-cpp" / "tests" / "fixtures"
 
 INFERENCE_FRAMES = 12
 INFERENCE_WINDOW = 8
+# A second window size, so a port that hardcodes 8 fails.
+INFERENCE_WINDOW_ALT = 3
 # Flat CHW indices spread over all three channels, compared bit-exact.
 NORMALIZE_SAMPLES = [0, 1, 223, 224 * 112 + 112, 50175, 50176, 75000, 100351, 100352, 150527]
 
@@ -63,6 +65,7 @@ def write_inference(frames: np.ndarray) -> None:
     backbone = Backbone(str(MODELS_DIR / "backbone_int8.onnx"))
     head = TemporalHead(str(MODELS_DIR / "head.onnx"))
     predictor = Predictor(backbone, head, INFERENCE_WINDOW)
+    alt = Predictor(backbone, head, INFERENCE_WINDOW_ALT)
     records = []
     for frame in frames[:INFERENCE_FRAMES]:
         pixels = normalize(frame)
@@ -74,16 +77,21 @@ def write_inference(frames: np.ndarray) -> None:
             "embedding": [float(v) for v in embedding],
             "logits": None,
             "probs": None,
+            "probsAltWindow": None,
         }
         if len(predictor.buffer) == INFERENCE_WINDOW:
             logits = head.classify(np.stack(predictor.buffer))
             record["logits"] = [float(v) for v in logits]
             record["probs"] = [float(v) for v in predictor.predict()]
+        alt_probs = alt.push_embedding(embedding)
+        if alt_probs is not None:
+            record["probsAltWindow"] = [float(v) for v in alt_probs]
         records.append(record)
     out = {
         "backbone": "backbone_int8.onnx",
         "head": "head.onnx",
         "window": INFERENCE_WINDOW,
+        "altWindow": INFERENCE_WINDOW_ALT,
         "numClasses": head.num_classes,
         "frames": records,
     }
