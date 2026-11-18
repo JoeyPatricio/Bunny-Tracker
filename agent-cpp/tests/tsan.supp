@@ -1,0 +1,14 @@
+# ONNX Runtime's prebuilt library is not built with TSan. Ignore the
+# interceptors it calls, so its thread pool synchronisation does not show up
+# as races against the caller.
+called_from_lib:libonnxruntime.so
+
+# With ORT's pthread_mutex_lock calls ignored, two of its unlocks look like
+# unlocks of an unlocked mutex. ORT is uninstrumented, so neither report has
+# an ORT frame to match on.
+# 1. Its pool threads wait on libstdc++ condition variables. This rule also
+#    hides that report kind for our own condition variables.
+mutex:std::condition_variable::wait
+# 2. A static destructor tail-calls pthread_mutex_unlock on an ORT global at
+#    exit, so the only caller frame is libc's __run_exit_handlers.
+mutex:libc.so.6
