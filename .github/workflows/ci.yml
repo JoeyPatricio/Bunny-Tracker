@@ -64,3 +64,28 @@ jobs:
       - run: uv sync --frozen --python 3.14 --group dev
       - name: ruff check
         run: .venv/bin/ruff check .
+
+  # The C++ capture agent: format check, then the test suite under the
+  # plain, ASan+UBSan and TSan presets. ffmpeg is installed so the real
+  # lavfi capture test runs instead of skipping.
+  cpp:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: agent-cpp
+    steps:
+      - uses: actions/checkout@v4
+      - name: Packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake g++ libssl-dev nlohmann-json3-dev catch2 unzip clang-format ffmpeg
+      - name: ONNX Runtime
+        run: scripts/fetch-onnxruntime.sh
+      - name: clang-format
+        run: clang-format --dry-run -Werror src/*.cpp src/*.hpp tests/*.cpp tests/*.hpp
+      - name: Release
+        run: cmake --preset default && cmake --build --preset default -j && ctest --preset default
+      - name: ASan+UBSan
+        run: cmake --preset asan && cmake --build --preset asan -j && ctest --preset asan
+      - name: TSan
+        run: cmake --preset tsan && cmake --build --preset tsan -j && ctest --preset tsan

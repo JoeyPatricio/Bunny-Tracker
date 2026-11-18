@@ -23,8 +23,9 @@ configure_file("${ONNXRUNTIME_ROOT}/lib/libonnxruntime.so" "${CMAKE_BINARY_DIR}/
 find_package(Threads REQUIRED)
 find_package(OpenSSL REQUIRED)
 find_package(nlohmann_json 3 REQUIRED)
-# cpp-httplib is header-only, and not every distro ships its CMake config.
-find_path(HTTPLIB_INCLUDE_DIR httplib.h REQUIRED)
+# cpp-httplib v0.58.0, vendored: Debian 13 ships 0.18, whose multipart API
+# predates the one server.cpp uses. Upstream sha256 aa14e7e7bd27...faa5.
+set(HTTPLIB_INCLUDE_DIR ${CMAKE_SOURCE_DIR}/third_party/cpp-httplib)
 find_package(Catch2 3 REQUIRED)
 
 add_library(agent_core STATIC
