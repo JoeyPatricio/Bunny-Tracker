@@ -1,11 +1,9 @@
 /**
- * Ground truth for motion-parity testing (Phase 3): poolLuma()/motionLevel()
- * copied VERBATIM from server/agent/capture.mjs (read-only reference, not
- * imported — this script never touches the live file or process), run over
- * the exact same frame sequence dump_agent_frames.py produced, to a JSON
- * sidecar of {level, hotCells, lighting} per frame.
+ * Independent JavaScript reference for motion-parity testing. Runs the
+ * original motion algorithm over the frames from dump_agent_frames.py and
+ * writes {level, hotCells, lighting} per frame.
  *
- * Usage: node scripts/js_motion_ground_truth.mjs   (run from server/scripts/)
+ * Usage from server/: node scripts/js_motion_ground_truth.mjs
  */
 import fs from 'fs'
 import path from 'path'
@@ -18,7 +16,7 @@ const OUT_PATH = path.join(FIXTURES_DIR, 'motion_fixture_ground_truth.json')
 
 const FRAME_SIZE = 224 * 224 * 3
 
-// ── Verbatim copy from server/agent/capture.mjs (constants + both functions) ──
+// Original motion constants and functions, kept fixed as the parity reference.
 const PIXEL_DIFF = 15
 const POOL       = 4
 const POOLED_W   = 224 / POOL

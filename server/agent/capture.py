@@ -10,7 +10,6 @@ import os
 import time
 from pathlib import Path
 
-import httpx
 import imageio_ffmpeg
 import numpy as np
 from dotenv import load_dotenv
@@ -87,7 +86,7 @@ def interest_score(probs: np.ndarray) -> float:
 
 # What _classify returns when there is no model to run. warm stays False, so
 # `candidate` and therefore behavior_alert are structurally unreachable — that
-# is what guarantees no email, webhook or label suggestion can fire while
+# is what guarantees no email or label suggestion can fire while
 # harvesting, rather than a flag someone can forget to check.
 NO_PREDICTION = {
     "label": None,
@@ -393,9 +392,6 @@ class Agent:
         self.clipped_segments: set[tuple[str, float]] = set()
         self.clip_budget_blocked = False
 
-        self.alert_webhook_url = os.environ.get("ALERT_WEBHOOK_URL")
-        self.alert_webhook_secret = os.environ.get("ALERT_WEBHOOK_SECRET", "")
-
         self.seg_dir = segment_dir()
         self.live_frame_path = live_frame_path()
 
@@ -527,26 +523,6 @@ class Agent:
         self.clip_budget_blocked = False
         return resp.json()["filename"]
 
-    async def _notify_webhook(self, pred: dict, filename: str) -> None:
-        if not self.alert_webhook_url:
-            return
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                await client.post(
-                    self.alert_webhook_url,
-                    headers={"X-BunnyCam-Secret": self.alert_webhook_secret},
-                    json={
-                        "label": pred["label"],
-                        "confidence": pred["confidence"],
-                        "filename": filename,
-                        "clipUrl": f"{self.client.client.base_url}/recordings/{filename}",
-                        "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                    },
-                )
-            log(f"  → n8n webhook notified ({pred['label']})")
-        except Exception as err:
-            log("  webhook failed:", err)
-
     async def _upload_and_alert(self, pred: dict) -> None:
         """`pred` is the decision's `alert` dict — {label, confidence} named by
         the whole streak, never the raw argmax. It is guaranteed non-resting,
@@ -568,32 +544,18 @@ class Agent:
         except Exception:
             pass
 
-        if self.alert_webhook_url:
-            gate_resp = await self.client.post(
-                "/api/notify/gate", json={"label": pred["label"]}
-            )
-            gate = (
-                gate_resp.json()
-                if gate_resp.status_code == 200
-                else {"allow": False, "reason": "gate unreachable"}
-            )
-            if gate.get("allow"):
-                await self._notify_webhook(pred, filename)
-            else:
-                log(f"  → webhook skipped ({gate.get('reason')})")
-        else:
-            resp = await self.client.post(
-                "/api/notify",
-                json={
-                    "label": pred["label"],
-                    "confidence": pred["confidence"],
-                    "filename": filename,
-                },
-            )
-            result = resp.json()
-            log(
-                f"  ✉ Email: {'sent' if result.get('sent') else result.get('reason') or result.get('error')}"
-            )
+        resp = await self.client.post(
+            "/api/notify",
+            json={
+                "label": pred["label"],
+                "confidence": pred["confidence"],
+                "filename": filename,
+            },
+        )
+        result = resp.json()
+        log(
+            f"  ✉ Email: {'sent' if result.get('sent') else result.get('reason') or result.get('error')}"
+        )
 
     async def _upload_motion_clip(self, motion_level: float) -> None:
         filename = await self._upload_segment(source="motion")

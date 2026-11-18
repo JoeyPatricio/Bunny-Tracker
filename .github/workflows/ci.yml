@@ -1,9 +1,9 @@
-# Two jobs.
+# Python checks, Python lint, and C++ agent checks.
 #
 # hermetic: builds both venvs from uv.lock (the training group uses the CPU
 # torch index), builds the client because
 # test_security_regressions.py exercises the real SPA fallback in client/dist/,
-# then runs every check-script through ci/test_scripts.py.
+# then runs every check-script through tests/test_scripts.py.
 #
 # lint: ruff check only. ruff format is deliberately not enforced; see the
 # [tool.ruff.format] note in server/pyproject.toml.

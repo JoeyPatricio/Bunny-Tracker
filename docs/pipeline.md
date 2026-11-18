@@ -33,7 +33,6 @@ Drop `--group dev` for a deployment. To change a dependency, edit
 ```bash
 uv export --frozen --no-hashes --no-annotate --no-emit-project --output-file requirements.txt
 uv export --frozen --no-hashes --no-annotate --no-emit-project --emit-index-url --group train --output-file requirements-train.txt
-uv export --frozen --no-hashes --no-annotate --no-emit-project --emit-index-url --group train --output-file requirements-train-cpu.txt
 ```
 
 Prefer `uv sync --frozen`. The requirements format can't keep the per-package
@@ -107,6 +106,9 @@ Trains on every clip using the config CV selected. With no held-out data,
 accuracy. It refuses a CV result computed on different labels. `--fold R:K`
 fits a single outer fold for debugging.
 
+One of `--all-clips` or `--fold` is required. The retired single-split training
+mode cannot produce a deployable model and has been removed.
+
 ### 4. Export
 
 ```bash
@@ -179,10 +181,9 @@ Both use the runtime venv and write to `models/`.
 
 ## Other scripts
 
-- `training/diagnose_meanstd.py` is the old single-split diagnostic. Use
-  crossval's `static_meanstd_mlp` arm instead.
-- `scripts/legacy/js_baseline_v1.mjs` reproduces the retired v1 tfjs number
-  (74.4%). It predicts v1's five classes, so don't compare v2 against it.
+- Cross-validation's `static_meanstd_mlp` arm compares mean/std pooling with
+  the temporal head using the same folds. Its classifier lives in
+  `training/model.py`.
 - `scripts/bench_pi.py` measures inference latency on the Pi.
 - `training.pose_features`, `training.learning_curve` and `training.figures`
   are for the paper. They error on missing inputs instead of filling in
@@ -195,23 +196,26 @@ Both use the runtime venv and write to `models/`.
 .venv/bin/python -m pytest -m "not local_data"   # what CI runs
 ```
 
-`ci/test_scripts.py` runs each check script as a subprocess in the right venv
-(`tests/` in the runtime venv, `training/test_*.py` in the training venv) and
-expects exit 0. Each script also runs on its own, which is quicker when one
-fails:
+`tests/test_scripts.py` runs each check script as a subprocess in the right
+venv and expects exit 0. Runtime checks live in `tests/`, and training checks
+live in `tests/training/`. Most training checks need the training venv, while
+`test_promote_reports.py` uses the runtime venv. Each script also runs on its
+own:
 
 ```bash
 .venv/bin/python tests/test_capture_loop.py
-.venv-train/bin/python training/test_evaluate_gates.py
+.venv-train/bin/python tests/training/test_evaluate_gates.py
 ```
 
 Scripts print `PASS`, `FAIL` or `SKIP` per check. `SKIP` means the machine
 couldn't make the measurement, not a regression. `check_decode_parity.py`
-needs local recordings. `agent/test_capture_offline.py` is a smoke harness
+needs local recordings. `scripts/smoke_capture_offline.py` is a smoke harness
 and isn't in the runner.
 
-CI (`.github/workflows/ci.yml`) builds both venvs from `uv.lock`, builds the
-client, runs the `not local_data` set, and runs `ruff check`.
+See the [development guide](development.md#tests) for setup, manual smoke
+checks, and the C++ test suite. CI (`.github/workflows/ci.yml`) builds both
+venvs from `uv.lock`, builds the client, runs the `not local_data` set, and
+runs `ruff check`. A separate job builds and tests the C++ agent.
 
 ## After an ethogram change
 

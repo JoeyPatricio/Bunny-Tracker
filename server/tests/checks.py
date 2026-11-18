@@ -3,7 +3,7 @@
 It used to be copy-pasted verbatim into six files. The scripts all do
 `sys.path.insert(0, <server>)` before importing project code, so
 `from tests.checks import check, skip, finish` resolves from both tests/ and
-training/.
+tests/training/.
 
 Three outcomes, not two. `skip` exists for a measurement that cannot be made on
 this machine (a timing check on a box too fast to stall the loop, say). That is

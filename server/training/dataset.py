@@ -1,78 +1,14 @@
-"""Group-aware split, augmentation, and windowed embedding dataset.
-
-Ported from client/src/components/TrainingStudio.jsx's groupKey/splitByGroup
-(section 3.3: "reproduce the good parts... fix its known problems").
-"""
+"""Clip augmentation, frame counts, and training class weights."""
 import random
 
 import numpy as np
 import torch
-from torch.utils.data import Dataset
 
 from shared.labels import LABELS
-from training.splits import group_key
 
 WINDOW = 8          # frames per training/eval window (matches the current model's FRAMES_PER_CLIP)
 TRAIN_FRAMES = 16    # frames extracted per training clip, to allow sliding windows
-TRAIN_WINDOW_STARTS = [0, 4, 8]  # sliding-window starts over TRAIN_FRAMES=16, window=8
 AUG_COPIES = 2       # matches the JS trainer: original + mirror + (AUG_COPIES - 1) jittered
-
-
-def split_by_group(clips: list[tuple[str, str]], val_fraction: float = 0.2, seed: int = 0):
-    """Group-aware stratified split at the clip level. Port of splitByGroup().
-
-    Legacy: the single train/val split that every pre-Phase-3 number came from.
-    training/splits.py's nested grouped CV replaces it as the evaluation design.
-    """
-    targets = [LABELS.index(label) for _, label in clips]
-    class_total = [0] * len(LABELS)
-    for t in targets:
-        class_total[t] += 1
-    quota = [max(1, round(c * val_fraction)) for c in class_total]
-
-    group_map: dict[str, list[int]] = {}
-    for i, (filename, _) in enumerate(clips):
-        group_map.setdefault(group_key(filename), []).append(i)
-
-    group_list = list(group_map.keys())
-    random.Random(seed).shuffle(group_list)
-
-    val_class = [0] * len(LABELS)
-    train_idx: list[int] = []
-    val_idx: list[int] = []
-    for g in group_list:
-        idxs = group_map[g]
-        counts = [0] * len(LABELS)
-        for i in idxs:
-            counts[targets[i]] += 1
-        needed = any(c > 0 and val_class[k] < quota[k] for k, c in enumerate(counts))
-        fits = all(c == 0 or val_class[k] + c <= quota[k] + 1 for k, c in enumerate(counts))
-        if needed and fits:
-            val_idx.extend(idxs)
-            for k, c in enumerate(counts):
-                val_class[k] += c
-        else:
-            train_idx.extend(idxs)
-
-    fallback = False
-    if not val_idx or not train_idx:
-        fallback = True
-        idx = list(range(len(clips)))
-        random.Random(seed).shuffle(idx)
-        at = int(len(clips) * (1 - val_fraction))
-        train_idx, val_idx = idx[:at], idx[at:]
-        val_class = [0] * len(LABELS)
-        for i in val_idx:
-            val_class[targets[i]] += 1
-
-    return {
-        "train": [clips[i] for i in train_idx],
-        "val": [clips[i] for i in val_idx],
-        "groups": len(group_map),
-        "val_per_class": val_class,
-        "total_per_class": class_total,
-        "fallback": fallback,
-    }
 
 
 # ── Frame augmentation (training clips only), applied consistently across a
@@ -102,29 +38,6 @@ def make_variants(frames: np.ndarray, rng: random.Random) -> list[np.ndarray]:
             v = flip_frames(v)
         variants.append(v)
     return variants
-
-
-class WindowDataset(Dataset):
-    """Windows of cached per-frame embeddings -> (window, target).
-
-    Reads pre-computed embeddings (see extract_frames.py), not raw pixels —
-    the backbone is frozen, so embeddings only need to be computed once.
-    """
-
-    def __init__(self, entries: list[dict]):
-        # entries: [{"embeddings": np.ndarray [T,1280], "label": str, "windows": [(start,end), ...]}]
-        self.samples: list[tuple[np.ndarray, int]] = []
-        for e in entries:
-            target = LABELS.index(e["label"])
-            for start, end in e["windows"]:
-                self.samples.append((e["embeddings"][start:end], target))
-
-    def __len__(self):
-        return len(self.samples)
-
-    def __getitem__(self, idx):
-        window, target = self.samples[idx]
-        return torch.from_numpy(window).float(), target
 
 
 def class_weights(entries_train: list[dict]) -> torch.Tensor:

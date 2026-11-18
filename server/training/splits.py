@@ -10,9 +10,6 @@ inner folds. Early stopping and every hyperparameter choice (window, learning
 rate, augmentation policy) happen on inner folds only, so the outer eval clips
 are never touched during selection.
 
-group_key lives here as the single definition. dataset.py's split_by_group is
-kept as legacy and imports it from this module.
-
 Training venv only (sklearn). metrics.py is the numpy-only half.
 """
 import re

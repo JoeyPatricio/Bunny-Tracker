@@ -1,6 +1,4 @@
-"""Port of server/index.js: FastAPI() instance, middleware stack, static
-mounts, /recordings/:filename, startup hook.
-"""
+"""FastAPI application with authenticated recordings and dashboard assets."""
 import time as _time
 
 from fastapi import FastAPI, Request
@@ -12,8 +10,6 @@ from app import auth
 from app.config import (
     ALLOWED_ORIGINS,
     CLIENT_DIST_DIR,
-    MODEL_BACKUP_DIR,
-    MODEL_DIR,
     PORT,
     RECORDINGS_DIR,
     SEGMENTS_DIR,
@@ -109,27 +105,6 @@ app.include_router(highlights.router, prefix="/api/highlights")
 app.include_router(import_clips.router, prefix="/api/import")
 
 
-# Serve trained model weights. The agent loads these without a session cookie,
-# so the current model and the MobileNet backbone stay public, but the dated
-# backups under model/backups/ are not something anyone needs over HTTP.
-@app.get("/model/{full_path:path}")
-async def get_model_file(full_path: str):
-    root = MODEL_DIR.resolve()
-    target = (MODEL_DIR / full_path).resolve()
-    if root not in target.parents and target != root:
-        return JSONResponse(status_code=403, content={"error": "Forbidden"})
-    # Test the RESOLVED path, not the raw string. `full_path.startswith("backups")`
-    # was bypassable with any detour that re-enters the directory after
-    # normalization: %2e%2fbackups/... and x%2f%2e%2e%2fbackups/... both served
-    # the backup while passing the containment check above.
-    backups = MODEL_BACKUP_DIR.resolve()
-    if target == backups or backups in target.parents:
-        return JSONResponse(status_code=403, content={"error": "Forbidden"})
-    if not target.is_file():
-        return JSONResponse(status_code=404, content={"error": "Not found"})
-    return FileResponse(target)
-
-
 @app.get("/api/health")
 async def health():
     return {"status": "ok", "uptime": _time.time() - _start_time}
@@ -142,8 +117,8 @@ async def spa_fallback(full_path: str):
         return JSONResponse(status_code=404, content={"error": "Not found"})
     # Uvicorn percent-decodes the path before routing, so `..` segments reach
     # full_path intact and `CLIENT_DIST_DIR / full_path` walks straight out of
-    # client/dist. Resolve and require containment, same as get_model_file
-    # above. Without this, GET /%2e%2e/%2e%2e/data/.env served the secrets file.
+    # client/dist. Resolve and require containment. Without this,
+    # GET /%2e%2e/%2e%2e/data/.env served the secrets file.
     if full_path:
         root = CLIENT_DIST_DIR.resolve()
         candidate = (CLIENT_DIST_DIR / full_path).resolve()

@@ -2,7 +2,7 @@
 
 numpy only, deliberately. calibrate_gate.py imports check_degenerate from here
 and runs on the RUNTIME venv, which has no sklearn and no torch. The metrics
-are checked against sklearn in training/test_splits_metrics.py instead.
+are checked against sklearn in tests/training/test_splits_metrics.py instead.
 
 Everything works from a confusion matrix (rows = true, cols = predicted), so a
 pooled out-of-fold matrix and a single-split matrix go through identical code.

@@ -1,4 +1,4 @@
-# 🐇 Bunny Tracker
+# Bunny Tracker
 
 A self-hosted machine-learning pet monitor. A camera watches your rabbits, a
 classifier recognizes what they're doing, zoomies, grooming, rearing, feeding,
@@ -9,6 +9,34 @@ private to the owner).
 
 ---
 
+## Project structure
+
+| Location | Contents |
+|---|---|
+| [agent/](agent/) | C++20 capture agent, CMake builds, tests, and vendored dependencies |
+| [client/](client/) | React dashboard and Vite build |
+| [server/](server/) | FastAPI backend, Python reference agent, inference, training, and tests |
+| [data/](data/) | Runtime stores, recordings, and shared `.env` |
+| [deploy/pi/](deploy/pi/) | Raspberry Pi services, installation, and data sync |
+| [docs/](docs/) | Development, labeling, training, and research guides |
+| [run.sh](run.sh) | Local launcher for the server and Python agent |
+
+The C++ agent in `agent/` is being prepared for cutover. `run.sh` and the base
+Pi service still launch the Python reference agent in `server/agent/`.
+
+## Guides
+
+| Task | Guide |
+|---|---|
+| Find code or run checks | [Development](docs/development.md) |
+| Build or run the C++ agent | [Capture agent](agent/README.md) |
+| Collect clips | [Clipping Mode](docs/clipping.md) |
+| Label behavior | [Ethogram](docs/ethogram.md) |
+| Train and promote a model | [Training pipeline](docs/pipeline.md) |
+| Install on a Raspberry Pi | [Deployment](deploy/pi/README.md) |
+| Read the research context | [References](docs/references.md) |
+| See planned work | [Stretch goals](docs/stretch-goals.md) |
+
 ## How it works
 
 ```
@@ -18,14 +46,14 @@ private to the owner).
                   └──► MJPEG live stream ──► dashboard                         └──► public text feed
 ```
 
-- **Capture agent** (`server/agent/capture.py`): a headless Python service
+- **Capture agent**: the Python reference (`server/agent/capture.py`) is a service
   that reads the camera with one `ffmpeg` process, sampling a frame every few
   seconds for inference, recording rolling clips, and pushing a live view to
   the dashboard. Runs the same on a PC (`dshow`) or a Raspberry Pi (`v4l2`),
-  only two `.env` lines change.
+  only two `.env` lines change. The [C++ port](agent/README.md) uses the same
+  configuration and models on Linux.
 - **Classifier**: a frozen `timm` edge backbone (`mobilenetv4_conv_small`) plus
-  a small learned temporal head, exported to ONNX and run via ONNX Runtime -
-  replaced the original browser-trained TensorFlow.js/MobileNetV2 classifier.
+  a small learned temporal head, exported to ONNX and run via ONNX Runtime.
   Retraining is now an offline CLI script (`server/training/train.py`), not
   a browser tab; see the note below.
 - **Alerts**: a non-normal behavior emails you the clip (Python `smtplib` +
@@ -166,130 +194,25 @@ model's own predictions can't feed back into its training data.
 
 ### Clipping Mode
 
-Normal monitoring only records when the classifier sees something noteworthy,
-which is the wrong shape for building a training set: it needs a working model
-to decide what to keep, and it keeps very little. **Clipping Mode** inverts
-that - it saves a clip every time motion crosses a threshold, so an unattended
-run produces a large pile of unlabeled footage to hand-label later.
-
-Toggle it with **✂ Clipping** in the dashboard header. While it's on:
-
-- **The classifier does not run at all.** No predictions, no email alerts, no
-  label suggestions - a quiet Activity Log is expected, not a bug. This is also
-  why Clipping Mode works with no trained model on disk, which is exactly the
-  situation you're in when you're collecting data to train one.
-- Clips are 8s (vs. 12s), sampled every 0.5s (vs. 1.5s), and the clip you get
-  is the segment the motion happened in rather than the one before it.
-- They land in `data/recordings/` as `recording-clip-*.webm`, unlabeled, so
-  Label Studio's **Unlabeled** filter is your labeling queue.
-
-The panel under the live feed has the controls:
-
-| Control | What it does |
-|---|---|
-| Sensitivity (1-10) | Maps to a motion threshold (8.0 down to 0.4). Higher catches more, including more empty footage. |
-| Cooldown | Minimum gap between clips. At or above the clip length you get at most one clip per segment. |
-| Dry run | Reports what *would* be captured without saving anything. |
-| Live motion trace | The agent's real motion level with your threshold drawn across it. |
-
-**Tuning it.** Don't guess at the threshold - turn on dry run and watch the
-trace for ten minutes. Rabbit movement shows up as clear spikes; put the line
-just under them. A threshold slightly too low will fill the entire clip budget
-overnight with footage of nothing.
-
-**Guardrails.** Harvesting stops automatically at `clippingMaxUnlabeled`
-(default 500) *unlabeled* clips, or when free disk drops below
-`clippingMinFreeGb` (default 10). Labeled clips don't count toward the cap, so
-working through Label Studio frees room. **Nothing is ever deleted** - when a
-limit is hit the dashboard shows why and waits for you to re-arm it.
-
-**Spread the harvest over several days.** `training/dataset.py::group_key`
-groups agent clips by capture hour so clips from one session can't straddle the
-train/val split. 500 clips from a single overnight run is only a handful of
-groups, which makes the split coarse and the validation number noisy; the same
-clip count gathered across several days is a far more useful dataset.
+Clipping Mode collects unlabeled footage whenever motion crosses a threshold.
+It works without a trained model. See the [Clipping Mode guide](docs/clipping.md)
+for sensitivity, cooldown, dry runs, and storage limits.
 
 ---
 
-## Tests
+## Development
 
-Plain check-scripts, with pytest as a runner over them rather than a rewrite.
-From `server/`:
+The [development guide](docs/development.md) maps the source directories and
+covers Python tests, C++ tests, manual camera checks, and generated files.
+
+From `server/`, run the Python checks with:
 
 ```bash
-.venv/bin/python -m pytest                       # every script
-.venv/bin/python -m pytest -m "not local_data"   # what CI runs
+.venv/bin/python -m pytest -m "not local_data"
 .venv/bin/ruff check .
 ```
 
-Each script also runs on its own, which is quicker when one is red. The
-runtime ones use `.venv`, the two training ones need torch and use
-`.venv-train`:
-
-```bash
-.venv/bin/python tests/test_motion_parity.py
-.venv/bin/python tests/test_security_regressions.py   # needs client/dist/ built
-.venv/bin/python tests/test_server_robustness.py
-.venv/bin/python tests/test_capture_loop.py
-.venv/bin/python tests/test_clipping_mode.py
-.venv-train/bin/python training/test_train_guards.py
-.venv-train/bin/python training/test_export_guards.py
-```
-
-`.venv/bin/python agent/test_capture_offline.py` is a smoke harness for the
-decision loop against the ONNX pair on disk. It asserts nothing beyond not
-crashing, so it is not in the runner. [docs/pipeline.md](docs/pipeline.md#tests)
-has the runner details, the `SKIP` outcome, and what CI does.
-
-`tests/test_clipping_mode.py` covers Clipping Mode end to end (model-free
-decision loop, segment selection, budget) and needs no camera or model.
-
-To exercise the whole capture pipeline with no webcam, point the agent at a
-synthetic source - `_build_args` paces `lavfi` with `-re` so the frame and
-segment timings stay realistic:
-
-```ini
-CAMERA_FORMAT=lavfi
-CAMERA_INPUT=testsrc2=size=640x480:rate=15
-```
-
----
-
-## Project structure
-
-```
-BunnyTracker/
-├── run.sh                      # Foreground dev launcher (server + agent)
-├── deploy/pi/                  # systemd units, install guide, and PC sync for the Raspberry Pi
-├── client/                     # React + Vite frontend
-│   └── src/
-│       └── components/
-│           ├── AgentFeed.jsx        # Live view from the agent + record button
-│           ├── ClippingPanel.jsx    # Clipping Mode tuning (sensitivity, trace, budget)
-│           ├── LabelingStudio.jsx   # Clip labeling UI
-│           ├── TrainingStudio.jsx   # Read-only deployed-model metadata panel
-│           ├── ActivityLog.jsx      # Recent behavior predictions (polls /api/predictions)
-│           ├── RecordingGallery.jsx # Recordings, filterable by label
-│           └── DemoView.jsx         # Public demo (highlights + live feed)
-│
-├── data/                       # Runtime data and .env, no code
-│   ├── recordings/             # Saved .webm clips (git-ignored)
-│   ├── model/                  # Retired tfjs artifacts. No Python code path
-│   │                           #   can run them; still served read-only at
-│   │                           #   /model/* and covered by the traversal tests
-│   ├── labels.json, approved_highlights.json, monitor.json, activity-log.json, ...
-│   └── agent/segments/         # Rolling capture segments
-│
-└── server/                     # Python backend + agent + training
-    ├── app/                      # FastAPI server (routers, auth, storage)
-    ├── agent/                    # Headless capture agent (capture.py, ffmpeg_io.py, client.py)
-    ├── inference/                 # ONNX Runtime wrappers (backbone, temporal head, predictor)
-    ├── shared/                    # Code shared by the trainer and the agent (frames, motion, labels)
-    ├── training/                  # Offline PyTorch training CLI
-    ├── models/                    # Deployed ONNX artifacts (backbone, head)
-    ├── .venv/                     # Runtime deps (no torch) - what actually runs in production
-    └── .venv-train/               # Training deps (torch, timm) - dev box only
-```
+For the C++ build and tests, see [agent/README.md](agent/README.md#build-and-test).
 
 ---
 
@@ -340,101 +263,9 @@ classifier cannot run until a 7-class head is trained and exported.
 ## Notes
 
 - Recordings (`data/recordings/`), labels (`data/labels.json`), backups,
-  and `.env` are all git-ignored. The deployed ONNX artifacts in
-  `server/models/` are committed, so a clone can run inference without
-  retraining.
+  and `.env` are all git-ignored. The ONNX artifacts in `server/models/` are
+  also used by the C++ parity tests. Live classification requires a model
+  promoted for the current ethogram.
 - Labels are written atomically and serialized, with `.bak` plus daily backups,
   so concurrent edits can't corrupt or wipe them.
 - No third-party ML service, inference runs locally via ONNX Runtime.
----
-
-## References
-
-The behaviour vocabulary this project is moving toward is defined in
-[docs/ethogram.md](docs/ethogram.md). Everything below is either a source for
-those definitions, directly comparable prior work, or a tool the project uses
-or should be measured against.
-
-### Ethogram and behavioural definitions
-
-- NC3Rs / IAT / RSPCA. **Laboratory rabbit ethogram**, from *Refining rabbit
-  care: A resource for those working with rabbits in research*, UFAW/RSPCA
-  Rabbit Behaviour and Welfare Group (2008).
-  https://nc3rs.org.uk/sites/default/files/2022-01/Laboratory%20rabbit%20ethogram.pdf
-  Primary source for the v2 state and event definitions. It is itself a
-  compilation of the three papers below.
-- Morton DB et al. (2003). Refinements in rabbit husbandry: Second report of
-  the BVAAWF/FRAME/RSPCA/UFAW joint working group on refinement.
-  *Laboratory Animals* 27: 301-329 (Appendix 1, pp. 325-7).
-- Held SDE, Turner RJ, Wootton RJ (2001). The behavioural repertoire of
-  non-breeding group-housed female laboratory rabbits (*Oryctolagus
-  cuniculus*). *Animal Welfare* 10(4): 437-443.
-- Gunn D, Morton DB (1995). Inventory of the behaviour of New Zealand White
-  rabbits in laboratory cages. *Applied Animal Behaviour Science* 45(3-4):
-  277-292. doi:10.1016/0168-1591(95)00627-5
-
-### Prior work on automated rabbit behaviour classification
-
-- Adedeji OJ, Abayomi-Alli A, Arogundade O'T, Abayomi-Alli O, Omoyiola BO
-  (2023). **Deep Transfer Learning for Classification of Rabbit Behaviour
-  Using Publicly Available Datasets.** *First International Conference on the
-  Advancements of Artificial Intelligence in African Context (AAIAC)*, IEEE.
-  doi:10.1109/AAIAC60008.2023.10465471
-
-  The closest published work to this project and the natural baseline to
-  compare against. YOLOv8 + ByteTrack for rabbit detection and tracking
-  (mAP50 0.96), and a fine-tuned ViT-B/16 for behaviour classification over
-  seven classes (digging, humping and mating, eating, periscoping, jumping and
-  binkying, laying, flopping and loafing), reaching 86% accuracy against 80%
-  for EfficientNet and 76% for ResNet18, on roughly 1100 images.
-
-  Differences that matter for this project: their classifier operates on
-  **single still images** scraped from YouTube, Roboflow, GitHub and Google
-  Images, not on video, so temporal behaviours are inferred from one frame.
-  The split is 70:30 train/validation with no test set and, as far as the paper
-  describes it, no grouping by source video, so frames from the same clip can
-  appear on both sides. Their class list is vernacular and carries no
-  operational definitions or inter-observer reliability statistics, and the
-  paper reports confusion between the visually similar classes (laying and
-  periscoping). The paper is candid that its dataset is "not robust enough to
-  cover the numerous ranges of behavioural variations" and that comparative
-  benchmarks in this domain barely exist.
-
-### Computational ethology tools
-
-Established tooling in this field. Cited here because any paper coming out of
-this project will be expected to position itself against them.
-
-- Friard O, Gamba M (2016). BORIS: a free, versatile open-source event-logging
-  software for video/audio coding and live observations. *Methods in Ecology
-  and Evolution* 7(11): 1325-1330. https://www.boris.unito.it/
-  The standard tool for interval-coded ethogram annotation.
-- Bohnslav JP et al. (2021). DeepEthogram, a machine learning pipeline for
-  supervised behavior classification from raw pixels. *eLife* 10:e63377.
-  doi:10.7554/eLife.63377
-  Closest prior art methodologically: supervised behaviour classification
-  directly from video, which is what the classifier here does.
-- Mathis A et al. (2018). DeepLabCut: markerless pose estimation of
-  user-defined body parts with deep learning. *Nature Neuroscience* 21:
-  1281-1289.
-- Pereira TD et al. (2022). SLEAP: A deep learning system for multi-animal
-  pose tracking. *Nature Methods* 19: 486-495.
-- Goodwin NL, Nilsson SRO et al. (2024). Simple Behavioral Analysis (SimBA) as
-  a platform for explainable machine learning in behavioral neuroscience.
-  *Nature Neuroscience* 27: 1411-1424. doi:10.1038/s41593-024-01649-9
-- Hsu AI, Yttri EA (2021). B-SOiD, an open-source unsupervised algorithm for
-  identification and fast prediction of behaviors. *Nature Communications*
-  12: 5188. doi:10.1038/s41467-021-25420-x
-
-### Models and runtime used here
-
-- Qin D et al. (2024). MobileNetV4: Universal Models for the Mobile Ecosystem.
-  *European Conference on Computer Vision (ECCV)*. The deployed backbone is
-  `mobilenetv4_conv_small`.
-- Wightman R (2019). **PyTorch Image Models** (`timm`).
-  https://github.com/huggingface/pytorch-image-models
-  Source of the frozen backbone and its pretrained weights.
-- **ONNX Runtime.** https://onnxruntime.ai/ Inference for the exported
-  backbone and temporal head, including the int8 quantized backbone.
-- **FFmpeg.** https://ffmpeg.org/ All video capture, segmenting, and frame
-  decode, via `imageio-ffmpeg`.

@@ -10,7 +10,7 @@ Arms:
     static_logreg       mean||std pooled embeddings into LogisticRegression.
                         The primary comparator: same frozen embeddings as the
                         GRU, so the only variable is temporal aggregation.
-    static_meanstd_mlp  diagnose_meanstd.py's MeanStdClassifier on the same
+    static_meanstd_mlp  model.MeanStdClassifier on the same
                         pooled features.
     gru                 The shipping TemporalHead (train.fit_head).
 
@@ -98,13 +98,13 @@ from training.cache import (
     split_entries,
 )
 from training.dataset import class_weights
-from training.diagnose_meanstd import MeanStdClassifier
 from training.metrics import (
     classification_report,
     confusion_matrix,
     grouped_macro_f1_interval,
     wilson_interval,
 )
+from training.model import MeanStdClassifier
 from training.splits import group_key, make_folds
 
 MODELS_DIR = Path(__file__).resolve().parent.parent / "models"
@@ -121,7 +121,7 @@ LOGREG_CS = (0.01, 0.1, 1.0)
 # ── features for the static arms ─────────────────────────────────────────
 
 def pooled(window: np.ndarray) -> np.ndarray:
-    """[N,1280] -> [2560] mean||std, diagnose_meanstd.mean_std_features."""
+    """[N,1280] -> [2560] mean||std pooled embeddings."""
     return np.concatenate([window.mean(axis=0), window.std(axis=0)])
 
 

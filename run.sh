@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Start Bunny Tracker without pm2: the FastAPI server and the capture agent,
+# Start the FastAPI server and Python capture agent,
 # both on the runtime venv's own interpreter (server/.venv), the same two
 # processes the Pi's systemd units run. Ctrl+C stops both.
 #

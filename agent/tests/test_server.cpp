@@ -39,9 +39,6 @@ struct Fixture {
     std::vector<std::string> sources;
     std::vector<std::string> paths;
     std::atomic<int> status{200};
-    std::atomic<bool> allow{true};
-    json webhook;
-    std::string secret;
     std::mutex mu;
     std::mutex handler_mu;
     std::function<httplib::Server::HandlerResponse(const httplib::Request&, httplib::Response&)>
@@ -62,14 +59,6 @@ struct Fixture {
         std::lock_guard lock(mu);
         return paths;
     }
-    auto hook_body() {
-        std::lock_guard lock(mu);
-        return webhook;
-    }
-    auto hook_secret() {
-        std::lock_guard lock(mu);
-        return secret;
-    }
     explicit Fixture(bool serve = true) {
         char pattern[] = "/tmp/bunny-server-XXXXXX";
         auto path = mkdtemp(pattern);
@@ -87,8 +76,7 @@ struct Fixture {
             res.set_content(json{{"filename", "saved.webm"}, {"reason", "disk floor"}}.dump(),
                             "application/json");
         });
-        stub.server.Post(R"(/api/labels/.*|/api/notify|/api/notify/gate)", [this](const auto& req,
-                                                                                  auto& res) {
+        stub.server.Post(R"(/api/labels/.*|/api/notify)", [this](const auto& req, auto& res) {
             std::lock_guard lock(mu);
             paths.push_back(req.path);
             if (req.path == "/api/notify")
@@ -96,15 +84,7 @@ struct Fixture {
                       json{{"label", "rearing"}, {"confidence", 95}, {"filename", "saved.webm"}});
             else
                 CHECK(json::parse(req.body) == json{{"label", "rearing"}});
-            res.set_content(json{{"allow", allow.load()}, {"sent", true}}.dump(),
-                            "application/json");
-        });
-        stub.server.Post("/hook", [this](const auto& req, auto& res) {
-            std::lock_guard lock(mu);
-            webhook = json::parse(req.body);
-            secret = req.get_header_value("X-BunnyCam-Secret");
-            CHECK_FALSE(req.has_header("X-Agent-Token"));
-            res.status = 503;  // HTTP failures still count as a delivered webhook.
+            res.set_content(json{{"sent", true}}.dump(), "application/json");
         });
         stub.server.set_pre_routing_handler([this](const auto& req, auto& res) {
             decltype(before) handler;
@@ -310,30 +290,6 @@ TEST_CASE("motion source alert endpoints and budget episodes", "[server]") {
     c.reset_budget_block();
     c.upload_motion_clip(5, 1000);
     CHECK(logs.count("Motion capture refused") == 3);
-}
-TEST_CASE("webhook gate secret timestamp and normalized recording URL", "[server]") {
-    Fixture f;
-    ServerClient client(f.stub.url + "/", "token");
-    auto options = f.options();
-    options.webhook_url = f.stub.url + "/hook";
-    options.webhook_secret = "secret";
-    Clips c(options, client);
-    f.file("a.webm", 990);
-    f.file("b.webm", 999);
-    f.allow = false;
-    c.upload_and_alert({"rearing", 95}, 1000);
-    CHECK(f.hook_body().is_null());
-    f.allow = true;
-    c.upload_and_alert({"rearing", 95}, 1000);
-    CHECK(f.sent_paths() ==
-          std::vector<std::string>{"/api/labels/saved.webm/suggest", "/api/notify/gate",
-                                   "/api/labels/saved.webm/suggest", "/api/notify/gate"});
-    CHECK(f.hook_secret() == "secret");
-    CHECK(f.hook_body() == json{{"label", "rearing"},
-                                {"confidence", 95},
-                                {"filename", "saved.webm"},
-                                {"clipUrl", f.stub.url + "/recordings/saved.webm"},
-                                {"at", "1970-01-01T00:16:40Z"}});
 }
 TEST_CASE("prune only removes webm older than cutoff", "[server]") {
     Fixture f(false);

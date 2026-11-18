@@ -1,10 +1,9 @@
 # Dependencies
 node_modules/
-client/node_modules/
-server/node_modules/
 
 # Build output
 client/dist/
+/client-dist.tgz
 
 # Secrets
 .env
@@ -31,17 +30,12 @@ data/monitor.json*
 data/hidden.json*
 data/approved_highlights.json*
 
-# MobileNet backbone (fetch with scripts/download-mobilenet.mjs)
-data/model/mobilenet/
-
 # Python backend (server)
 server/.venv/
 server/.venv-train/
 server/models/cache/
-# Archived caches too. `server/models/cache/` above covers only that exact
-# path, so moving a cache anywhere else (e.g. archiving it under a versioned
-# directory during an ethogram migration) silently makes ~14 MB of embedding
-# .npy files trackable again. Match the cache by name at any depth instead.
+# Promotion backups and embedding caches stay local.
+server/models/archive/
 server/models/**/cache/
 # Loose embedding/probability arrays, wherever they land. These are derived
 # from the owner's own footage and have no business in a public repo.
@@ -50,6 +44,8 @@ server/models/**/*.npz
 server/agent/live_frame.jpg
 __pycache__/
 *.pyc
+.pytest_cache/
+.ruff_cache/
 
 # Raw-bytes copy of the motion fixture, same frames as the .npy next to it.
 # Only scripts/js_motion_ground_truth.mjs reads it; scripts/dump_agent_frames.py

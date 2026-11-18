@@ -38,7 +38,7 @@ HEAD_STATE_PATH = MODELS_DIR / "head_state.pt"
 CANDIDATE_DIR = MODELS_DIR / "candidate"
 
 # Module globals rather than arguments because tests repoint them (see
-# training/test_export_guards.py). set_output_dir() moves all three together.
+# tests/training/test_export_guards.py). set_output_dir() moves all three together.
 BACKBONE_FP32 = CANDIDATE_DIR / "backbone_fp32.onnx"
 BACKBONE_INT8 = CANDIDATE_DIR / "backbone_int8.onnx"
 HEAD_ONNX = CANDIDATE_DIR / "head.onnx"

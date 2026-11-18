@@ -96,18 +96,6 @@ async def notify_status():
     return {"configured": _is_configured(), "cooldownMinutes": NOTIFY_COOLDOWN_MINUTES}
 
 
-class GateBody(BaseModel):
-    label: str | None = None
-
-
-@router.post("/gate")
-async def notify_gate(body: GateBody):
-    """Apply the alert policy (toggle + cooldown) and reserve it. The agent
-    calls this before firing the n8n webhook so the webhook obeys the same
-    policy as email."""
-    return await alert_gate(body.label)
-
-
 class NotifyBody(BaseModel):
     label: str | None = None
     confidence: float | None = None

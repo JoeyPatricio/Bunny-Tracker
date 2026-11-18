@@ -1,9 +1,7 @@
-"""Two-stage model: frozen timm backbone (per-frame embedder) + a small
-learned temporal head (window classifier).
+"""Frozen backbone, temporal head, and static classifier for cross-validation.
 
-Two separate nn.Modules, not one end-to-end graph, so they can be exported as
-two ONNX graphs and the agent can embed each frame once and run the cheap head
-per step (section 3.1's "why two graphs" note).
+The backbone and temporal head export as separate ONNX graphs so the agent
+can embed each frame once and run the smaller head per step.
 """
 import sys
 from pathlib import Path
@@ -77,3 +75,20 @@ class TemporalHead(nn.Module):
         h = h_n[-1]                   # [B, hidden_dim]
         h = self.dropout(h)
         return self.fc(h)             # [B, num_classes]
+
+
+class MeanStdClassifier(nn.Module):
+    # num_classes is derived from the ethogram, never a literal: a hardcoded 5
+    # here survived the v2 migration and would have built a 5-wide output
+    # against 7-class targets, which CrossEntropyLoss reports as an opaque
+    # index error rather than as "your class count is stale".
+    def __init__(self, input_dim=2560, num_classes=NUM_CLASSES):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(input_dim, 256), nn.ReLU(), nn.Dropout(0.4),
+            nn.Linear(256, 128), nn.ReLU(), nn.Dropout(0.3),
+            nn.Linear(128, num_classes),
+        )
+
+    def forward(self, x):
+        return self.net(x)

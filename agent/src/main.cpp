@@ -119,8 +119,6 @@ struct Config {
     int clip_segment_secs;
     std::optional<std::string> embed_window_override;
     DecisionParams params;
-    std::optional<std::string> webhook_url;
-    std::string webhook_secret;
     fs::path seg_dir;
     std::string server_url;
     std::string token;
@@ -157,8 +155,6 @@ struct Config {
         p.clip_run_model =
             run_model != "" && run_model != "0" && run_model != "false" && run_model != "False";
 
-        if (const char* url = std::getenv("ALERT_WEBHOOK_URL")) c.webhook_url = url;
-        c.webhook_secret = env("ALERT_WEBHOOK_SECRET", "");
         c.seg_dir = env("AGENT_SEGMENT_DIR", (c.root / "data" / "agent" / "segments").string());
         c.server_url = env("AGENT_SERVER_URL", "http://localhost:3001");
         c.token = env("AGENT_TOKEN", "");
@@ -175,9 +171,7 @@ public:
           clips_client_(config_.server_url, config_.token),
           clips_(ClipOptions{.seg_dir = config_.seg_dir,
                              .segment_max_age_sec = config_.segment_secs * 2.5,
-                             .clip_segment_secs = static_cast<double>(config_.clip_segment_secs),
-                             .webhook_url = config_.webhook_url,
-                             .webhook_secret = config_.webhook_secret},
+                             .clip_segment_secs = static_cast<double>(config_.clip_segment_secs)},
                  clips_client_) {}
 
     void boot() {

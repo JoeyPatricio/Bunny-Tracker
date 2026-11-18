@@ -66,12 +66,9 @@ ignore = [
 quote-style = "preserve"
 
 [tool.pytest.ini_options]
-# Points at ci/ ONLY. server/tests/ holds plain check-scripts with
-# module-level `async def test_*` functions; if pytest collected those without
-# an async plugin it would report them as skips that read like passes, which is
-# worse than not collecting them at all. ci/test_scripts.py runs them as
-# subprocesses instead.
-testpaths = ["ci"]
+# Collect only the subprocess runner. The other test scripts contain async
+# functions that need their own main() drivers, not direct pytest collection.
+testpaths = ["tests/test_scripts.py"]
 markers = [
     "local_data: needs real recordings or a trained model on disk; not run in CI",
 ]

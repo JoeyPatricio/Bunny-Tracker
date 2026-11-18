@@ -1,5 +1,8 @@
 # Capture agent
 
+Back to the [project overview](../README.md) or the
+[source map](../docs/development.md#source-map).
+
 `bunnycam-agent` is a C++20 port of `server/agent/` (the Python capture
 agent). It reads the same `data/.env` and environment variables, loads the
 same `server/models/` files, and talks to the same FastAPI endpoints. The

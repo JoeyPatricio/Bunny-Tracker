@@ -1,13 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { LABEL_COLOR } from '../labels.js'
 
-/**
- * TrainingStudio
- * Read-only panel: training moved from an in-browser TensorFlow.js pipeline
- * to a PyTorch CLI script (server/training/train.py) once the Python port
- * retrained the classifier on a rebuilt backbone. This just displays the
- * currently deployed model's metadata.
- */
 export default function TrainingStudio() {
   const [info, setInfo] = useState(null)
   const [error, setError] = useState(null)

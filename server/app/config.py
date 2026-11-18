@@ -1,8 +1,4 @@
-"""Env var reads, 1:1 with each process.env site in server/index.js and
-server/routes/*.js / server/lib/*.js. Loads data/.env directly (the SAME
-env file the live Node server uses) so both servers share one source of
-config/secrets — no data migration, no second .env to keep in sync.
-"""
+"""Server configuration loaded from the environment and shared data/.env."""
 import math
 import os
 from pathlib import Path
@@ -18,10 +14,6 @@ DATA_DIR = ROOT_DIR / "data"            # ../data, runtime data and .env
 CLIENT_DIST_DIR = ROOT_DIR / "client" / "dist"
 
 RECORDINGS_DIR = DATA_DIR / "recordings"
-MODEL_DIR = DATA_DIR / "model"          # the abandoned tfjs artifact, still served
-MODEL_BACKUP_DIR = MODEL_DIR / "backups"
-# The ONNX artifacts the agent actually loads and runs. Distinct from MODEL_DIR
-# above, which holds the original tfjs model that no Python code path can run.
 MODELS_ONNX_DIR = SERVER_DIR / "models"
 LABELS_BACKUP_DIR = DATA_DIR / "backups"
 # Admin session tokens, persisted so a server restart doesn't log the admin

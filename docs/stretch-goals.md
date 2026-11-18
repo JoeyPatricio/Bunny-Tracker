@@ -11,8 +11,8 @@ this plan and that guide disagree, the guide wins.
 
 ## Goals
 
-1. **Pi migration.** The whole stack (server, agent, Cloudflare tunnel, and
-   maybe n8n) runs 24/7 on a Raspberry Pi 5. Done means the Windows PC is off,
+1. **Pi migration.** The server, agent, and Cloudflare tunnel run 24/7 on a
+   Raspberry Pi 5. Done means the development PC is off,
    https://bunny-tracker.app loads, the live stream works, overnight motion
    saves a clip, and an alert email arrives.
 2. **Water and room tracking.** The dashboard shows bowl level, today's intake
@@ -63,10 +63,8 @@ and ONNX Runtime, but nobody has installed them on hardware yet.
 **Inference** is ONNX Runtime on CPU with `backbone_int8.onnx` and
 `head.onnx`. No torch on the Pi. Latency on the Pi hasn't been measured.
 
-**systemd instead of pm2.** pm2 would mean installing Node just to supervise
-two Python processes and cloudflared. systemd handles restarts, boot order and
-stopping the agent's ffmpeg child. Node is only needed if n8n stays, and the
-client can be built on the PC.
+systemd handles restarts, boot order, and stopping the agent's ffmpeg child.
+Node is only needed on the PC to build the client.
 
 **ffmpeg** comes from apt. `agent/capture.py` already checks `FFMPEG_PATH`
 first.
@@ -94,8 +92,8 @@ uncompressed 4K and motion detection sees a frozen scene.
 In the event the Windows install was wiped with the credentials file on it, so
 the Pi runs a new tunnel, `bunnycam-pi`, and the CNAME was repointed.
 
-**n8n is optional.** With `ALERT_WEBHOOK_URL` unset, the agent sends mail
-through the server's `POST /api/notify` using `smtplib`.
+The agent sends alerts through the server's `POST /api/notify` using
+`smtplib` and the configured SMTP credentials.
 
 ## Phase A: Pi migration
 
@@ -104,8 +102,8 @@ through the server's `POST /api/notify` using `smtplib`.
    Check: `uname -m` prints `aarch64`, the venv lists
    `CPUExecutionProvider`, and the camera offers `mjpeg` at `1280x720`.
 3. **Portability changes.** v4l2 pinning, the path overrides and the systemd
-   units are already in the repo. Check: on Windows, `pm2 restart all` still
-   works and motion values haven't changed.
+   units are already in the repo. Check: the capture-loop and motion-parity
+   tests pass on the development PC.
 4. **Performance check on the Pi.**
    - Once a model is promoted and copied over, run
      `.venv/bin/python -m scripts.bench_pi` and compare with the 1500ms frame
@@ -129,14 +127,11 @@ through the server's `POST /api/notify` using `smtplib`.
 6. **Move the tunnel.** Guide step 8. Stop the PC tunnel, then
    `systemctl enable --now bunnycam-tunnel`. Check: the site loads and login
    works from a phone on cellular.
-7. **Drop n8n (or keep it).** Dropping it means removing `ALERT_WEBHOOK_URL`
-   from the Pi's `.env`. Keeping it means installing Node 22 and n8n, and
-   copying the workflow, credentials and the `encryptionKey` from
-   `~/.n8n/config`. Check: a forced motion event sends mail.
+7. Configure `EMAIL_USER`, `EMAIL_PASS`, and `NOTIFY_TO` on the Pi. Once a
+   model is promoted, confirm that an alert sends an email with its clip.
 8. **Autostart and burn-in.** Reboot and confirm everything comes back (guide
-   step 10). Stop the PC apps with `pm2 stop bunnycam-server bunnycam-agent
-   bunnycam-tunnel bunnycam-n8n` and remove `start-bunnycam.bat` from startup.
-   Keep the PC checkout for two weeks as a rollback. Burn in for a week,
+   step 10). Stop any local development run. Keep the PC checkout and data
+   archive available for recovery. Burn in for a week,
    checking `systemctl status`, `journalctl -u bunnycam-agent`, temps and
    disk use. Check: with the PC off, the site is up, an overnight clip gets
    captured, and persistent storage only grows by saved clips.
@@ -236,8 +231,8 @@ it.
    intake alert compares against the rabbits' own baseline, so absolute
    accuracy matters less. If it's unusable, fall back to level-only refill
    reminders.
-5. **Credential migration goes wrong.** The PC stack stays startable until
-   burn-in passes. n8n can be dropped.
+5. **Credential migration goes wrong.** Confirm that the Pi can send alerts
+   with its SMTP credentials during the burn-in.
 6. **Camera negotiates the wrong format under v4l2.** It would show up in step
    4 as stretched frame cadence, not an error.
 7. **Scope creep.** More backbones and datasets turn this into a benchmark

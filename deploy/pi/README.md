@@ -193,9 +193,8 @@ sudoedit data/.env
 - `CAMERA_FORMAT=v4l2` and `CAMERA_INPUT=/dev/v4l/by-id/...` from step 3.
 - `ADMIN_PASSWORD` in double quotes, with no `"` or `\` inside. A new
   `AGENT_TOKEN` from `python3 -c "import secrets; print(secrets.token_hex(32))"`.
-- `EMAIL_USER`, `EMAIL_PASS`, and `NOTIFY_TO` for alerts. With
-  `ALERT_WEBHOOK_URL` unset, the agent posts to `/api/notify`, which sends
-  through `smtplib`.
+- `EMAIL_USER`, `EMAIL_PASS`, and `NOTIFY_TO` for alerts. The agent posts to
+  `/api/notify`, which sends through `smtplib`.
 - Leave out `PY_PORT`, `AGENT_SERVER_URL`, `FFMPEG_PATH`, and the two tmpfs
   paths. `bunnycam.env` sets them, and process environment wins over
   `data/.env`.

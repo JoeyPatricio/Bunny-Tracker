@@ -38,11 +38,9 @@ public:
     // POST /api/recordings, multipart: video=("clip.webm", bytes, video/webm)
     // and a "source" form field when given.
     HttpResponse post_recording(std::string_view webm, const std::optional<std::string>& source);
-    const std::string& base_url() const { return base_url_; }
 
 private:
     struct Impl;
-    std::string base_url_;
     std::unique_ptr<Impl> impl_;
     std::mutex mu_;
 };
@@ -60,12 +58,10 @@ struct ClipOptions {
     std::filesystem::path seg_dir;
     double segment_max_age_sec = 30;  // segment_secs * 2.5
     double clip_segment_secs = 8;
-    std::optional<std::string> webhook_url;
-    std::string webhook_secret;
 };
 
 // Agent's segment queue and uploads (_upload_segment, _upload_and_alert,
-// _notify_webhook, _upload_motion_clip, _queue_clip,
+// _upload_motion_clip, _queue_clip,
 // _drain_pending_clips_once, _prune_segments_loop). Thread-safe: the frame
 // thread queues and alerts while the drain thread uploads. `now` is wall
 // clock seconds, injected for tests.

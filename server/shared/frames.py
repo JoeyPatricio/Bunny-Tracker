@@ -39,8 +39,7 @@ def get_duration(path: str) -> float:
 def sample_timestamps(duration: float, n: int, frac: float = 0.95) -> list[float]:
     """n evenly-spaced timestamps across the first `frac` of the clip.
 
-    Same scheme as the current browser trainer's `extractFrames()`, kept
-    identical so accuracy comparisons against the JS baseline sample the same
+    Training and inference use the same sampling scheme so both see the same
     moments in each clip.
     """
     if duration <= 0:
@@ -54,7 +53,7 @@ def read_frame_single(path: str, timestamp: float, size: int = FRAME_SIZE) -> np
 
     One ffmpeg process per frame. This was the only decode path until Phase 3;
     it stays as the reference that read_frames() is checked against
-    (training/check_decode_parity.py, training/test_cache_v2.py).
+    (tests/training/check_decode_parity.py, tests/training/test_cache_v2.py).
     """
     cmd = [
         FFMPEG,

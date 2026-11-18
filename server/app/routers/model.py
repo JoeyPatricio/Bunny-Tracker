@@ -1,15 +1,4 @@
-"""Model metadata for the read-only Training panel.
-
-Originally a port of server/routes/model.js, which described the tfjs model in
-data/model/. That model is dead: the agent loads the ONNX artifacts in
-server/models/ and there is no code path to run the tfjs one from Python at
-all. Reporting it meant the panel showed the mtime of a file the system does
-not use and a backups list that retraining would never change.
-
-This describes the promoted artifacts and their recorded OOF headline.
-`backups` is gone with the tfjs model that had them; TrainingStudio.jsx is the
-only consumer of this route.
-"""
+"""Promoted ONNX model metadata and cross-validation results for the dashboard."""
 import asyncio
 
 from fastapi import APIRouter, Request

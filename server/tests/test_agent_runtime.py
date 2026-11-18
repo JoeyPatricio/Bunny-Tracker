@@ -118,12 +118,15 @@ async def test_upload_source(root):
     agent.seg_dir = root
     (root / "segment.webm").write_bytes(b"test segment")
     agent._latest_finished_segment = AsyncMock(return_value="segment.webm")
-    agent.alert_webhook_url = None
     await agent._upload_motion_clip(5)
     await agent._upload_and_alert({"label": "rearing", "confidence": 95})
     uploads = [call.kwargs for call in client.post.call_args_list if call.args[0] == "/api/recordings"]
     check("motion clips send the disk-budget source", uploads[0]["data"] == {"source": "motion"})
     check("alert clips preserve their existing untagged source", uploads[1]["data"] is None)
+    notifications = [call.kwargs["json"] for call in client.post.call_args_list
+                     if call.args[0] == "/api/notify"]
+    check("alerts use the server email endpoint", notifications == [
+        {"label": "rearing", "confidence": 95, "filename": "clip.webm"}])
     client.post.return_value = SimpleNamespace(status_code=507, json=lambda: {"reason": "disk floor"})
     with patch.object(capture, "log") as log:
         await agent._upload_motion_clip(5)

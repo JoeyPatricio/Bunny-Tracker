@@ -29,7 +29,7 @@ from fastapi.testclient import TestClient
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from app import auth, rate_limit
-from app.config import ADMIN_PASSWORD, AGENT_TOKEN, DATA_DIR, MODEL_BACKUP_DIR
+from app.config import ADMIN_PASSWORD, AGENT_TOKEN, DATA_DIR
 from app.main import app
 from app.security import CSP, CSP_HTTPS
 from tests.checks import check, finish
@@ -85,23 +85,19 @@ def test_non_ascii_secrets(client: TestClient) -> None:
     check("1.2 non-ASCII agent token is 401 not 500", res.status_code == 401, f"got {res.status_code}")
 
 
-def test_model_backups(client: TestClient) -> None:
-    """startswith('backups') was bypassable via normalization."""
-    backup = next((f.name for f in MODEL_BACKUP_DIR.iterdir()), None) if MODEL_BACKUP_DIR.exists() else None
-    if not backup:
-        check("1.3 model backups", False, "no backup file on disk to test against")
-        return
+def test_retired_model_routes(client: TestClient) -> None:
+    """Retired model URLs must not serve files or fall back to the dashboard."""
     for path in (
-        f"/model/backups/{backup}",
-        f"/model/%2e%2fbackups/{backup}",
-        f"/model/x%2f%2e%2e%2fbackups/{backup}",
-        f"/model/./backups/{backup}",
+        "/model/model.json",
+        "/model/weights.bin",
+        "/model/mobilenet/model.json",
+        "/model/backups/model.json",
+        "/model/%2e%2fbackups/model.json",
+        "/model/x%2f%2e%2e%2fbackups/model.json",
+        "/model/./backups/model.json",
     ):
         res = client.get(path)
-        check(f"1.3 backup blocked: {path}", res.status_code == 403, f"got {res.status_code}")
-
-    # The current model must stay public: the agent fetches it without a cookie.
-    check("1.3 current model still public", client.get("/model/model.json").status_code == 200)
+        check(f"1.3 retired model route: {path}", res.status_code == 404, f"got {res.status_code}")
 
 
 def test_security_headers(client: TestClient) -> None:
@@ -235,7 +231,7 @@ def main() -> None:
     for fn in (
         test_spa_traversal,
         test_non_ascii_secrets,
-        test_model_backups,
+        test_retired_model_routes,
         test_security_headers,
         test_stream_frame_limits,
     ):

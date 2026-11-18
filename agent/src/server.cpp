@@ -7,7 +7,6 @@
 #include <cerrno>
 #include <cmath>
 #include <cstring>
-#include <ctime>
 #include <fstream>
 #include <iomanip>
 #include <sstream>
@@ -55,11 +54,11 @@ struct ServerClient::Impl {
     httplib::Client client;
     explicit Impl(const std::string& url) : client(url) {}
 };
-ServerClient::ServerClient(std::string url, std::string token) : base_url_(std::move(url)) {
+ServerClient::ServerClient(std::string url, std::string token) {
     if (token.empty())
         throw std::runtime_error(
             "AGENT_TOKEN not set in data/.env — the agent cannot authenticate");
-    impl_ = std::make_unique<Impl>(base_url_);
+    impl_ = std::make_unique<Impl>(url);
     impl_->client.set_default_headers({{"X-Agent-Token", token}});
     timeouts(impl_->client);
 }
@@ -191,52 +190,15 @@ void Clips::upload_and_alert(const Alert& a, double now) {
         client_.post_json("/api/labels/" + *f + "/suggest", {{"label", a.label}});
     } catch (const std::exception&) {
     }  // Suggestions are best effort in the Python agent.
-    if (options_.webhook_url) {
-        auto r = client_.post_json("/api/notify/gate", {{"label", a.label}});
-        auto gate = r.status == 200
-                        ? r.json()
-                        : nlohmann::json{{"allow", false}, {"reason", "gate unreachable"}};
-        if (!truthy(gate.value("allow", nlohmann::json()))) {
-            log("  → webhook skipped (" + display(gate.value("reason", nlohmann::json())) + ")");
-            return;
-        }
-        try {
-            const auto& url = *options_.webhook_url;
-            auto split = url.find_first_of("/?#", url.find("://") + 3);
-            std::string path = split == std::string::npos ? "/" : url.substr(split);
-            if (path.front() != '/') path.insert(0, "/");
-            path.resize(path.find('#') == std::string::npos ? path.size() : path.find('#'));
-            httplib::Client hook(url.substr(0, split));
-            timeouts(hook);
-            std::string base = client_.base_url();
-            while (!base.empty() && base.back() == '/') base.pop_back();
-            auto t = static_cast<std::time_t>(now);
-            std::tm utc{};
-            gmtime_r(&t, &utc);
-            char at[32];
-            std::strftime(at, sizeof at, "%Y-%m-%dT%H:%M:%SZ", &utc);
-            nlohmann::json body = {{"label", a.label},
-                                   {"confidence", a.confidence},
-                                   {"filename", *f},
-                                   {"clipUrl", base + "/recordings/" + *f},
-                                   {"at", at}};
-            response(hook.Post(path, {{"X-BunnyCam-Secret", options_.webhook_secret}}, body.dump(),
-                               "application/json"));
-            log("  → n8n webhook notified (" + a.label + ")");
-        } catch (const std::exception& e) {
-            log("  webhook failed: " + std::string(e.what()));
-        }
-    } else {
-        auto result =
-            client_
-                .post_json("/api/notify",
-                           {{"label", a.label}, {"confidence", a.confidence}, {"filename", *f}})
-                .json();
-        auto reason = result.value("reason", nlohmann::json());
-        if (!truthy(reason)) reason = result.value("error", nlohmann::json());
-        log("  ✉ Email: " +
-            (truthy(result.value("sent", nlohmann::json())) ? "sent" : display(reason)));
-    }
+    auto result =
+        client_
+            .post_json("/api/notify",
+                       {{"label", a.label}, {"confidence", a.confidence}, {"filename", *f}})
+            .json();
+    auto reason = result.value("reason", nlohmann::json());
+    if (!truthy(reason)) reason = result.value("error", nlohmann::json());
+    log("  ✉ Email: " +
+        (truthy(result.value("sent", nlohmann::json())) ? "sent" : display(reason)));
 }
 
 void Clips::upload_motion_clip(double m, double now) {

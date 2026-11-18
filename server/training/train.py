@@ -1,6 +1,6 @@
 """Fit the temporal head on cached embeddings.
 
-Three modes, one fitting loop (fit_head, shared with training/crossval.py):
+Two modes share the fitting loop used by training/crossval.py:
 
     --all-clips   The deployable model. Trains on every labeled model-class
                   clip with the hyperparameters cross-validation selected
@@ -9,9 +9,6 @@ Three modes, one fitting loop (fit_head, shared with training/crossval.py):
                   is cv_result.json's pooled out-of-fold estimate.
     --fold R:K    Debugging aid. Trains on outer fold K of repeat R with the
                   config CV selected for that fold and prints its eval report.
-    (no flag)     Legacy single train/val split, early-stopped on val. Its val
-                  accuracy is a selection score and is printed as one; it is
-                  not written to train_result.json.
 
 train_result.json carries what export_onnx.py needs (window) plus a pointer to
 cv_result.json, and deliberately no accuracy field, so a selection score can
@@ -28,7 +25,6 @@ train_result.json records the arm, its aug policy and view, and the CV run.
 Usage (from server/, using the training venv):
     .venv-train/bin/python -m training.train --all-clips [--seed N] [--arm gru@albu_v1]
     .venv-train/bin/python -m training.train --fold 0:3
-    .venv-train/bin/python -m training.train [--window N] [--seed N]
 """
 import argparse
 import json
@@ -49,7 +45,6 @@ from shared.labels import LABELS
 from training.cache import (
     DEFAULT_CACHE_DIR,
     FULL_VIEW,
-    legacy_split_indices,
     load_manifest,
     split_entries,
 )
@@ -57,8 +52,6 @@ from training.dataset import class_weights
 from training.metrics import confusion_matrix, per_class_report
 from training.model import TemporalHead
 
-CACHE_DIR = DEFAULT_CACHE_DIR
-MANIFEST_PATH = CACHE_DIR / "manifest.json"
 MODELS_DIR = Path(__file__).resolve().parent.parent / "models"
 
 EPOCHS = 100
@@ -98,45 +91,11 @@ def seed_everything(seed: int) -> torch.Generator:
     return generator
 
 
-def load_entries(manifest: dict, split: str) -> list[dict]:
-    """Entries for "train" or "val" (or "val<W>" for another window length) of
-    the legacy single split, from the schema-2 cache.
-
-    Legacy: this is the one train/val split every pre-Phase-3 number came from,
-    rebuilt deterministically from manifest["clips"] with split_by_group. Its
-    val accuracy is a selection score. crossval.py replaces it as the source
-    of reported numbers.
-    """
-    train_idx, val_idx = legacy_split_indices(manifest)
-    window = int(split[3:]) if split.startswith("val") and split[3:] else None
-    train_entries, val_entries = split_entries(manifest, train_idx, val_idx, window=window,
-                                               cache_dir=CACHE_DIR)
-    return train_entries if split == "train" else val_entries
-
-
-def restrict_window(entries: list[dict], window: int) -> list[dict]:
-    """Re-derive windows of a given length from each entry's cached embeddings
-    (used by the escalation path to sweep window length without re-extracting)."""
-    out = []
-    for e in entries:
-        t = e["embeddings"].shape[0]
-        if window >= t:
-            windows = [(0, t)]
-        else:
-            starts = sorted(set(int(s) for s in np.linspace(0, t - window, num=min(3, t - window + 1))))
-            windows = [(s, s + window) for s in starts]
-        out.append({**e, "windows": windows})
-    return out
-
-
 @torch.no_grad()
 def evaluate_head(head: nn.Module, val_entries: list[dict]):
     """One prediction per val clip (single window each) -> accuracy, confusion matrix."""
     head.eval()
     if not val_entries:
-        # Guarded here as well as in train_one: the accuracy divide below is
-        # silent about why it failed, and "ZeroDivisionError" after a full
-        # training run is a miserable way to learn the val split was empty.
         raise SystemExit("Cannot evaluate: the validation split is empty.")
     x, y = eval_tensors(val_entries)
     pred_ids = head(x).argmax(dim=1).tolist()
@@ -147,8 +106,7 @@ def evaluate_head(head: nn.Module, val_entries: list[dict]):
 
 
 def train_tensors(entries: list[dict]) -> tuple[torch.Tensor, torch.Tensor]:
-    """Every (window, target) sample of the training entries, materialised.
-    Same samples WindowDataset yields, stacked once instead of per batch."""
+    """Stack every training window and its target into tensors."""
     xs, ys = [], []
     for e in entries:
         target = LABELS.index(e["label"])
@@ -172,7 +130,7 @@ def standardization(train_entries: list[dict]) -> tuple[torch.Tensor, torch.Tens
     clips the head is trained on and nothing else. Under cross-validation that
     means one fold's training clips: computing it over all clips, as train.py
     did before Phase 3, lets the evaluation clips shape the model's input
-    scaling. training/test_crossval_guards.py checks it per fold.
+    scaling. tests/training/test_crossval_guards.py checks it per fold.
     """
     all_frames = np.concatenate([e["embeddings"] for e in train_entries], axis=0)
     return (torch.from_numpy(all_frames.mean(axis=0)).float(),
@@ -272,6 +230,13 @@ def fit_head(train_entries: list[dict], val_entries: list[dict] | None = None, *
     """Fit a TemporalHead. Standardization buffers and class weights come from
     `train_entries` alone (see standardization()); they are returned too so
     the per-fold leakage check can compare them."""
+    if not train_entries:
+        raise SystemExit(
+            "Training split is empty. Regenerate the embedding cache and check "
+            "that data/labels.json contains human-confirmed labels."
+        )
+    if val_entries is not None and not val_entries:
+        raise SystemExit("Validation split is empty. Check the source groups in the embedding cache.")
     emb_mean, emb_std = standardization(train_entries)
     weights = class_weights(train_entries)
     x_train, y_train = train_tensors(train_entries)
@@ -282,55 +247,6 @@ def fit_head(train_entries: list[dict], val_entries: list[dict] | None = None, *
     return {**fit, "head": fit["model"], "emb_mean": emb_mean, "emb_std": emb_std,
             "class_weights": weights}
 
-
-def train_one(window: int, unfreeze_note: str = "", seed: int = SEED) -> dict:
-    """Legacy single-split fit, early-stopped on the legacy val split."""
-    manifest = json.loads(MANIFEST_PATH.read_text())
-    train_entries_full = load_entries(manifest, "train")
-    val_entries_full = load_entries(manifest, "val")
-
-    train_entries = restrict_window(train_entries_full, window)
-    # Eval clips at another window length come from that length's own eval
-    # sample (extract_frames.py --eval-windows), never a slice of this one:
-    # slicing would change which moments of the clip are evaluated.
-    val_entries = val_entries_full if window == manifest["window"] else load_entries(manifest, f"val{window}")
-
-    # Check the splits before spending anything on them. An empty val split
-    # otherwise surfaces as a ZeroDivisionError on the val_loss average at the
-    # end of epoch 1, which says nothing about the actual problem.
-    if not train_entries:
-        raise SystemExit(
-            f"Training split is empty (window={window}). Regenerate the embedding cache "
-            f"with training/extract_frames.py, and check that data/labels.json has "
-            f"human-confirmed labels in it."
-        )
-    if not val_entries:
-        raise SystemExit(
-            f"Validation split is empty (window={window}). Every clip landed in train, "
-            f"which means dataset.py's split_by_group had nothing to hold back. Check "
-            f"{MANIFEST_PATH} and that there is more than one source group in "
-            f"data/labels.json."
-        )
-
-    fit = fit_head(train_entries, val_entries, seed=seed)
-    print(f"Class weights: {dict(zip(LABELS, fit['class_weights'].tolist(), strict=True))}")
-    print(f"Restored best epoch {fit['best_epoch'] + 1} (val_loss {fit['best_val_loss']:.3f})")
-    head = fit["head"]
-    val_acc, cm = evaluate_head(head, val_entries)
-    return {
-        "window": window,
-        "seed": seed,
-        "unfreeze_note": unfreeze_note,
-        "head": head,
-        "val_acc": val_acc,
-        "confusion_matrix": cm.tolist(),
-        "per_class": per_class_report(cm),
-        "best_epoch": fit["best_epoch"],
-        "best_val_loss": fit["best_val_loss"],
-    }
-
-
-# ── CV-driven modes ──────────────────────────────────────────────────────
 
 def load_cv_arm(cache_dir: Path, out_dir: Path, arm: str) -> tuple[dict, dict, dict]:
     """cv_result.json, the {aug_policy, view} cache that `arm` was fitted on,
@@ -454,14 +370,13 @@ def print_report(cm: np.ndarray) -> None:
 
 def main():
     parser = argparse.ArgumentParser()
-    mode = parser.add_mutually_exclusive_group()
+    mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--all-clips", action="store_true",
                       help="final deployable fit on every clip, with CV-selected hyperparameters")
     mode.add_argument("--fold", metavar="R:K", help="fit one outer fold with its CV-selected config")
-    parser.add_argument("--window", type=int, default=8, help="legacy mode only")
     parser.add_argument("--seed", type=int, default=SEED,
                         help="RNG seed for weight init, dropout, and batch order")
-    parser.add_argument("--cache-dir", type=Path, default=CACHE_DIR)
+    parser.add_argument("--cache-dir", type=Path, default=DEFAULT_CACHE_DIR)
     parser.add_argument("--out-dir", type=Path, default=MODELS_DIR,
                         help="where cv_result.json is read and head_state.pt/train_result.json written")
     parser.add_argument("--arm", default="gru",
@@ -475,22 +390,6 @@ def main():
         r, k = (int(x) for x in args.fold.split(":"))
         train_fold(args.cache_dir, args.out_dir, r, k, seed=args.seed, arm=args.arm)
         return
-
-    result = train_one(args.window, seed=args.seed)
-    print(f"\nLegacy split, window={result['window']}, seed={result['seed']}: "
-          f"val accuracy {result['val_acc']*100:.1f}% (a SELECTION score, early-stopped on these "
-          f"same clips; not written to train_result.json and not a result)")
-    print_report(np.array(result["confusion_matrix"]))
-
-    args.out_dir.mkdir(parents=True, exist_ok=True)
-    torch.save(result["head"].state_dict(), args.out_dir / "head_state.pt")
-    (args.out_dir / "train_result.json").write_text(json.dumps({
-        "mode": "legacy-split", "window": result["window"], "seed": result["seed"],
-        "best_epoch": result["best_epoch"], "cv_result": "cv_result.json",
-        "note": "Legacy single split. Its val accuracy is a selection score and is "
-                "deliberately not recorded. Quote cv_result.json.",
-    }, indent=2))
-    print(f"\nSaved head weights to {args.out_dir / 'head_state.pt'}")
 
 
 if __name__ == "__main__":

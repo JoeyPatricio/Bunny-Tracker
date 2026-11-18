@@ -159,16 +159,3 @@ def fold_entries(manifest: dict, fold, *, window: int | None = None,
                  cache_dir: Path = DEFAULT_CACHE_DIR) -> tuple[list[dict], list[dict]]:
     """split_entries for a training.splits.Fold's outer train/eval."""
     return split_entries(manifest, fold.train, fold.eval, window=window, cache_dir=cache_dir)
-
-
-def legacy_split_indices(manifest: dict, val_fraction: float = 0.2, seed: int = 0):
-    """The pre-CV single train/val split (dataset.split_by_group), as indices into
-    manifest["clips"]. Kept so train.py, evaluate.py and verify_predictor_parity.py
-    keep working until crossval.py replaces them; every number from this split is
-    a selection score, not a result."""
-    from training.dataset import split_by_group  # torch import, so deferred
-
-    clips = [(c["filename"], c["label"]) for c in manifest["clips"]]
-    split = split_by_group(clips, val_fraction=val_fraction, seed=seed)
-    pos = {c["filename"]: i for i, c in enumerate(manifest["clips"])}
-    return [pos[f] for f, _ in split["train"]], [pos[f] for f, _ in split["val"]]
