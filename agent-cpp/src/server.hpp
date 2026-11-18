@@ -91,6 +91,7 @@ private:
         std::string name;
         double mtime;
         double motion;
+        std::size_t id;
     };
 
     ClipOptions options_;
@@ -99,6 +100,8 @@ private:
     std::vector<Pending> pending_;
     std::vector<std::pair<std::string, double>> clipped_;  // (name, mtime rounded to 3dp)
     bool budget_blocked_ = false;
+    std::size_t next_pending_id_ = 0;
+    std::mutex drain_mu_;
 };
 
 }  // namespace bunnycam
