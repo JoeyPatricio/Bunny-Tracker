@@ -43,7 +43,7 @@ Bunny-Tracker/
 
 The agent in `agent/` talks to the server over HTTP and shares `data/.env`
 and `server/models/` with it. See the [agent guide](../agent/README.md) for
-builds, fixtures, and switching the Pi over.
+builds, fixtures, and the Pi burn-in.
 
 ## Where to make changes
 

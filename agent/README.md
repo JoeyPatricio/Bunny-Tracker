@@ -63,78 +63,57 @@ With no promoted model the agent runs motion-only, so `t=` measures motion
 alone. Rerun after a 7-class model is promoted to get the full
 capture-to-prediction figure.
 
-## Switching the Pi over
+## Pi switch-over and burn-in
 
-This is a one-time step while the Pi still runs the Python agent from
-`main`. The Pi is production and there is no second machine, so take the
-baseline first, and keep `main` as the rollback.
+The Pi switched from the Python agent to this one on 2026-11-18 at 16:16
+PST, at 323369d. The build and `ctest` ran on the Pi as in step 2 of the
+[Pi guide](../deploy/pi/README.md), and all 49 tests passed. No baseline of
+the Python agent was recorded before the switch.
 
-### 1. Baseline the Python agent
-
-Record the C++ run later over the same hours of day.
-
-```bash
-PID=$(systemctl show -p MainPID --value bunnycam-agent)
-# RSS (kB) and cumulative CPU seconds, once a minute for 24 h.
-for i in $(seq 1440); do
-  echo "$(date +%s) $(ps -o rss=,cputimes= -p "$PID")"; sleep 60
-done > ~/baseline-python.txt
-```
-
-Average CPU is the difference in CPU seconds over the difference in wall
-seconds. Also record:
-
-- Live-view latency. Put a phone stopwatch in front of the camera and
-  photograph it beside the dashboard's live view a few times. The delay is
-  the difference between the two readings.
-- Clips per hour: `journalctl -u bunnycam-agent --since today | grep -c 'saved unlabeled'`,
-  divided by the hours covered.
-
-### 2. Build and swap
-
-The branch has to be on GitHub for the Pi to fetch it.
+`main` no longer has the Python agent. The last commit the Pi ran with it is
+a39ca21, so roll back to that, along with its unit file:
 
 ```bash
 cd /opt/bunny-tracker
-sudo -H -u bunnycam git fetch origin capture-agent
-sudo -H -u bunnycam git checkout capture-agent
-```
-
-Build and test as in step 2 of the [Pi guide](../deploy/pi/README.md), then
-install the new unit. The server restarts too, to pick up its side of the
-branch:
-
-```bash
+sudo -H -u bunnycam git checkout a39ca21
 sudo cp deploy/pi/bunnycam-agent.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl restart bunnycam-server bunnycam-agent
-journalctl -u bunnycam-agent -f       # expect "BunnyCam Agent starting..."
+journalctl -u bunnycam-agent -f       # expect "BunnyCam Python Agent starting..."
 ```
 
-The Python agent logged `BunnyCam Python Agent starting...` instead.
+The C++ agent logs `BunnyCam Agent starting...` instead.
 
-Rollback:
+### Burn-in, 72 h
 
-```bash
-cd /opt/bunny-tracker
-sudo -H -u bunnycam git checkout main
-sudo cp deploy/pi/bunnycam-agent.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl restart bunnycam-server bunnycam-agent
-```
-
-### 3. Burn-in, 72 h
+Restarting the server and agent together makes the agent fail once with
+`Agent failed to start: Could not establish connection`, because it starts
+before uvicorn is listening. systemd restarts it 5 seconds later, and
+`NRestarts` reads 1 from then on. That is expected and not a crash.
 
 - No unrecovered crash. `systemctl show -p NRestarts bunnycam-agent` stays
-  at 0, and `journalctl -u bunnycam-agent | grep -E 'failed to start|loop failed'`
+  where it was at the start of the burn-in, and
+  `journalctl -u bunnycam-agent --since "2026-11-18 16:17" | grep -E 'failed to start|loop failed'`
   finds nothing.
-- No orphaned ffmpeg. Restart the agent 5 times
+- No orphaned ffmpeg. Restart the agent alone 5 times
   (`sudo systemctl restart bunnycam-agent`), and after each one
   `pgrep -c -x ffmpeg` prints 1.
 - Toggle monitoring and Clipping Mode from the dashboard a few times. The
   live view comes back each time, and clips land in Label Studio.
-- Record RSS and CPU with the step 1 loop (into `~/burnin-agent.txt`), plus
-  live-view latency, clips per hour, and `latency_summary.sh` p50 and p95.
-  Put them next to the baseline.
+- Record RSS and CPU once a minute for 24 h:
 
-Merge `capture-agent` into `main` once the burn-in passes.
+  ```bash
+  PID=$(systemctl show -p MainPID --value bunnycam-agent)
+  for i in $(seq 1440); do
+    echo "$(date +%s) $(ps -o rss=,cputimes= -p "$PID")"; sleep 60
+  done > ~/burnin-agent.txt
+  ```
+
+  Average CPU is the difference in CPU seconds over the difference in wall
+  seconds.
+- Record live-view latency. Put a phone stopwatch in front of the camera and
+  photograph it beside the dashboard's live view a few times. The delay is
+  the difference between the two readings.
+- Record clips per hour:
+  `journalctl -u bunnycam-agent --since today | grep -c 'saved unlabeled'`,
+  divided by the hours covered. Also record `latency_summary.sh` p50 and p95.
