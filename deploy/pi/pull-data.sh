@@ -1,22 +1,25 @@
 #!/usr/bin/env bash
 # Copy the Pi's data/ (recordings, labels and their sidecars, autolabels,
 # hidden, monitor state, activity log, label backups) into this checkout's
-# data/, so the PC holds the archive and training reads current labels.
+# data/, so this machine holds the archive and training reads current labels.
 # Run it before a training run.
 #
-#   deploy/pi/pull-data.sh                  from jp@10.0.0.150
-#   deploy/pi/pull-data.sh user@host        from another Pi
+#   deploy/pi/pull-data.sh user@host
 #   BUNNYCAM_PI=user@host deploy/pi/pull-data.sh
 #
-# One way, Pi to PC. The Pi is where labelling happens, so its labels.json
-# replaces the PC's. Nothing is deleted on the PC: a clip removed or pruned on
-# the Pi stays here. data/.env and sessions.json stay behind, they are the
+# One way, Pi to here. The Pi is where labelling happens, so its labels.json
+# replaces the local one. Nothing is deleted here: a clip removed or pruned on
+# the Pi stays. data/.env and sessions.json stay behind, they are the
 # Pi's secrets. Rolling segments and tmp/ are not worth copying.
 
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-PI="${1:-${BUNNYCAM_PI:-jp@10.0.0.150}}"
+PI="${1:-${BUNNYCAM_PI:-}}"
+if [ -z "$PI" ]; then
+  echo "Usage: $0 user@host   (or set BUNNYCAM_PI=user@host)" >&2
+  exit 2
+fi
 REMOTE_DATA="/opt/bunny-tracker/data/"
 
 if ! command -v rsync >/dev/null; then

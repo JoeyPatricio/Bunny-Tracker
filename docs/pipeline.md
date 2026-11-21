@@ -1,8 +1,9 @@
 # The training pipeline
 
-Commands run from `server/`. Producing real results needs recoded clips in
-`data/recordings/` and `data/labels.json`. Without them only the hermetic
-tests run.
+Back to the [project overview](../README.md).
+
+Commands run from `server/`. Training needs labeled clips in
+`data/recordings/` and `data/labels.json`.
 
 ## The two-venv rule
 
@@ -64,7 +65,7 @@ on any split. Folds are picked at training time. Re-runs reuse the frames, so
 changing the backbone or augmentation only re-embeds. An old schema-1 cache is
 refused, not overwritten (see [After an ethogram change](#after-an-ethogram-change)).
 
-Two experimental options, neither evaluated on real labels yet:
+Two experimental options:
 
 - **`--aug-policy albu_v1`** adds mild rotation, perspective, blur and
   occlusion (8 variants vs. 3 for `legacy`). Build both, then run
@@ -104,10 +105,7 @@ $TRAIN -m training.train --all-clips [--arm gru|gru@albu_v1]
 Trains on every clip using the config CV selected. With no held-out data,
 `train_result.json` records the config and a pointer to the CV run, not an
 accuracy. It refuses a CV result computed on different labels. `--fold R:K`
-fits a single outer fold for debugging.
-
-One of `--all-clips` or `--fold` is required. The retired single-split training
-mode cannot produce a deployable model and has been removed.
+fits a single outer fold for debugging. Pass one of `--all-clips` or `--fold`.
 
 ### 4. Export
 
@@ -187,35 +185,13 @@ Both use the runtime venv and write to `models/`.
   `training/model.py`.
 - `scripts/bench_pi.py` measures inference latency on the Pi.
 - `training.pose_features`, `training.learning_curve` and `training.figures`
-  are for the paper. They error on missing inputs instead of filling in
-  placeholders.
+  produce research reports and figures. They error on missing inputs instead
+  of filling in placeholders.
 
 ## Tests
 
-```bash
-.venv/bin/python -m pytest                       # everything
-.venv/bin/python -m pytest -m "not local_data"   # what CI runs
-```
-
-`tests/test_scripts.py` runs each check script as a subprocess in the right
-venv and expects exit 0. Runtime checks live in `tests/`, and training checks
-live in `tests/training/`. Most training checks need the training venv, while
-`test_promote_reports.py` uses the runtime venv. Each script also runs on its
-own:
-
-```bash
-.venv/bin/python tests/test_clipping_mode.py
-.venv-train/bin/python tests/training/test_evaluate_gates.py
-```
-
-Scripts print `PASS`, `FAIL` or `SKIP` per check. `SKIP` means the machine
-couldn't make the measurement, not a regression. `check_decode_parity.py`
-needs local recordings.
-
-See the [development guide](development.md#tests) for setup, manual smoke
-checks, and the C++ test suite. CI (`.github/workflows/ci.yml`) builds both
-venvs from `uv.lock`, builds the client, runs the `not local_data` set, and
-runs `ruff check`. A separate job builds and tests the C++ agent.
+Hermetic training checks run with the rest of the suite. See the
+[development guide](development.md#tests) for commands and CI.
 
 ## After an ethogram change
 

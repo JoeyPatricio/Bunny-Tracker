@@ -1,20 +1,19 @@
 # Bunny Tracker ethogram (v2)
 
+Back to the [project overview](../README.md).
+
 This is the coding manual for labeling clips. The seven states plus
 `out_of_view` are declared in `server/shared/labels.py` and
-`client/src/labels.js`. All 112 v1 clips were unlabeled on 2026-09-25 for
-recoding under these definitions. The v1 labels are archived in
-`data/labels.v1.json`.
+`client/src/labels.js`.
 
 Freeze this document before labeling starts. If a definition changes after
 that, bump `ETHOGRAM_VERSION` in both label files, update the definition text
 in `client/src/labels.js`, and recode everything.
 
-**Scope decision (2026-09-25).** Only states are coded. Yawn is folded into
-`resting_sitting` and binky into `locomotion_rapid`. Labels are a flat
-`{filename: state}` map. This means yawn and binky counts can't be reported.
-Adding events later only needs a second pass over the clips, not a recode of
-the states. The design is under [Events](#events-not-implemented).
+Only states are coded. Yawns fold into `resting_sitting` and binkies into
+`locomotion_rapid`, so their counts can't be reported. Labels are a flat
+`{filename: state}` map. Adding events later only needs a second pass over the
+clips, not a recode of the states. See [Events](#events-not-implemented).
 
 ## Sources
 
@@ -30,33 +29,14 @@ which compiles:
   rabbits in laboratory cages. *Applied Animal Behaviour Science* 45(3-4):
   277-92.
 
-Quotes below are from the NC3Rs compilation. Places where I collapsed or
-dropped a category are marked **[deviation]**.
-
-## Why v1 was replaced
-
-| v1 label | Problem |
-|---|---|
-| `normal` | Not a behaviour. It meant "none of the others" and soaked up resting, locomotion, feeding and empty frames. It can't be defined, so it can't be coded reliably. |
-| `standing` | The published term is rearing. |
-| `zoomies` | Mixed a state (running) with an event (the binky). |
-| `yawn` | A sub-second event competing against multi-second states in one softmax. |
-| `grooming` | Closest to usable. Needed onset and offset rules. |
-
-The main change is deleting `normal` and replacing it with the behaviours it
-was hiding.
-
-Adedeji et al. (2023), the closest published work, uses seven vernacular
-classes with no operational definitions or reliability measure, overlapping
-categories, and states mixed with events. Two of their classes map here.
-`periscoping` is `rearing`, and `digging` is a real NC3Rs category I left out
-only because there's no diggable substrate in frame.
+Quotes below are from the NC3Rs compilation. Places where a category is
+collapsed or dropped are marked **[deviation]**.
 
 ## Design rules
 
-1. **The camera limits granularity.** At 224x224 from across the room I can't
-   see eye aperture or reliably see ear position. Categories that depend on
-   them are merged, and each merge is listed below.
+1. **The camera limits granularity.** At the model's 224x224 input, eye
+   aperture and ear position aren't reliably visible. Categories that depend
+   on them are merged, and each merge is listed below.
 2. **`out_of_view` is a coding category, not a behaviour.** It is excluded
    from training but counted, because the share of unusable footage is a real
    result.
@@ -95,13 +75,12 @@ isn't reliable at this resolution.
 - **Onset:** forepaws contact ground with trunk raised, motion ceases.
 - **Offset:** forepaws leave the ground (becomes `rearing`), trunk lowers
   (becomes `resting_lying`), or locomotion begins.
-- **Includes yawning.** Yawns are not coded separately (see the scope decision
-  at the top), and a rabbit that yawns is almost always sitting or lying. Code
+- **Includes yawning.** Yawns are not coded separately (see the intro),
+  and a rabbit that yawns is almost always sitting or lying. Code
   the posture and ignore the yawn.
 
 ### `rearing`
-Sitting up on the hindlimbs with **both** forepaws off the ground. Replaces
-v1 `standing`.
+Sitting up on the hindlimbs with **both** forepaws off the ground.
 
 > NC3Rs *Rearing*: "Sitting up on hind-limbs with both forepaws off the ground;
 > ears partly or fully down." *Rearing alert*: "As above but with ears erect."
@@ -110,9 +89,7 @@ v1 `standing`.
 
 - **Onset:** the second forepaw leaves the ground.
 - **Offset:** either forepaw returns to the ground.
-- **Not:** forepaws raised onto an object while the rabbit leans on it. That is
-  still `rearing` only if unsupported; if supported, code `rearing` and flag it
-  in notes (revisit if it turns out to be frequent).
+- **Includes** forepaws raised against an object while the rabbit leans on it.
 
 ### `locomotion`
 Ordinary forward movement: hopping or walking.
@@ -127,7 +104,6 @@ Ordinary forward movement: hopping or walking.
 
 ### `locomotion_rapid`
 Running: sustained rapid forward movement, typically a circuit of the room.
-Replaces v1 `zoomies`.
 
 > NC3Rs *Locomotory*: "Running: rapid forward movement achieved by alternate,
 > fully-stretched extension of fore and hindlimbs."
@@ -135,8 +111,8 @@ Replaces v1 `zoomies`.
 - **Onset:** gait changes from hopping to fully-stretched running.
 - **Offset:** 1 s at hopping pace or slower.
 - **Boundary rule:** bouts separated by under 2 s are one bout.
-- **Includes binkies.** Frisky hops are not counted separately (see the scope
-  decision at the top); a bout containing them is still `locomotion_rapid`. A
+- **Includes binkies.** Frisky hops are not counted separately (see the
+  intro). A bout containing them is still `locomotion_rapid`. A
   binky performed from standing, with no running bout around it, is coded by
   the posture it returns to.
 
@@ -152,8 +128,8 @@ Self-directed licking, nibbling, or forelimb passes over the body.
   fur. Air-boxing (NC3Rs: "fast forward flicking of forelimbs whilst rabbit sits
   upright on haunches") reliably precedes a full body groom and is coded as part
   of the grooming bout.
-- **Offset:** 3 s with no grooming action. Grooming is naturally intermittent;
-  a short gap is within a bout, not between bouts.
+- **Offset:** 3 s with no grooming action. Grooming is naturally intermittent,
+  so a short gap is within a bout, not between bouts.
 - **Allogrooming:** coded as `grooming` with an `allo` modifier, not a separate
   state. Only meaningful if more than one rabbit is in frame.
 - **Not:** `scratching` (hindfoot to own body). That is its own event.
@@ -177,7 +153,7 @@ hindquarters at this camera angle and resolution.
 
 ### `out_of_view`
 No rabbit visible, or the focal rabbit is occluded for the majority of the coded
-interval. Not a behaviour. Excluded from training; counted and reported, because
+interval. Not a behaviour. Excluded from training but counted and reported, because
 the proportion of unusable footage is a real property of the deployment and
 belongs in the results.
 
@@ -202,10 +178,6 @@ the predominant state, meaning the one that covers the most of the clip, and
 only if it covers at least 50%. If nothing reaches 50%, leave the clip
 unlabeled and flag it uncertain. There is no `mixed` code.
 
-Interval coding in [BORIS](https://www.boris.unito.it/), with onset and offset
-per bout, would give frame-level labels. It's more work. Decide before
-recoding the 112 clips so they only get recoded once.
-
 **Focal animal.** If more than one rabbit is in frame, code the one nearest
 the centre at clip onset. If the rabbits can't be told apart, code at group
 level and say so.
@@ -217,28 +189,26 @@ unlabeled. Don't guess.
 
 ## Reliability protocol
 
-This measures how consistently I code (intra-observer), not agreement between
-two people.
+This measures how consistently one coder labels clips (intra-observer), not
+agreement between two people.
 
 1. Freeze this document.
 2. Finish the first pass over the CV pool.
-3. The studio draws a fixed 25% uniform sample (seed 0, rounded up). For 112
-   clips that's 28.
+3. The studio draws a fixed 25% uniform sample (seed 0, rounded up).
 4. Re-code them blind in reliability mode. First-pass labels, suggestions,
    filenames and metadata are hidden. Re-codes go to
    `data/labels.reliability.json`.
 5. Run `training.reliability`. It writes overall and per-class Cohen's kappa,
    raw agreement and uncertainty counts to `server/models/reliability.json`.
 
-No kappa has been measured yet. Re-code kappa is not an upper bound on
-classifier kappa because the samples and vocabularies differ (the classifier
-excludes `out_of_view`).
+Re-code kappa is not an upper bound on classifier kappa because the samples
+and vocabularies differ (the classifier excludes `out_of_view`).
 
 ## Prospective temporal holdout
 
-**Cut date: not set yet.** Set `HOLDOUT_CUTOFF` in `data/.env` to a date
-(`YYYY-MM-DD`, midnight UTC) or an ISO-8601 timestamp and restart the server.
-Until then every label goes to `labels.json`.
+Set `HOLDOUT_CUTOFF` in `data/.env` to a date (`YYYY-MM-DD`, midnight UTC) or
+an ISO-8601 timestamp and restart the server. Until it's set, every label goes
+to `labels.json`.
 
 Once set:
 
@@ -253,19 +223,12 @@ Once set:
   moves just that clip.
 - Holdout clips don't count toward the reliability sample or the clipping
   backlog cap.
-- The holdout file gets opened once, at paper freeze, to measure drift.
+- Open the holdout file once, for the final evaluation, to measure drift.
 
 Code is in `server/app/lib/holdout.py`, tested by
 `server/tests/test_holdout.py`.
 
-## Migrating the 112 v1 clips
-
-v1 counts: `normal` 45, `zoomies` 26, `grooming` 25, `standing` 11, `yawn` 5.
-
-`grooming` and `standing` mostly map to `grooming` and `rearing`. The others
-can't be mapped because the information was never recorded. Don't write a
-migration script. Re-watch all 112 clips under v2 (about an hour) so the whole
-dataset is coded under one protocol.
+## Label storage
 
 `data/labels.json` stays flat:
 
@@ -276,7 +239,8 @@ dataset is coded under one protocol.
 ```
 
 Coder, time, ethogram version and uncertainty go in `data/labels.meta.json`.
-`training.recoding_report` cross-tabs v1 against v2.
+`data/labels.v1.json` archives the v1 labels, and `training.recoding_report`
+cross-tabs them against v2.
 
 ## Where the vocabulary lives
 
@@ -292,16 +256,5 @@ Coder, time, ethogram version and uncertainty go in `data/labels.meta.json`.
 - `agent/src/decision.cpp` and `server/shared/labels.py` (`interest_score`
   treats the resting states as uninteresting)
 
-The old five-class ONNX head can't serve v2, so a retrain is required.
-`training/calibrate_gate.py` recalibrates `AGENT_INTEREST_THRESHOLD` for the
-new classes.
-
-## Open questions
-
-Decided 2026-09-25: no `sitting alert`, `drinking` or `digging` splits. Adding
-one later means recoding.
-
-1. How many rabbits are on camera, and can I tell them apart?
-2. Stick with predominant-state clip labels, or move to BORIS interval coding?
-3. When does the blind re-code happen, and will a second observer code a
-   sample?
+After a vocabulary change, retrain and run `training/calibrate_gate.py` to
+recalibrate `AGENT_INTEREST_THRESHOLD`.

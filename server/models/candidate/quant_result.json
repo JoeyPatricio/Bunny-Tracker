@@ -1,0 +1,8 @@
+{
+  "fp32_macro_f1": 0.7409664552521695,
+  "int8_macro_f1": 0.4427365084288157,
+  "delta": 0.29822994682335385,
+  "argmax_agreement": 0.5125,
+  "n": 160,
+  "note": "In-sample macro-F1 of the all-clips candidate; only the fp32-int8 delta is meaningful."
+}

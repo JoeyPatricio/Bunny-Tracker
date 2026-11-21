@@ -1,17 +1,17 @@
 # Raspberry Pi deployment
 
-This guide installs the server, capture agent, and Cloudflare tunnel on a
-Raspberry Pi 5 running 64-bit Raspberry Pi OS. systemd runs all three
-services. It was first run on 2026-10-29, on Raspberry Pi OS Lite (Debian 13)
-with an Arducam B0590 USB Day/Night camera, and the steps below are the ones
-that worked. The Pi is production. The Linux PC is the clip archive and the
-training machine (see [Pulling data to the PC](#12-pulling-data-to-the-pc)).
-There is no second production machine to roll back to.
+Back to the [project overview](../../README.md).
 
-There is no usable classifier yet. No seven-class model has been promoted, so
-the agent runs motion-only. Clipping Mode, motion clips, labeling, the live
-view, and manual recording all work without one. Step 6 applies once a model
-has been promoted on the PC. The Pi never trains.
+This guide installs the server, capture agent, and Cloudflare tunnel on a
+Raspberry Pi 5 running 64-bit Raspberry Pi OS Lite. systemd runs all three
+services. A separate Linux workstation builds the web app, keeps the clip
+archive, and trains models (see
+[Pulling data to the workstation](#12-pulling-data-to-the-workstation)). The
+Pi never trains.
+
+Until a seven-class model is promoted, the agent runs motion-only. Clipping
+Mode, motion clips, labeling, the live view, and manual recording all work
+without one.
 
 | File | Installed as |
 |---|---|
@@ -20,8 +20,8 @@ has been promoted on the PC. The Pi never trains.
 | `bunnycam.tmpfiles` | `/etc/tmpfiles.d/bunnycam.conf` |
 | `journald-bunnycam.conf` | `/etc/systemd/journald.conf.d/bunnycam.conf` |
 | `cloudflared-config.example.yml` | `/etc/cloudflared/config.yml`, edited |
-| `model_bundle.py` | run from the repo on the PC and on the Pi |
-| `pull-data.sh` | run from the repo on the PC |
+| `model_bundle.py` | run from the repo on the workstation and on the Pi |
+| `pull-data.sh` | run from the repo on the workstation |
 
 The units assume a `bunnycam` system user and a checkout at
 `/opt/bunny-tracker`. If you choose other values, change them in every unit
@@ -35,8 +35,8 @@ after it, and they never run.
 
 Flash Raspberry Pi OS Lite (64-bit) with Raspberry Pi Imager, and set the
 hostname, user, Wi-Fi, and SSH in its OS customisation. If
-`<hostname>.local` doesn't answer, the PC probably has no mDNS resolver
-(Arch ships without one), so find the Pi by IP. Give it a DHCP reservation in
+`<hostname>.local` doesn't answer, your workstation may lack an mDNS
+resolver, so find the Pi by IP. Give it a DHCP reservation in
 the router.
 
 ```bash
@@ -50,11 +50,6 @@ sudo chown -R bunnycam:bunnycam /opt/bunny-tracker
 
 The repository is public, so the clone needs no credentials. Use the HTTPS
 URL. The Pi has no GitHub SSH key. `rsync` is for `pull-data.sh`.
-
-If you SSH in from a terminal the Pi has no terminfo for (kitty, for one),
-editors and pagers fail with `Error opening terminal`. Install its terminfo
-(`sudo apt install -y kitty-terminfo`) or prefix the command with
-`TERM=xterm-256color`.
 
 Install cloudflared for arm64 from [Cloudflare's package
 repository](https://pkg.cloudflare.com/index.html), which puts it at
@@ -148,8 +143,9 @@ Check with `sudo ls -ld /run/bunnycam /run/bunnycam/segments`. Both are
 before any service starts. `bunnycam.env` points `AGENT_SEGMENT_DIR` there.
 The server reads the same file, so the manual Record endpoint finds the
 segments the agent wrote. The agent prunes segments older than 10 minutes
-once a minute, so the directory holds up to about 11 minutes of video. That's roughly 80 MB at the nominal 1 Mbit/s, which fits
-in `/run`'s default tmpfs on a Pi 5. Check with `df -h /run` during burn-in.
+once a minute, so the directory holds up to about 11 minutes of video.
+That's roughly 80 MB at the nominal 1 Mbit/s, which fits in `/run`'s default
+tmpfs on a Pi 5. Check with `df -h /run` during burn-in.
 
 Logs go to the journal (`journalctl -u bunnycam-agent`). The journald drop-in
 caps the entire system journal at 200 MB and one month, not only the bunnycam
@@ -161,9 +157,9 @@ it on the Pi.
 ## 5. Data, web app, and .env
 
 `client/dist` is gitignored, so the clone has no web app. Without it every
-page is a 500. The Pi has no Node, so build it on the PC. The PC's `data/` is
-the archive `pull-data.sh` keeps, which is what a reinstall restores from.
-From the repo root on the PC:
+page is a 500. Build it on the workstation. The workstation's `data/` is the
+archive `pull-data.sh` keeps, which is what a reinstall restores from. From
+the repo root on the workstation:
 
 ```bash
 tar -czf data.tgz --exclude data/.env --exclude data/agent/segments \
@@ -228,10 +224,10 @@ parse statement`.
 ## 6. Move a promoted model
 
 Skip this until a seven-class model has passed its gate and been promoted on
-the PC. The agent loads nothing without `promoted.json`, and a graph
+the workstation. The agent loads nothing without `promoted.json`, and a graph
 exported with external data fails to load without its `.onnx.data` sidecar.
 `model_bundle.py` packs `promoted.json` plus every artifact its manifest lists,
-after checking each file's sha256. From the repo root on the PC:
+after checking each file's sha256. From the repo root on the workstation:
 
 ```bash
 server/.venv/bin/python deploy/pi/model_bundle.py pack server/models model-bundle.tar.gz
@@ -271,14 +267,14 @@ old ffmpeg still holding the camera.
 If `monitor.json` says monitoring is off, the agent logs `Monitoring is OFF`
 and leaves the camera idle until you switch it on in the dashboard.
 
-Before the tunnel is up, reach the dashboard through SSH from the PC:
+Before the tunnel is up, reach the dashboard through SSH from the workstation:
 
 ```bash
 ssh -L 3001:127.0.0.1:3001 <user>@<pi>
 ```
 
-and open http://localhost:3001. Make sure nothing on the PC already listens
-on port 3001. If something does, the forward binds only `[::1]` and the
+and open http://localhost:3001. Make sure nothing on the workstation already
+listens on port 3001. If something does, the forward binds only `[::1]` and the
 browser alternates between the two servers.
 
 ## 8. Tunnel
@@ -300,7 +296,7 @@ one.
 ```bash
 cloudflared tunnel login        # open the URL on any machine, pick the zone
 cloudflared tunnel create bunnycam-pi
-cloudflared tunnel route dns --overwrite-dns bunnycam-pi bunny-tracker.app
+cloudflared tunnel route dns --overwrite-dns bunnycam-pi <your-domain>
 ```
 
 `create` prints the tunnel ID and writes `~/.cloudflared/<tunnel-id>.json`.
@@ -313,7 +309,7 @@ Either way, install the credentials and config:
 ```bash
 sudo install -d -o root -g bunnycam -m 750 /etc/cloudflared
 sudo install -o root -g bunnycam -m 640 ~/<path>/<tunnel-id>.json /etc/cloudflared/
-sed 's/<TUNNEL-ID>/<tunnel-id>/g' deploy/pi/cloudflared-config.example.yml | sudo tee /etc/cloudflared/config.yml >/dev/null
+sed -e 's/<TUNNEL-ID>/<tunnel-id>/g' -e 's/<your-domain>/<domain>/' deploy/pi/cloudflared-config.example.yml | sudo tee /etc/cloudflared/config.yml >/dev/null
 sudo chown root:bunnycam /etc/cloudflared/config.yml && sudo chmod 640 /etc/cloudflared/config.yml
 sudo cat /etc/cloudflared/config.yml
 ```
@@ -331,8 +327,7 @@ sudo systemctl enable --now bunnycam-tunnel
 systemctl --no-pager status bunnycam-tunnel    # expect "Registered tunnel connection"
 ```
 
-Check https://bunny-tracker.app from a phone on cellular, and log in through
-it. A Cloudflare 530 means the tunnel has no connector.
+Check your domain from a phone on cellular, and log in through it. A Cloudflare 530 means the tunnel has no connector.
 
 ## 9. Optional direct LAN access
 
@@ -348,9 +343,8 @@ ExecStart=/opt/bunny-tracker/server/.venv/bin/python -m uvicorn app.main:app --h
 Keep `--forwarded-allow-ips` at loopback. LAN clients then can't spoof their
 address to the login rate limiter. The server adds the CSP
 `upgrade-insecure-requests` directive only to requests it sees as HTTPS, so
-plain-HTTP LAN pages should load their subresources over HTTP. Nobody has
-tested that in a browser against the Pi yet. Check it before you rely on LAN
-access.
+plain-HTTP LAN pages should load their subresources over HTTP. That's
+untested in a browser, so check it before you rely on LAN access.
 
 ## 10. Reboot test and burn-in
 
@@ -383,21 +377,21 @@ Then, depending on what the pull changed:
 - Anything under `server/`: `sudo systemctl restart bunnycam-server`.
 - Anything under `agent/`: rerun the `cmake --build` and `ctest` lines from
   step 2, then `sudo systemctl restart bunnycam-agent`.
-- Anything under `client/`: rebuild `client/dist` on the PC and copy it over
+- Anything under `client/`: rebuild `client/dist` on the workstation and copy it over
   as in step 5. The server reads it per request, so no restart is needed.
 
-## 12. Pulling data to the PC
+## 12. Pulling data to the workstation
 
-The PC keeps the clip archive and trains from it. Labeling happens on the
-Pi, in the dashboard. Before a training run, from the repo root on the PC:
+Labeling happens on the Pi, in the dashboard. Before a training run, from the
+repo root on the workstation:
 
 ```bash
-deploy/pi/pull-data.sh                 # from jp@10.0.0.150
-deploy/pi/pull-data.sh <user>@<pi>     # or BUNNYCAM_PI=<user>@<pi>
+deploy/pi/pull-data.sh <user>@<pi>     # or set BUNNYCAM_PI=<user>@<pi>
 ```
 
-It copies the Pi's `data/` into the PC's `data/` one way, keeping
-modification times. The Pi's labels replace the PC's. Nothing is deleted on
-the PC, so a clip later removed from the Pi stays in the archive. `data/.env`,
+It copies the Pi's `data/` into the workstation's `data/` one way, keeping
+modification times. The Pi's labels replace the workstation's. Nothing is
+deleted on the workstation, so a clip later removed from the Pi stays in the
+archive. `data/.env`,
 `sessions.json`, `tmp/`, and rolling segments stay on the Pi. It needs
 `rsync` on both machines.

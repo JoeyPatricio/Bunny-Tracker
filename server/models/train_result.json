@@ -1,0 +1,17 @@
+{
+  "mode": "all-clips",
+  "window": 8,
+  "lr": 0.0003,
+  "epochs": 2,
+  "seed": 0,
+  "n_clips": 160,
+  "labels_sha256": "f9c1d00fd2c03209b42df48c826678aecbd100f9ff0ad9d3fe52ebdda8a4d16d",
+  "ethogram_version": "2.0",
+  "cv_result": "cv_result.json",
+  "cv_run_id": "20261119T003759Z-57b6a39b-s0",
+  "cv_arm": "gru",
+  "aug_policy": "legacy",
+  "aug_policy_detail": "flip+jitter:copies=2",
+  "view": "full",
+  "note": "No held-out data in this mode, so no accuracy is reported. Quote cv_result.json's pooled out-of-fold estimate, never a number from here."
+}

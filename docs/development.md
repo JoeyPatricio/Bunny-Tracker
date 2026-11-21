@@ -43,7 +43,7 @@ Bunny-Tracker/
 
 The agent in `agent/` talks to the server over HTTP and shares `data/.env`
 and `server/models/` with it. See the [agent guide](../agent/README.md) for
-builds, fixtures, and the Pi burn-in.
+builds and fixtures.
 
 ## Where to make changes
 
@@ -97,10 +97,9 @@ presets. See [C++ build and test commands](../agent/README.md#build-and-test).
 
 ## Manual camera checks
 
-Build the agent, then `./run.sh` from the repo root starts the server and
-agent with the configuration in `data/.env`. Capture, recording, and
-notifications behave as in production, and Ctrl+C stops both. To exercise
-capture without a webcam, use a synthetic source:
+Build the agent, then run `./run.sh` from the repo root. Capture, recording,
+and notifications behave as they do under systemd. To exercise capture
+without a webcam, use a synthetic source in `data/.env`:
 
 ```ini
 CAMERA_FORMAT=lavfi
@@ -125,11 +124,10 @@ server, the agent, training commands, and deployment tools. Use the
 `uv.lock` and the requirements files from `pyproject.toml`.
 
 `server/scripts/dump_agent_frames.py` generates the motion fixture frames.
-The agent's fixtures in `agent/tests/fixtures/` were recorded from the
-retired Python agent and have no generator. Edit them by hand when the
-expected behavior changes.
+The agent's fixtures in `agent/tests/fixtures/` have no generator. Edit them
+by hand when the expected behavior changes.
 
 Builds, Python caches, `client-dist.tgz`, recordings, and runtime stores are
-ignored by Git.
-The frontend build lives in `client/dist/`, C++ builds live in `agent/build*/`,
-and Python environments live in `server/.venv/` and `server/.venv-train/`.
+ignored by Git. The frontend build lives in `client/dist/`, C++ builds live in
+`agent/build*/`, and Python environments live in `server/.venv/` and
+`server/.venv-train/`.

@@ -1,11 +1,13 @@
 # Bunny Tracker
 
-A self-hosted machine-learning pet monitor. A camera watches your rabbits, a
-classifier recognizes what they're doing, zoomies, grooming, rearing, feeding,
-or resting, and you get an email with a clip when something noteworthy happens.
+Bunny Tracker is a self-hosted rabbit monitor. A Linux camera agent detects
+motion and saves clips. The owner can watch the live camera, label behaviors
+such as grooming, feeding, or rearing, and choose clips to share on the
+[public demo](https://bunny-tracker.app).
 
-Live demo: **https://bunny-tracker.app** (public demo view; the live stream is
-private to the owner).
+The default install runs in motion-only mode. Live behavior predictions and
+email alerts require a promoted seven-class model. Camera streaming, clip
+collection, labeling, and public highlights work without one.
 
 ---
 
@@ -36,56 +38,27 @@ private to the owner).
 
 ## How it works
 
-```
-[camera] ──► capture agent (ffmpeg) ──► ONNX backbone embedding ──► temporal head ──► behavior
-                  │                                                            │
-                  ├──► rolling 12s clips                                       ├──► email alert + clip
-                  └──► MJPEG live stream ──► dashboard                         └──► public text feed
-```
-
-- **Capture agent**: a C++ service ([agent/](agent/README.md)) that reads the
-  camera with one `ffmpeg` process, sampling a frame every few seconds for
-  inference, recording rolling clips, and pushing a live view to the
-  dashboard. Runs on Linux, `v4l2` for a real camera or `lavfi` for a
-  synthetic test source.
-- **Classifier**: a frozen `timm` edge backbone (`mobilenetv4_conv_small`) plus
-  a small learned temporal head, exported to ONNX and run via ONNX Runtime.
-  Retraining is now an offline CLI script (`server/training/train.py`), not
-  a browser tab; see the note below.
-- **Alerts**: a non-normal behavior emails you the clip (Python `smtplib` +
-  Gmail), with motion gating, a multi-frame debounce, and a global cooldown to
-  suppress false positives.
-- **Web app**: Camera (live feed + predictions), Label Studio (label clips),
-  and Training (a read-only panel showing the deployed model's metadata). A
-  separate public demo page shows highlights and a live behavior feed without
-  exposing the camera. Labeling a clip does not publish it. Select Show in
-  Highlights to make it public. After upgrading, previously auto-shown clips
-  also require Show before they appear publicly.
-
-**Model status:** there is currently no usable classifier. The behavior
-vocabulary moved to ethogram v2 (7 classes, see
-[docs/ethogram.md](docs/ethogram.md)) and the deployed head still predicts the
-5 v1 classes, so the agent refuses to load it and runs motion-only until a
-retrain lands. Clipping Mode is unaffected, which is the point: it never uses
-the model, so footage can still be harvested while the dataset is rebuilt.
-
-The two accuracy numbers this README used to quote (61.5% for the deployed
-model, 74.4% for the one it replaced) were validation-set numbers, and that
-same split also drove early stopping, checkpoint selection, and the window
-sweep. They were selection scores, not held-out estimates, and should not be
-cited as accuracy.
+- The C++ agent uses one `ffmpeg` process to read the camera, produce a
+  private MJPEG stream, and record rolling video segments. By default, normal
+  monitoring samples motion every 1.5 seconds and records 12-second segments.
+  Clipping Mode samples every 0.5 seconds and saves 8-second clips for labeling.
+- With a promoted model, ONNX Runtime runs a MobileNetV4 backbone and a GRU
+  over successive frames. The agent posts behavior changes to the public
+  text feed. When motion and the score for a non-resting behavior stay above
+  their thresholds for enough frames, the server can email the clip. A
+  per-behavior cooldown and a minimum gap between emails limit repeat alerts.
 
 ## Tech stack
 
-| Layer       | Tech                                                             |
-|-------------|--------------------------------------------------------------------|
-| Frontend    | React + Vite                                                       |
-| Backend     | Python (FastAPI + uvicorn)                                          |
-| Capture/ML  | C++ agent: ffmpeg, ONNX Runtime, pixel-diff motion detection |
-| Training    | PyTorch + `timm`, offline CLI script                                |
-| Alerts      | `smtplib` (Gmail SMTP)                                              |
-| Process mgmt| systemd on the Raspberry Pi (server, agent, tunnel), `run.sh` for dev |
-| Deployment  | Cloudflare named tunnel (HTTPS, custom domain)                      |
+| Layer | Tech |
+|---|---|
+| Frontend | React + Vite |
+| Backend | Python (FastAPI + uvicorn) |
+| Capture/ML | C++20, ffmpeg, ONNX Runtime, pixel-diff motion detection |
+| Training | PyTorch + `timm`, offline Python commands |
+| Alerts | `smtplib` (Gmail SMTP) |
+| Process management | systemd on the Raspberry Pi, `run.sh` for development |
+| Deployment | Cloudflare named tunnel (HTTPS, custom domain) |
 
 ---
 
@@ -93,108 +66,98 @@ cited as accuracy.
 
 ### 1. Install dependencies
 
-The runtime environment stays torch-free for Raspberry Pi deployment. The
-optional training environment uses CPU PyTorch. Both resolve from
-`server/uv.lock`. See [docs/pipeline.md](docs/pipeline.md).
+Run these commands from the repository root with Node.js, npm, and uv installed.
+The client build produces the dashboard that FastAPI serves. `--group dev`
+adds pytest and Ruff to the Python 3.14 runtime.
 
 ```bash
-cd client && npm install && npm run build
-cd ../server
-
-# Server runtime, plus the test runner and linter. No torch.
-uv sync --frozen --python 3.14 --group dev
-
-# Only if you're retraining the model. CPU-only, also used by CI.
-UV_PROJECT_ENVIRONMENT=.venv-train uv sync --frozen --python 3.12 --group train
+(cd client && npm ci && npm run build)
+(cd server && uv sync --frozen --python 3.14 --group dev)
 ```
 
-Production runtime installs can omit `--group dev`. Update dependencies in
-`pyproject.toml` and regenerate with `uv lock`. On Windows, set
-`UV_PROJECT_ENVIRONMENT` using your shell's environment syntax, and use
-`.venv\Scripts\python.exe` rather than `.venv/bin/python`.
-
-The capture agent is C++ and Linux only. Its packages and build are in
-[agent/README.md](agent/README.md#build-and-test):
+To train a model or run the Python test suite, install the separate Python
+3.12 environment with CPU PyTorch. Both environments use `server/uv.lock`.
 
 ```bash
-cd agent
-scripts/fetch-onnxruntime.sh
-cmake --preset default && cmake --build --preset default -j
+(cd server && UV_PROJECT_ENVIRONMENT=.venv-train uv sync --frozen --python 3.12 --group train)
+```
+
+For camera capture, install `ffmpeg` and the Linux build dependencies in the
+[agent guide](agent/README.md#build-and-test). Build the C++ agent from the
+repository root. You can skip this step for a dashboard-only setup.
+
+```bash
+(cd agent && scripts/fetch-onnxruntime.sh && \
+  cmake --preset default && cmake --build --preset default -j2)
 ```
 
 ### 2. Configure the environment
 
-Create `data/.env` (shared by both the server and the agent):
+Create `data/.env` in the repository root. The server and agent both read it.
+Choose a dashboard password and generate a separate agent token with
+`python3 -c "import secrets; print(secrets.token_hex(32))"`.
 
 ```ini
-# Email alerts (Gmail App Password, not your normal password)
-EMAIL_USER=you@gmail.com
-EMAIL_PASS=xxxx xxxx xxxx xxxx
-NOTIFY_TO=you@example.com
-NOTIFY_COOLDOWN_MINUTES=10
-
-# Dashboard login. Double quotes, and no " or \ inside: python-dotenv skips a
-# line it can't parse, and the login then reports the password as not set.
+# Required. Avoid embedded double quotes and backslashes.
 ADMIN_PASSWORD="your-password"
+AGENT_TOKEN="paste-your-generated-token"
 
-# Camera agent's own service credential (not the human login) — any random
-# 64-char hex string, e.g. `python -c "import secrets; print(secrets.token_hex(32))"`
-AGENT_TOKEN="generate-your-own-random-token"
-
-# Camera agent. v4l2 for a real camera, or lavfi with
+# Camera. v4l2 for a real camera, or lavfi with
 # CAMERA_INPUT=testsrc2=size=640x480:rate=15 for a synthetic source.
 CAMERA_FORMAT=v4l2
 CAMERA_INPUT=/dev/v4l/by-id/usb-Your_Camera-video-index0
-AGENT_INTEREST_THRESHOLD=60         # 0-100; how far from "resting" before it's worth an email
-AGENT_MOTION_FLOOR=4
-AGENT_ALERT_STREAK=3
 
-# Clipping Mode (bulk clip harvesting). All optional - these are first-run
-# defaults only; once you touch the dashboard controls, monitor.json wins.
-AGENT_CLIPPING_FRAME_SECONDS=0.5    # motion sampling cadence while harvesting
-AGENT_CLIPPING_SEGMENT_SECONDS=8    # length of a harvested clip
-AGENT_CLIPPING_STREAK=1             # frames over threshold before a clip fires
-AGENT_CLIPPING_RUN_MODEL=0          # 1 keeps inference on (diagnostic only)
-CLIPPING_MAX_UNLABELED=500          # auto-stop at this many unlabeled clips
-CLIPPING_MIN_FREE_GB=10             # auto-stop below this much free disk
+# Everything below is optional. Commented values are the defaults.
+
+# Behavior alerts
+# AGENT_INTEREST_THRESHOLD=60        # minimum score for a non-resting behavior (0-100)
+# AGENT_MOTION_FLOOR=1               # minimum motion level for an alert
+# AGENT_ALERT_STREAK=3               # frames over threshold before an alert
+
+# Clipping Mode, read by the agent at startup
+# AGENT_CLIPPING_FRAME_SECONDS=0.5   # motion sampling cadence while harvesting
+# AGENT_CLIPPING_SEGMENT_SECONDS=8   # length of a harvested clip
+# AGENT_CLIPPING_STREAK=1            # frames over threshold before a clip fires
+# AGENT_CLIPPING_RUN_MODEL=0         # 1 keeps inference on (diagnostic only)
+
+# Initial storage limits. The dashboard saves overrides in data/monitor.json.
+# CLIPPING_MAX_UNLABELED=500         # auto-stop at this many unlabeled clips
+# CLIPPING_MIN_FREE_GB=10            # auto-stop below this much free disk
+
+# Gmail alerts. Email is off until all three of these are set.
+# EMAIL_USER=you@gmail.com
+# EMAIL_PASS="your Gmail app password"
+# NOTIFY_TO=you@example.com
+# NOTIFY_COOLDOWN_MINUTES=10
 ```
 
-Find your camera with `ls -l /dev/v4l/by-id/` (use the `video-index0`
-entry).
+Find your camera with `ls -l /dev/v4l/by-id/` and use the `video-index0`
+entry.
 
 ### 3. Run
 
-Production runs 24/7 on a Raspberry Pi under the systemd units in
-`deploy/pi/`. See [Raspberry Pi](#raspberry-pi).
-
-For local development, `./run.sh` starts the server and agent in the
-foreground (`./run.sh server` for the dashboard without a camera).
-
-The dashboard is at http://localhost:3001. Log in with `ADMIN_PASSWORD` to reach
-the camera, labeling, and training tabs. Without login you see the public demo.
+From the repository root, run `./run.sh` to start the server and agent, or
+`./run.sh server` for the dashboard alone. Open http://localhost:3001, select
+Owner login, and enter `ADMIN_PASSWORD`. Ctrl+C stops the launcher.
 
 ---
 
 ## Using it
 
-1. **Label**: import clips, then tag them in **Label Studio**. Keys `1`-`7`
-   assign a behavior, `0` marks a clip with no rabbit in view. The vocabulary
-   is the ethogram in [docs/ethogram.md](docs/ethogram.md), not an ad-hoc list:
-   `feeding`, `grooming`, `locomotion`, `locomotion_rapid`, `rearing`,
-   `resting_lying`, `resting_sitting`, plus `out_of_view`.
-2. **Train**: an offline CLI pipeline, extract -> cross-validate -> fit ->
-   export a candidate -> evaluate -> promote; see
-   [docs/pipeline.md](docs/pipeline.md#the-order). Export writes to
-   `server/models/candidate/`, and only `training/promote.py`, which refuses
-   a candidate that failed its gate, replaces the model the agent loads. The
-   Training tab in the dashboard is a read-only view of whatever is deployed.
-3. **Monitor**: the agent loads the exported ONNX model and runs live. Toggle
-   **Monitoring** and **Email** from the dashboard header.
-
-Clips the agent records during an alert carry the predicted behavior as a
-**suggestion** shown in Label Studio, confirm or correct it with a normal
-hand label. Only human-confirmed labels are ever used for training, so the
-model's own predictions can't feed back into its training data.
+1. Open Camera to watch the private live view. The header controls
+   monitoring, email alerts, and Clipping Mode.
+2. Open Label Studio to review captured or imported clips. Keys `1` to
+   `7` assign a behavior and `0` marks a clip as `out_of_view`. The training
+   pipeline uses human-confirmed behavior labels. Predictions on alert clips
+   appear as suggestions for review. See the [labeling guide](docs/ethogram.md).
+3. Open Highlights and select Show on an eligible labeled clip to
+   publish it on the demo. Resting and out-of-view clips stay private.
+4. Train offline in the `.venv-train` environment. The pipeline extracts
+   frames, runs cross-validation, fits a head, and exports a candidate for
+   evaluation.
+   Promotion installs the ONNX files and writes `server/models/promoted.json`.
+   Restart the agent to load the model. The Training tab displays its metadata.
+   See the [training commands](docs/pipeline.md#the-order).
 
 ### Clipping Mode
 
@@ -209,7 +172,9 @@ for sensitivity, cooldown, dry runs, and storage limits.
 The [development guide](docs/development.md) maps the source directories and
 covers Python tests, C++ tests, manual camera checks, and generated files.
 
-From `server/`, run the Python checks with:
+Run the Python checks from `server/` after building the client and installing
+both Python environments. Run them in a Git checkout because the pose-feature
+test reads the current commit ID.
 
 ```bash
 .venv/bin/python -m pytest -m "not local_data"
@@ -222,54 +187,33 @@ For the C++ build and tests, see [agent/README.md](agent/README.md#build-and-tes
 
 ## Deployment
 
-Production is a Raspberry Pi 5, where systemd runs three services:
-`bunnycam-server` (Python), `bunnycam-agent` (C++), and `bunnycam-tunnel`
-(Cloudflare). The tunnel serves the custom domain over public HTTPS without
-any router port forwarding. The server listens on loopback only, behind the
-tunnel. A Linux PC holds the clip archive and does the training, and the
-finished model goes back to the Pi.
-
-Security: cookie session auth (Secure over HTTPS) for the human login, a
-separate service-token (`AGENT_TOKEN`) for the camera agent so it can never
-lock out the human admin, rate-limited login, timing-safe password check, and
-a server-enforced private live stream.
-
 ### Raspberry Pi
 
-[deploy/pi/README.md](deploy/pi/README.md) covers the Pi install, updating
-it, and the PC side. The runtime is the same `uv sync --frozen --python 3.14`
-as above, not the OS Python. Rolling segments and the live frame go to tmpfs
-under `/run/bunnycam`. The Pi has no Node, so `client/dist` is built on the
-PC and copied over. Labeling happens on the Pi in the dashboard, and
-`deploy/pi/pull-data.sh` copies clips and labels to the PC before training.
-Email goes straight through SMTP, n8n is no longer used. The Pi has no
-classifier until a seven-class model is promoted (see Model status above).
+[deploy/pi/](deploy/pi/) runs Bunny Tracker on a Raspberry Pi 5 with three
+systemd services. The C++ camera agent (`bunnycam-agent`) sends frames and
+clips to FastAPI (`bunnycam-server`). The server listens on loopback behind a
+Cloudflare HTTPS tunnel (`bunnycam-tunnel`). Owner login uses a session
+cookie. The agent authenticates separately with `AGENT_TOKEN`.
+
+The agent writes rolling segments to tmpfs under `/run/bunnycam/segments`.
+FastAPI holds the latest live frame in memory. Saved clips and labels stay
+on disk. The Pi neither builds the client nor trains. Build `client/dist` on
+another machine and copy it over, and use `deploy/pi/pull-data.sh` to copy
+labeled clips to the training machine. The [Pi guide](deploy/pi/README.md)
+covers installation, updates, and transferring a promoted model.
 
 ---
 
 ## Roadmap
 
-Planned stretch goals (see [docs/stretch-goals.md](docs/stretch-goals.md) for
-the full plan):
-
-- **Water intake tracking**: a load cell under the water bowl measures
-  drinking in ml, with low-level and low-intake alerts.
-- **Room environment**: a BME280 on the same Pi tracks temperature and
-  humidity, with heat-stress alerts (rabbits overheat above ~28C).
-
-**Relabel, then retrain.** All 112 clips were unlabeled during the v2 ethogram
-migration and need recoding against the new definitions; v1 labels are archived
-in `data/labels.v1.json` so the v1-to-v2 recoding can still be reported. The
-classifier cannot run until a 7-class head is trained and exported.
+Planned additions include a load cell for water intake and a BME280 sensor
+for room temperature and humidity. See the [roadmap](docs/stretch-goals.md).
 
 ---
 
 ## Notes
 
-- Recordings (`data/recordings/`), labels (`data/labels.json`), backups,
-  and `.env` are all git-ignored. The ONNX artifacts in `server/models/` are
-  also used by the C++ parity tests. Live classification requires a model
-  promoted for the current ethogram.
-- Labels are written atomically and serialized, with `.bak` plus daily backups,
-  so concurrent edits can't corrupt or wipe them.
-- No third-party ML service, inference runs locally via ONNX Runtime.
+- Git ignores recordings (`data/recordings/`), current labels
+  (`data/labels.json`), backups, and `data/.env`.
+- The server serializes label updates and writes them atomically. It keeps
+  a `.bak` copy and daily backups.

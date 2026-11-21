@@ -9,8 +9,7 @@ Enable Clipping in the dashboard header.
 By default, the classifier doesn't run in this mode. There are no predictions,
 email alerts, or label suggestions, so a quiet Activity Log is expected.
 Clips are 8 seconds long, with motion sampled every 0.5 seconds. The saved
-clip is the segment containing the motion. Normal monitoring uses 12 second
-clips and samples every 1.5 seconds.
+clip is the segment containing the motion.
 
 Clips land in `data/recordings/` as `recording-clip-*.webm`. Use the Unlabeled
 filter in Label Studio to work through them, following the
